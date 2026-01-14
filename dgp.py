@@ -11,7 +11,7 @@ def generate_gaussian_data(n, k, sigma, edge_var=1, rng=None):
             [sigma * I_d,  I_d        ]
         ])
     
-    q = np.random.multivariate_normal(np.zeros(2*k), R, size=n)
+    q = rng.multivariate_normal(np.zeros(2*k), R, size=n)
     Z = q[:, :k]
     X = q[:, k:]
 

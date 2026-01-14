@@ -6,6 +6,7 @@ from tqdm import tqdm
 import itertools
 from multiprocessing import Pool, cpu_count
 import os
+from functools import partial 
 
 def run_scenario(metrics, args):
     n, k, sigma, edge_var, dgp, step_size, lambda_reg, niters, solver = args
@@ -23,11 +24,15 @@ def run_scenario(metrics, args):
     err_sigma = []
     for metric in metrics:
         err_sigma.append(metric(estimated_sigma, sigma))
-        
-    return err_M, err_sigma
+
+    out = {'err_M': err_M, 'err_sigma': err_sigma, 'n': n, 
+           'k': k, 'sigma': sigma, 'edge_var': edge_var, 'dgp': dgp, 
+           'step_size': step_size, 'lambda_reg': lambda_reg, 
+           'niters': niters, 'solver': solver}
+    return out
 
 def run_simulation_parallel(nsim, n, k, sigma, edge_var, dgp, metrics, 
-                   solver, step_size, lambda_red, rng=None, 
+                   solver, step_size, lambda_reg=None, rng=None, 
                    n_jobs=None, niters=10):
     if rng is None:
         rng = np.random.default_rng()
@@ -48,13 +53,13 @@ def run_simulation_parallel(nsim, n, k, sigma, edge_var, dgp, metrics,
         solver = [solver]
     if not isinstance(step_size, list):
         step_size = [step_size]
-    if not isinstance(lambda_red, list):
-        lambda_red = [lambda_red]
+    if not isinstance(lambda_reg, list):
+        lambda_reg = [lambda_reg]
 
     factorial_design = list(itertools.product(
-        n, k, sigma, edge_var, dgp, step_size, lambda_red, solver
+        n, k, sigma, edge_var, dgp, step_size, lambda_reg, solver
     ))
-    out = []
+    results = []
     for i in range(nsim):
         print(f"Simulation {i+1} of {nsim}")
         sim_args = [
@@ -64,22 +69,22 @@ def run_simulation_parallel(nsim, n, k, sigma, edge_var, dgp, metrics,
         
         if n_jobs is None:
             n_jobs = cpu_count()
-        chunk_size = max(1, len(sim_args) // (n_jobs * 7))
+        chunk_size = max(1, len(sim_args) // (n_jobs * 10))
         
         with Pool(processes=n_jobs) as pool:
             with tqdm(total=len(sim_args), desc="Running scenarios") as pbar:
-                results = []
-                for err_M, err_sigma in pool.imap(
-                    lambda args: run_scenario(metrics, args), sim_args, chunksize=chunk_size
-                ):
-                    results.append((err_M, err_sigma))
+                worker_func = partial(run_scenario, metrics)
+                
+                for out_scenario in pool.imap(
+                    worker_func, sim_args, chunksize=chunk_size
+                    ):
+                    results.append(out_scenario)
                     pbar.update(1)
-        out.append(results)
 
     return results
 
 def run_simulation(nsim, n, k, sigma, edge_var, dgp, metrics, 
-                   solver, step_size, lambda_red, parallel=False, 
+                   solver, step_size, lambda_reg=None, parallel=False, 
                    rng=None, niters=10, n_jobs=None):
     if parallel:
         return run_simulation_parallel(
@@ -92,7 +97,7 @@ def run_simulation(nsim, n, k, sigma, edge_var, dgp, metrics,
             metrics=metrics,
             solver=solver,
             step_size=step_size,
-            lambda_red=lambda_red,
+            lambda_reg=lambda_reg,
             rng=rng,
             n_jobs=n_jobs,
             niters=niters
@@ -117,11 +122,11 @@ def run_simulation(nsim, n, k, sigma, edge_var, dgp, metrics,
         solver = [solver]
     if not isinstance(step_size, list):
         step_size = [step_size]
-    if not isinstance(lambda_red, list):
-        lambda_red = [lambda_red]
+    if not isinstance(lambda_reg, list):
+        lambda_reg = [lambda_reg]
 
     factorial_design = list(itertools.product(
-        n, k, sigma, edge_var, dgp, step_size, lambda_red, solver
+        n, k, sigma, edge_var, dgp, step_size, lambda_reg, solver
     ))
     out = []
     for i in range(nsim):

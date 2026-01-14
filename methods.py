@@ -3,16 +3,166 @@ from scipy.sparse.linalg import eigsh
 from scipy.linalg import norm
 import pandas as pd
 
-def solve_independent(A, k=2):
+def solve_independent(A, k=2, **kwargs):
     evals, evectors = eigsh(A, k=k, which='LM')
     evals = np.maximum(evals-0.5, 0)
     xhat = evectors @ np.diag(np.sqrt(evals))
-    return xhat, evals
+    return [xhat], [evals]
 
 def rv_coefficient(A, B):
     num = np.trace((A.T @ B) @ (B.T @ A))
     den = norm(A.T @ A, 'fro') * norm(B.T @ B, 'fro')
     return num / den if den != 0 else 0
+
+def llk_gradient(M, A, B, sigma, n):
+    """
+    Computes the gradient of the objective function w.r.t M.
+    Objective: 0.5*||P_diag(M-Y)||^2 + 1/(1-sigma^2)*tr(M * Theta)
+    """
+    # Initialize gradient with the penalty term Theta_sigma / (1-sigma^2)
+    # Theta_sigma has I in diag blocks and -sigma*I in off-diag blocks
+    scale = 1.0 / (1 - sigma**2)
+    
+    grad = np.zeros_like(M)
+    
+    # 1. Add Gradient from Trace Penalty (Theta_sigma)
+    # Diagonal blocks: I * scale
+    idx = np.arange(n)
+    grad[idx, idx] += scale
+    grad[n + idx, n + idx] += scale
+    
+    # Off-diagonal blocks: -sigma * I * scale
+    # We add this to the block locations
+    grad[:n, n:] += -sigma * scale * np.eye(n)
+    grad[n:, :n] += -sigma * scale * np.eye(n)
+
+    # 2. Add Gradient from Data Fidelity: P_diag(M - Obs)
+    # The gradient of 0.5*||ZZ^T - A||^2 w.r.t (ZZ^T) is (ZZ^T - A)
+    # This only applies to the diagonal blocks of M
+    grad[:n, :n] += 2* (M[:n, :n] - A)
+    grad[n:, n:] += 2* (M[n:, n:] - B)
+    
+    return grad
+
+def solve_dependent(A, B, k, niters, lambda_reg=None, step_size=1.0, 
+                    fit_sigma=True, sigma=None, rng=None):
+    if rng is None:
+        rng = np.random.default_rng()
+        
+    if fit_sigma is False:
+        if not isinstance(sigma, (int, float)):
+            raise Exception('If fit_sigma is False, need to specify a int or float sigma')
+    n = A.shape[0]
+    
+    Z_init, _ = solve_independent(A, k=k) 
+    X_init, _ = solve_independent(B, k=k)
+    Z_init = Z_init[0]
+    X_init = X_init[0]
+    ZZ = Z_init @ Z_init.T
+    XX = X_init @ X_init.T
+    XZ = Z_init @ X_init.T
+    ZX = X_init @ Z_init.T
+
+    # Initial Random Sigma
+    if fit_sigma is True:
+        sigma = rng.uniform(-0.99, 0.99)
+    
+    # Construct M
+    M = np.block([[ZZ, XZ], [ZX, XX]])
+    
+    Ms = [M.copy()]
+    sigma_list = [sigma]
+    
+    # Default Regularization parameter (lambda)
+    if lambda_reg is None or lambda_reg == -1:
+        lambda_reg = 4 * np.sqrt(2) / np.sqrt(3) * np.sqrt(n)
+    
+    for i in range(niters):
+        
+        # Step 1: Gradient Descent on M ---
+        grad = llk_gradient(M, A, B, sigma, n)
+        
+        L = 2.0 + (1.0 / (1 - sigma**2))
+        current_step_size = step_size / L
+        Y = M - current_step_size * grad
+
+        # Step 2: Proximal Operator (Enforce PSD + Sparsity) ---
+        evals, evecs = np.linalg.eigh(Y)
+        
+        threshold = step_size * lambda_reg
+        evals_prox = np.maximum(evals - threshold, 0)
+        
+        M = evecs @ np.diag(evals_prox) @ evecs.T
+        # Enforce symmetry explicitly (do we really need this?)
+        M = (M + M.T) / 2
+        
+        if fit_sigma is True:
+            S_diag = np.trace(M[:n, :n]) + np.trace(M[n:, n:])
+            S_cross = np.trace(M[:n, n:])
+
+            # Polynomial coefficients for cubic equation
+            coeff_a = n * k
+            coeff_b = -S_cross
+            coeff_c = S_diag - (n * k)
+            coeff_d = -S_cross
+            
+            roots = np.roots([coeff_a, coeff_b, coeff_c, coeff_d])
+            
+            # Filter for real roots in (-1, 1)
+            real_roots = roots.real[np.abs(roots.imag) < 1e-5]
+            valid_roots = real_roots[(real_roots > -0.99) & (real_roots < 0.99)]
+            
+            if len(valid_roots) == 0:
+                sigma = 0.0 
+                print('Warning: no valid roots setting sigma to zero')
+            elif len(valid_roots) == 1:
+                sigma = valid_roots[0]
+            else:
+                # Pick root minimizing profile likelihood
+                # i do not really like this, maybe there is a better way
+                def profile_cost(s):
+                    term1 = n * k * np.log(1 - s**2)
+                    term2 = (S_diag - 2 * s * S_cross) / (1 - s**2)
+                    return term1 + term2
+                
+                sigma = valid_roots[np.argmin([profile_cost(r) for r in valid_roots])]
+        
+        Ms.append(M.copy())
+        sigma_list.append(sigma)
+
+    return Ms, sigma_list
+
+def objective_function(n, k, M, A, B, sigma):
+    M_zz = M[:n, :n]
+    M_xx = M[n:,n:]
+    M_xz = M[:n, n:]
+    M_zx = M[n:, :n]
+    
+    first = n*k*np.log(1-sigma**2)
+    second = norm(M_zz-A, ord='fro') + norm(M_xx-B, ord='fro')
+    
+    factor = 1/(1-sigma**2)
+    third = np.trace(M_xx) + np.trace(M_zz) - sigma*np.trace(M_xz) - sigma*np.trace(M_zx)
+    
+    out = first + second + factor * third
+    return out
+
+def solver_grid(A, B, k, niters, lambda_reg=None, step_size=1, grid=0.1):
+    if isinstance(grid, (int, float)):
+        grid = np.arange(0, 1, grid)
+    
+    llk_values = {}
+    n = A.shape[0]
+    for sigma in grid:
+        Ms, sigma_list = solve_dependent(A, B, k, niters, lambda_reg, step_size, 
+                                         fit_sigma=False, sigma=sigma)
+        estimated_M = Ms[-1]
+
+        obj_value = objective_function(n, k, estimated_M, A, B, sigma)
+        llk_values[sigma] = obj_value
+
+    return llk_values  
+ 
 
 def _ratio_helper(df, factors, ratio_variable, y_axis, num, den):
     df_ratio = df.pivot_table(
@@ -133,78 +283,3 @@ def analyse_function(results, x_axis, y_axis, factors, **kwargs):
                 ordered=True,
             )
     return grouped_stats
-
-
-
-def llk_gradient(Z, X, A, B, sigma):
-    n = Z.shape[0]
-    grad = np.zeros((2*n, 2*n))
-    grad[:n, :n] = Z@Z.T - A
-    grad[n:, n:] = X@X.T - B
-    theta_sigma = np.block([[np.eye(n), -sigma * np.eye(n)], [- sigma * np.eye(n), np.eye(n)]])
-    theta_sigma *= 1/(1-sigma**2)
-    grad = grad - theta_sigma
-    return grad
-
-def solve_dependent(A, B, k, niters, step_size=None):
-    n = A.shape[0]
-    Z_init, _ = solve_independent(B, k=k)
-    X_init, _ = solve_independent(A, k=k)
-        
-    ZZ = Z_init @ Z_init.T
-    XX = X_init @ X_init.T
-    XZ = Z_init @ X_init.T
-    ZX = X_init @ Z_init.T
-
-    sigma = np.random.randn()
-    
-    M = np.block([[ZZ, XZ], [ZX, XX]])
-    
-    Ms = [M.copy()]
-    sigma_list = [sigma]
-    
-    # don't remember where this comes from
-    if step_size is None:
-        eta = 4 * np.sqrt(2) / np.sqrt(3) * np.sqrt(n)
-    else:
-        eta = step_size
-    
-    for _ in range(niters):
-        # gradient part
-        grad = llk_gradient(Z_init, X_init, A, B, sigma=sigma)
-        Y = M - grad
-        
-        # proximal operator part
-        svd = np.linalg.svd(Y, full_matrices=False)
-        U, S, Vt = svd
-        Smax = np.maximum(S - eta, 0)
-        M = U @ np.diag(Smax) @ Vt
-        Ms.append(M.copy())
-        
-        # find sigma solving gradient equal to zero
-        S_diag = np.trace(M[:n, :n]) + np.trace(M[n:, n:])
-        S_cross = np.trace(M[:n, n:])
-
-        coeff_a = n * k
-        coeff_b = -S_cross
-        coeff_c = S_diag - (n * k)
-        coeff_d = -S_cross
-        roots = np.roots([coeff_a, coeff_b, coeff_c, coeff_d])
-
-        real_roots = roots.real[np.abs(roots.imag) < 1e-5]
-
-        # 2. Keep only roots strictly in range (-1, 1)
-        valid_roots = real_roots[(real_roots > -1.0) & (real_roots < 1.0)]
-        
-        if len(valid_roots) == 0:
-            sigma = 0.0
-        elif len(valid_roots) == 1:
-            sigma = valid_roots[0]
-        else:
-            #don't really like this idea is to minimise the profile likelihood
-            profile_llk = lambda s: (n * k * np.log(1 - s**2)) + (S_diag - 2 * s * S_cross) / (1 - s**2)
-
-            sigma = valid_roots[np.argmin([profile_llk(r) for r in valid_roots])]
-        sigma_list.append(sigma)
-
-    return Ms, sigma_list
