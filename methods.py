@@ -66,7 +66,8 @@ def solve_dependent(A, B, k, niters, lambda_reg=None, step_size=1.0,
     # Initial Random Sigma
     if fit_sigma is True:
         sigma = rng.uniform(-0.99, 0.99)
-    
+        sigma = rv_coefficient(Z_init, X_init)
+
     # Construct M
     M = np.block([[ZZ, XZ], [ZX, XX]])
     
@@ -82,14 +83,14 @@ def solve_dependent(A, B, k, niters, lambda_reg=None, step_size=1.0,
         # Step 1: Gradient Descent on M ---
         grad = llk_gradient(M, A, B, sigma, n)
         
-        L = 2.0 + (1.0 / (1 - sigma**2))
+        L = 2.0
         current_step_size = step_size / L
         Y = M - current_step_size * grad
 
         # Step 2: Proximal Operator (Enforce PSD + Sparsity) ---
         evals, evecs = np.linalg.eigh(Y)
         
-        threshold = step_size * lambda_reg
+        threshold = current_step_size * lambda_reg
         evals_prox = np.maximum(evals - threshold, 0)
         
         M = evecs @ np.diag(evals_prox) @ evecs.T
