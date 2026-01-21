@@ -11,18 +11,18 @@ from functools import partial
 def run_scenario(metrics, args):
     n, k, sigma, edge_var, dgp, step_size, lambda_reg, niters, solver = args
     A, B, Z, X = dgp(n=n, k=k, sigma=sigma, edge_var=edge_var)
-    true_M = np.block([[Z @ Z.T, Z @ X.T], [X @ Z.T, X @ X.T]])
+    true_M = np.block([[Z @ Z.T, X @ Z.T], [Z @ X.T, X @ X.T]])
     M_path, sigma_path = solver(A, B, k, 
                                 niters=niters, step_size=step_size, 
                                 lambda_reg=lambda_reg) 
     estimated_M = M_path[-1]
     estimated_sigma = sigma_path[-1]
-    
+        
     err_M = []
-    for metric in metrics:
+    for metric in metrics['matrix']:
         err_M.append(metric(estimated_M, true_M))
     err_sigma = []
-    for metric in metrics:
+    for metric in metrics['scalar']:
         err_sigma.append(metric(estimated_sigma, sigma))
 
     out = {'err_M': err_M, 'err_sigma': err_sigma, 'n': n, 
@@ -47,8 +47,8 @@ def run_simulation_parallel(nsim, n, k, sigma, edge_var, dgp, metrics,
         edge_var = [edge_var]
     if not isinstance(dgp, list):
         dgp = [dgp]
-    if not isinstance(metrics, list):
-        metrics = [metrics]
+    # if not isinstance(metrics, list):
+    #     metrics = [metrics]
     if not isinstance(solver, list):
         solver = [solver]
     if not isinstance(step_size, list):
@@ -116,8 +116,8 @@ def run_simulation(nsim, n, k, sigma, edge_var, dgp, metrics,
         edge_var = [edge_var]
     if not isinstance(dgp, list):
         dgp = [dgp]
-    if not isinstance(metrics, list):
-        metrics = [metrics]
+    # if not isinstance(metrics, list):
+    #     metrics = [metrics]
     if not isinstance(solver, list):
         solver = [solver]
     if not isinstance(step_size, list):
@@ -137,7 +137,7 @@ def run_simulation(nsim, n, k, sigma, edge_var, dgp, metrics,
         ]
         results = []
         for args in tqdm(sim_args, desc="Running scenarios"):
-            scenario_out = run_scenario(args)
+            scenario_out = run_scenario(metrics, args)
             results.append(scenario_out)
         out.append(results)
         

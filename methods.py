@@ -57,12 +57,12 @@ def solve_dependent(A, B, k, niters, lambda_reg=None, delta_reg=1.0,
     X_init = X_init[0]
     ZZ = Z_init @ Z_init.T
     XX = X_init @ X_init.T
-    XZ = Z_init @ X_init.T
-    ZX = X_init @ Z_init.T
+    XZ = X_init @ Z_init.T
+    ZX = Z_init @ X_init.T
 
     # Initial Random Sigma
     if fit_sigma is True:
-        # sigma = rng.uniform(-0.99, 0.99)
+        #sigma = rng.uniform(-0.5, 0.5)
         sigma = rv_coefficient(Z_init, X_init)
 
     # Construct M
@@ -80,7 +80,7 @@ def solve_dependent(A, B, k, niters, lambda_reg=None, delta_reg=1.0,
     
     # TODO check this
     # Lipschitz constant of gradient possibly scaled by step_size
-    L = 2 / step_size  
+    L = 2 / step_size
     
     for i in range(niters):
         
@@ -119,16 +119,103 @@ def solve_dependent(A, B, k, niters, lambda_reg=None, delta_reg=1.0,
         grad = llk_gradient(M, A, B, sigma, n)
 
         Y = M - 1 / L * grad
-        
-        # # # Step 2: Proximal Operator (Enforce PSD + Sparsity) ---
-        evals, evecs = np.linalg.eigh(Y)
+        Y = (Y + Y.T) / 2
 
-        threshold = lambda_reg / L
-        evals_prox = np.maximum(evals - threshold, 0)
+        # Step 2: Proximal Operator to enforce SPD
+        evals, evecs = np.linalg.eigh(Y)
+        
+        evals_prox = np.maximum(evals, 0)
 
         M = evecs @ np.diag(evals_prox) @ evecs.T
         # Enforce symmetry explicitly (do we really need this?)
         M = (M + M.T) / 2
+        
+        Ms.append(M.copy())
+        sigma_list.append(sigma)
+
+    return Ms, sigma_list
+
+def gradient_descent_solver(A, B, k, niters, lambda_reg=None, delta_reg=1.0, 
+                    fit_sigma=True, sigma=None, rng=None, step_size=1.0):
+    if rng is None:
+        rng = np.random.default_rng()
+        
+    if fit_sigma is False:
+        if not isinstance(sigma, (int, float)):
+            raise Exception('If fit_sigma is False, need to specify a int or float sigma')
+    n = A.shape[0]
+    
+    Z_init, _ = solve_independent(A, k=k, rng=rng) 
+    X_init, _ = solve_independent(B, k=k, rng=rng)
+    Z = Z_init[0]
+    X = X_init[0]
+
+    # Initial Random Sigma
+    if fit_sigma is True:
+        #sigma = rng.uniform(-0.5, 0.5)
+        sigma = rv_coefficient(Z_init, X_init)
+    
+    Zs = [Z_init.copy()]
+    Xs = [X_init.copy()]
+    sigma_list = [sigma]
+    
+    # Default Regularization parameter (lambda)
+    if lambda_reg is None or lambda_reg == -1:
+        # from multiness paper, example 1 constant variance sigma=1
+        if delta_reg is None:
+            delta_reg = 0.309
+        
+        lambda_reg = (2 + delta_reg) * np.sqrt(2 * n)
+    
+    # TODO check this
+    # Lipschitz constant of gradient possibly scaled by step_size
+    L = 2 / step_size
+    
+    for i in range(niters):
+        
+        # compute gradient
+        grad_x = 2 * A @ X - 2 * Z @ Z.T @ Z - 1/(1-sigma**2) * (Z - sigma * X)
+        grad_z = 2 * B @ Z - 2 * X @ X.T @ X - 1/(1-sigma**2) * (X - sigma * Z)
+
+        X = X - step_size * grad_x
+        Z = Z - step_size * grad_z
+        
+        XX = X @ X.T
+        ZZ = Z @ Z.T
+        ZX = Z @ X.T
+        XZ = X @ Z.T
+
+        if fit_sigma is True:
+            S_diag = np.trace(M[:n, :n]) + np.trace(M[n:, n:])
+            S_cross = np.trace(M[:n, n:])
+
+            # Polynomial coefficients for cubic equation
+            coeff_a = n * k
+            coeff_b = -S_cross
+            coeff_c = S_diag - (n * k)
+            coeff_d = -S_cross
+            
+            roots = np.roots([coeff_a, coeff_b, coeff_c, coeff_d])
+            
+            # Filter for real roots in (-1, 1)
+            real_roots = roots.real[np.abs(roots.imag) < 1e-5]
+            valid_roots = real_roots[(real_roots > -0.99) & (real_roots < 0.99)]
+            if len(valid_roots) == 0:
+                sigma = 0.0 
+                print('Warning: no valid roots setting sigma to zero')
+            elif len(valid_roots) == 1:
+                sigma = valid_roots[0]
+            else:
+                print('multiple root')
+                # Pick root minimizing profile likelihood
+                # i do not really like this, maybe there is a better way
+                def profile_cost(s):
+                    term1 = n * k * np.log(1 - s**2)
+                    term2 = (S_diag - 2 * s * S_cross) / (1 - s**2)
+                    return term1 + term2
+                
+                sigma = valid_roots[np.argmin([profile_cost(r) for r in valid_roots])]
+        
         
         Ms.append(M.copy())
         sigma_list.append(sigma)
