@@ -3,8 +3,11 @@ from scipy.sparse.linalg import eigsh
 from scipy.linalg import norm
 import pandas as pd
 
-def solve_independent(A, k=2, **kwargs):
-    evals, evectors = eigsh(A, k=k, which='LM')
+def solve_independent(A, k=2, rng=None, **kwargs):
+    if rng is None:
+        rng = np.random.default_rng()
+    v0 = rng.normal(size=A.shape[0])
+    evals, evectors = eigsh(A, k=k, which='LM', v0=v0)
     evals = np.maximum(evals-0.5, 0)
     xhat = evectors @ np.diag(np.sqrt(evals))
     return [xhat], [evals]
@@ -17,35 +20,29 @@ def rv_coefficient(A, B):
 def llk_gradient(M, A, B, sigma, n):
     """
     Computes the gradient of the objective function w.r.t M.
-    Objective: 0.5*||P_diag(M-Y)||^2 + 1/(1-sigma^2)*tr(M * Theta)
+    Objective: ||P_diag(M-Y)||^2 + 1/(1-sigma^2)*tr(M * Theta)
     """
-    # Initialize gradient with the penalty term Theta_sigma / (1-sigma^2)
-    # Theta_sigma has I in diag blocks and -sigma*I in off-diag blocks
     scale = 1.0 / (1 - sigma**2)
     
     grad = np.zeros_like(M)
     
-    # 1. Add Gradient from Trace Penalty (Theta_sigma)
-    # Diagonal blocks: I * scale
     idx = np.arange(n)
     grad[idx, idx] += scale
     grad[n + idx, n + idx] += scale
     
-    # Off-diagonal blocks: -sigma * I * scale
-    # We add this to the block locations
-    grad[:n, n:] += -sigma * scale * np.eye(n)
-    grad[n:, :n] += -sigma * scale * np.eye(n)
-
-    # 2. Add Gradient from Data Fidelity: P_diag(M - Obs)
-    # The gradient of 0.5*||ZZ^T - A||^2 w.r.t (ZZ^T) is (ZZ^T - A)
-    # This only applies to the diagonal blocks of M
+    
     grad[:n, :n] += 2* (M[:n, :n] - A)
     grad[n:, n:] += 2* (M[n:, n:] - B)
     
-    return grad
+    theta_sigma = np.block([[np.zeros((n, n)), -sigma * np.eye(n)],
+                             [-sigma * np.eye(n), np.zeros((n, n))]])
 
-def solve_dependent(A, B, k, niters, lambda_reg=None, step_size=1.0, 
-                    fit_sigma=True, sigma=None, rng=None):
+    grad += scale * theta_sigma
+    
+    return 2 * grad
+
+def solve_dependent(A, B, k, niters, lambda_reg=None, delta_reg=1.0, 
+                    fit_sigma=True, sigma=None, rng=None, step_size=1.0):
     if rng is None:
         rng = np.random.default_rng()
         
@@ -54,8 +51,8 @@ def solve_dependent(A, B, k, niters, lambda_reg=None, step_size=1.0,
             raise Exception('If fit_sigma is False, need to specify a int or float sigma')
     n = A.shape[0]
     
-    Z_init, _ = solve_independent(A, k=k) 
-    X_init, _ = solve_independent(B, k=k)
+    Z_init, _ = solve_independent(A, k=k, rng=rng) 
+    X_init, _ = solve_independent(B, k=k, rng=rng)
     Z_init = Z_init[0]
     X_init = X_init[0]
     ZZ = Z_init @ Z_init.T
@@ -65,7 +62,7 @@ def solve_dependent(A, B, k, niters, lambda_reg=None, step_size=1.0,
 
     # Initial Random Sigma
     if fit_sigma is True:
-        sigma = rng.uniform(-0.99, 0.99)
+        # sigma = rng.uniform(-0.99, 0.99)
         sigma = rv_coefficient(Z_init, X_init)
 
     # Construct M
@@ -73,29 +70,19 @@ def solve_dependent(A, B, k, niters, lambda_reg=None, step_size=1.0,
     
     Ms = [M.copy()]
     sigma_list = [sigma]
-    
     # Default Regularization parameter (lambda)
     if lambda_reg is None or lambda_reg == -1:
-        lambda_reg = 4 * np.sqrt(2) / np.sqrt(3) * np.sqrt(n)
+        # from multiness paper, example 1 constant variance sigma=1
+        if delta_reg is None:
+            delta_reg = 0.309
+        
+        lambda_reg = (2 + delta_reg) * np.sqrt(2 * n)
+    
+    # TODO check this
+    # Lipschitz constant of gradient possibly scaled by step_size
+    L = 2 / step_size  
     
     for i in range(niters):
-        
-        # Step 1: Gradient Descent on M ---
-        grad = llk_gradient(M, A, B, sigma, n)
-        
-        L = 2.0
-        current_step_size = step_size / L
-        Y = M - current_step_size * grad
-
-        # Step 2: Proximal Operator (Enforce PSD + Sparsity) ---
-        evals, evecs = np.linalg.eigh(Y)
-        
-        threshold = current_step_size * lambda_reg
-        evals_prox = np.maximum(evals - threshold, 0)
-        
-        M = evecs @ np.diag(evals_prox) @ evecs.T
-        # Enforce symmetry explicitly (do we really need this?)
-        M = (M + M.T) / 2
         
         if fit_sigma is True:
             S_diag = np.trace(M[:n, :n]) + np.trace(M[n:, n:])
@@ -112,13 +99,13 @@ def solve_dependent(A, B, k, niters, lambda_reg=None, step_size=1.0,
             # Filter for real roots in (-1, 1)
             real_roots = roots.real[np.abs(roots.imag) < 1e-5]
             valid_roots = real_roots[(real_roots > -0.99) & (real_roots < 0.99)]
-            
             if len(valid_roots) == 0:
                 sigma = 0.0 
                 print('Warning: no valid roots setting sigma to zero')
             elif len(valid_roots) == 1:
                 sigma = valid_roots[0]
             else:
+                print('multiple root')
                 # Pick root minimizing profile likelihood
                 # i do not really like this, maybe there is a better way
                 def profile_cost(s):
@@ -128,41 +115,66 @@ def solve_dependent(A, B, k, niters, lambda_reg=None, step_size=1.0,
                 
                 sigma = valid_roots[np.argmin([profile_cost(r) for r in valid_roots])]
         
+        # Step 1: Gradient Descent on M ---
+        grad = llk_gradient(M, A, B, sigma, n)
+
+        Y = M - 1 / L * grad
+        
+        # # # Step 2: Proximal Operator (Enforce PSD + Sparsity) ---
+        evals, evecs = np.linalg.eigh(Y)
+
+        threshold = lambda_reg / L
+        evals_prox = np.maximum(evals - threshold, 0)
+
+        M = evecs @ np.diag(evals_prox) @ evecs.T
+        # Enforce symmetry explicitly (do we really need this?)
+        M = (M + M.T) / 2
+        
         Ms.append(M.copy())
         sigma_list.append(sigma)
 
     return Ms, sigma_list
 
-def objective_function(n, k, M, A, B, sigma):
+def objective_function(n, k, M, A, B, sigma, lambda_reg):
     M_zz = M[:n, :n]
     M_xx = M[n:,n:]
     M_xz = M[:n, n:]
     M_zx = M[n:, :n]
     
     first = n*k*np.log(1-sigma**2)
+
     second = norm(M_zz-A, ord='fro') + norm(M_xx-B, ord='fro')
     
     factor = 1/(1-sigma**2)
     third = np.trace(M_xx) + np.trace(M_zz) - sigma*np.trace(M_xz) - sigma*np.trace(M_zx)
+
+    regularization = lambda_reg * norm(M, ord='nuc')
     
-    out = first + second + factor * third
+    out = first + second + factor * third + regularization
+
     return out
 
-def solver_grid(A, B, k, niters, lambda_reg=None, step_size=1, grid=0.1):
+def solver_grid(A, B, k, niters, lambda_reg=None, grid=0.1, rng=None):
+    if rng is None:
+        rng = np.random.default_rng()
+        
     if isinstance(grid, (int, float)):
         grid = np.arange(0, 1, grid)
     
     llk_values = {}
     n = A.shape[0]
+    out_M = {}
+    out_sigma = grid
     for sigma in grid:
-        Ms, sigma_list = solve_dependent(A, B, k, niters, lambda_reg, step_size, 
-                                         fit_sigma=False, sigma=sigma)
+        Ms, sigma_list = solve_dependent(A, B, k, niters, lambda_reg, 
+                                         fit_sigma=False, sigma=sigma, rng=rng)
         estimated_M = Ms[-1]
+        out_M[sigma] = Ms
 
-        obj_value = objective_function(n, k, estimated_M, A, B, sigma)
+        obj_value = objective_function(n, k, estimated_M, A, B, sigma, lambda_reg=4 * np.sqrt(2) / np.sqrt(3) * np.sqrt(n))
         llk_values[sigma] = obj_value
 
-    return llk_values  
+    return llk_values, out_M, out_sigma
  
 
 def _ratio_helper(df, factors, ratio_variable, y_axis, num, den):

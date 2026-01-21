@@ -9,3 +9,6 @@ def rv_coefficient(A, B):
 
 def mse(X, Xhat):
     return ((X-Xhat)**2).mean()
+
+def relative_frobenius_norm(X, Xhat):
+    return norm(Xhat-X, 'fro') / norm(X, 'fro') if norm(X, 'fro') != 0 else 0
