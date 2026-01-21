@@ -9,62 +9,50 @@ import os
 from functools import partial 
 
 def run_scenario(metrics, args):
-    n, k, sigma, edge_var, dgp, step_size, lambda_reg, niters, solver = args
-    A, B, Z, X = dgp(n=n, k=k, sigma=sigma, edge_var=edge_var)
-    true_M = np.block([[Z @ Z.T, X @ Z.T], [Z @ X.T, X @ X.T]])
-    M_path, sigma_path = solver(A, B, k, 
-                                niters=niters, step_size=step_size, 
-                                lambda_reg=lambda_reg) 
-    estimated_M = M_path[-1]
-    estimated_sigma = sigma_path[-1]
-        
-    err_M = []
-    for metric in metrics['matrix']:
-        err_M.append(metric(estimated_M, true_M))
-    err_sigma = []
-    for metric in metrics['scalar']:
-        err_sigma.append(metric(estimated_sigma, sigma))
+    """Run a single scenario of the simulation.
 
-    out = {'err_M': err_M, 'err_sigma': err_sigma, 'n': n, 
-           'k': k, 'sigma': sigma, 'edge_var': edge_var, 'dgp': dgp, 
-           'step_size': step_size, 'lambda_reg': lambda_reg, 
-           'niters': niters, 'solver': solver}
-    return out
+    Parameters
+    ----------
+    metrics : list of BaseMetric
+        list of metrics to compute
+    args : tuple
+        arguments for the simulation scenario. 
+        Needs to contain dpg (BaseDPG) at index 0 and 
+        method (BaseMethod) at index 1.
 
-def run_simulation_parallel(nsim, n, k, sigma, edge_var, dgp, metrics, 
-                   solver, step_size, lambda_reg=None, rng=None, 
-                   n_jobs=None, niters=10):
+    Returns
+    -------
+    dict
+        Dictionary containing the computed metrics.
+    """
+    dgp = args[0]
+    method = args[1]
+
+    data = dgp(**args)
+    method = method(**args)
+    method.fit(data)
+    estimated = method.get_estimated()
+    truth = method.get_truth()
+    
+    out_metrics = {}
+    for metric in metrics:
+        out_metrics[metric.__name__] = metric(estimated, truth)
+
+    return out_metrics
+
+def run_simulation_parallel(nsim, factorial_design, metrics, 
+                            rng=None, n_jobs=None):
     if rng is None:
         rng = np.random.default_rng()
-    
-    if not isinstance(n, list):
-        n = [n]
-    if not isinstance(k, list):
-        k = [k]
-    if not isinstance(sigma, list):
-        sigma = [sigma]
-    if not isinstance(edge_var, list):
-        edge_var = [edge_var]
-    if not isinstance(dgp, list):
-        dgp = [dgp]
-    # if not isinstance(metrics, list):
-    #     metrics = [metrics]
-    if not isinstance(solver, list):
-        solver = [solver]
-    if not isinstance(step_size, list):
-        step_size = [step_size]
-    if not isinstance(lambda_reg, list):
-        lambda_reg = [lambda_reg]
 
-    factorial_design = list(itertools.product(
-        n, k, sigma, edge_var, dgp, step_size, lambda_reg, solver
-    ))
+    if not isinstance(factorial_design, list):
+        raise ValueError("factorial_design must be a list of tuples")
+
     results = []
     for i in range(nsim):
         print(f"Simulation {i+1} of {nsim}")
         sim_args = [
-            (n, k, sigma, edge_var, dgp_func, step_size_val, lambda_reg, niters, solver_func)
-            for (n, k, sigma, edge_var, dgp_func, step_size_val, lambda_reg, solver_func) in factorial_design
+            args for args in factorial_design
         ]
         
         if n_jobs is None:
@@ -83,57 +71,25 @@ def run_simulation_parallel(nsim, n, k, sigma, edge_var, dgp, metrics,
 
     return results
 
-def run_simulation(nsim, n, k, sigma, edge_var, dgp, metrics, 
-                   solver, step_size, lambda_reg=None, parallel=False, 
-                   rng=None, niters=10, n_jobs=None):
+def run_simulation(nsim, factorial_design, metrics, parallel=False, 
+                   rng=None, n_jobs=None):
     if parallel:
         return run_simulation_parallel(
             nsim=nsim,
-            n=n,
-            k=k,
-            sigma=sigma,
-            edge_var=edge_var,
-            dgp=dgp,
+            factorial_design=factorial_design,
             metrics=metrics,
-            solver=solver,
-            step_size=step_size,
-            lambda_reg=lambda_reg,
             rng=rng,
-            n_jobs=n_jobs,
-            niters=niters
+            n_jobs=n_jobs
         )
         
     if rng is None:
         rng = np.random.default_rng()
     
-    if not isinstance(n, list):
-        n = [n]
-    if not isinstance(k, list):
-        k = [k]
-    if not isinstance(sigma, list):
-        sigma = [sigma]
-    if not isinstance(edge_var, list):
-        edge_var = [edge_var]
-    if not isinstance(dgp, list):
-        dgp = [dgp]
-    # if not isinstance(metrics, list):
-    #     metrics = [metrics]
-    if not isinstance(solver, list):
-        solver = [solver]
-    if not isinstance(step_size, list):
-        step_size = [step_size]
-    if not isinstance(lambda_reg, list):
-        lambda_reg = [lambda_reg]
-
-    factorial_design = list(itertools.product(
-        n, k, sigma, edge_var, dgp, step_size, lambda_reg, solver
-    ))
     out = []
     for i in range(nsim):
         print(f"Simulation {i+1} of {nsim}")
         sim_args = [
-            (n, k, sigma, edge_var, dgp_func, step_size_val, lambda_reg, niters, solver_func)
-            for (n, k, sigma, edge_var, dgp_func, step_size_val, lambda_reg, solver_func) in factorial_design
+            args for args in factorial_design
         ]
         results = []
         for args in tqdm(sim_args, desc="Running scenarios"):

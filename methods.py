@@ -3,6 +3,21 @@ from scipy.sparse.linalg import eigsh
 from scipy.linalg import norm
 import pandas as pd
 
+
+class BaseMethod:
+    def __init__(self):
+        pass
+
+    def __call__(self, *args, **kwargs):
+        raise NotImplementedError("Subclasses should implement this!")
+    def name(self):
+        raise NotImplementedError("Subclasses should implement this!")
+    def get_estimated(self):
+        raise NotImplementedError("Subclasses should implement this!")
+    def get_truth(self):
+        raise NotImplementedError("Subclasses should implement this!")
+    
+
 def solve_independent(A, k=2, rng=None, **kwargs):
     if rng is None:
         rng = np.random.default_rng()
