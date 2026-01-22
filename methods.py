@@ -80,14 +80,15 @@ class FitIndependent(BaseMethod):
 
 
 class RVPermutationTest(BaseMethod):
-    def __init__(self, A, B, sigma, rng=None):
+    def __init__(self, sigma, npermutations=100,
+                 alpha=0.05, rng=None, **args):
         super().__init__()
-        self.A = A
-        self.B = B
         self.sigma = sigma
+        self.alpha = alpha
+        self.npermutations = npermutations
         self.rng = np.random.default_rng() if rng is None else rng
 
-    def fit(self, k=2, nperm=100, *args, **kwargs):
+    def fit(self, A, B=None, k=2, *args, **kwargs):
         """Bootstrap the null distribution of the RV coefficient
         The function estimates the latent position of the networks independently
         using ASE, computes the RV coefficient and bootstraps the null distribution.
@@ -99,27 +100,34 @@ class RVPermutationTest(BaseMethod):
         nperm : int, optional
             Number of permutations for the bootstrap, by default 100
         """
-        Xhat = solve_independent(self.A, k=k, rng=self.rng)[0][0]
-        Zhat = solve_independent(self.B, k=k, rng=self.rng)[0][0]
+        if B is None:
+            if isinstance(A, (tuple, list)):
+                A, B = A[0], A[1]
+            else:
+                raise ValueError("B must be provided if A is not a tuple of (A, B)")
+        
+        Xhat = solve_independent(A, k=k, rng=self.rng)[0][0]
+        Zhat = solve_independent(B, k=k, rng=self.rng)[0][0]
         self.Xhat = Xhat
         self.Zhat = Zhat
         
         rv_est = rv_coefficient(Xhat, Zhat)
         self.rv_est = rv_est
         rv_distr = []
-        for _ in range(nperm):
+        for _ in range(self.npermutations):
             perm = self.rng.permutation(self.Xhat.shape[0])
             X_perm = self.Xhat[perm, :]
             rv_perm = rv_coefficient(X_perm, self.Zhat)
             rv_distr.append(rv_perm)
         self.rv_distr = rv_distr
 
-        pvalue = np.mean([rv > rv_est for rv in rv_distr])
+        pvalue = np.mean([rv < rv_est for rv in rv_distr])
         self.pvalue = pvalue
-    
+        self.rejected = self.pvalue < self.alpha
+
     def get_estimated(self):
-        """Return estimated pvalue"""
-        return self.pvalue
+        """Return true if the null hypothesis is rejected"""
+        return self.rejected
     def get_truth(self):
         """Return True if the null hypothesis is true, False otherwise"""
         return True if self.sigma == 0 else False

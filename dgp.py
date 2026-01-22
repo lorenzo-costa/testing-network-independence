@@ -48,7 +48,8 @@ class GaussianNetwork:
                  marginal_x=stats.norm,
                  marginal_z_params=None, 
                  marginal_x_params=None,
-                 edge_var=1, rng=None):
+                 edge_var=1, rng=None,
+                 **args):
         
         self.n = n
         self.k = k

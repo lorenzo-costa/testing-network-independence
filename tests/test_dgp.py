@@ -3,8 +3,7 @@ import sys
 from pathlib import Path
 import numpy as np
 from simulation_code.dgp import GaussianNetwork
-from scipy.stats import norm, chi2, expon
-
+from scipy import stats
 import sys
 from pathlib import Path
 
@@ -15,14 +14,14 @@ sys.path.append(str(parent_dir))
 
 @pytest.mark.parametrize(
     "n, k, sigma, edge_var, x_marginal, z_marginal, additional_args_x, additional_args_z",
-    [(100, 5, 0.5, 1, norm, norm, {}, {}),
-     (200, 10, 0.1, 0.5, norm, norm, {}, {}),
-     (300, 15, 0.2, 0.8, norm, norm, {}, {}),
-     (100, 5, 0.5, 1, expon, expon, {}, {}),
-     (100, 10, 0.1, 0.5, chi2, chi2, {'df': 2}, {'df': 2}),
-     (100, 10, 0.1, 0.5, norm, chi2, {}, {'df': 2}),
-     (100, 10, 0.1, 0.5, chi2, expon, {'df': 2}, {}),
-     (100, 10, 0.1, 0.5, expon, norm, {}, {})
+    [(100, 5, 0.5, 1, stats.norm, stats.norm, {}, {}),
+     (200, 10, 0.1, 0.5, stats.norm, stats.norm, {}, {}),
+     (300, 15, 0.2, 0.8, stats.norm, stats.norm, {}, {}),
+     (100, 5, 0.5, 1, stats.expon, stats.expon, {}, {}),
+     (100, 10, 0.1, 0.5, stats.chi2, stats.chi2, {'df': 2}, {'df': 2}),
+     (100, 10, 0.1, 0.5, stats.norm, stats.chi2, {}, {'df': 2}),
+     (100, 10, 0.1, 0.5, stats.chi2, stats.expon, {'df': 2}, {}),
+     (100, 10, 0.1, 0.5, stats.expon, stats.norm, {}, {})
 ]
 )
 def test_GaussianNetwork(n, k, sigma, 
