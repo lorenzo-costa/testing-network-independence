@@ -2,8 +2,11 @@ import numpy as np
 from scipy.sparse.linalg import eigsh
 from scipy.linalg import norm
 import pandas as pd
-from metrics import rv_coefficient
+from .metrics import rv_coefficient
+import sys
+import os 
 
+sys.path.append(os.path.abspath(os.path.join(os.getcwd(), '..'))) 
 
 def solve_independent_old(A, k=2, rng=None, **kwargs):
     if rng is None:

@@ -2,16 +2,12 @@ import pytest
 import sys
 from pathlib import Path
 import numpy as np
-from simulation_code.dgp import GaussianNetwork
+from src.dgp import GaussianNetwork
 from scipy import stats
 import sys
 from pathlib import Path
-from simulation_code.methods import solve_independent
+from src.methods import solve_independent
 from scipy.sparse.linalg import eigsh
-
-# add parent directory to Python path
-parent_dir = Path.cwd().parent
-sys.path.append(str(parent_dir))
 
 rng = np.random.default_rng(42)
 
@@ -25,8 +21,17 @@ def solve_independent_old(A, k=2, rng=None, **kwargs):
     return [xhat], [evals]
 
 
-def test_solve_independent(A, k, rng=rng):
-    
+@pytest.mark.parametrize(
+    "n, k, sigma",
+    [(100, 2, 1),
+     (100, 2, 0),
+     (100, 2, 0.5),
+     (100, 5, 0.5),
+     (50, 2, 0)]
+)
+def test_solve_independent(n, k, sigma, rng=rng):
+    A, _, _, _ = GaussianNetwork(n=n, k=k, sigma=sigma, rng=rng).generate()
+
     rng = np.random.default_rng(42)
     xhat, evals = solve_independent(A, k=k, rng=rng)
     # check shapes

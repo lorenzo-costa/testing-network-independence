@@ -2,7 +2,7 @@ import pytest
 import sys
 from pathlib import Path
 import numpy as np
-from simulation_code.dgp import GaussianNetwork
+from src.dgp import GaussianNetwork
 from scipy import stats
 import sys
 from pathlib import Path

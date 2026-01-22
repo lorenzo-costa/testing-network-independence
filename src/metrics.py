@@ -4,11 +4,11 @@ from scipy.linalg import norm
 
 def rv_coefficient(A, B):
     AtB = A.T @ B
-    num = np.sum(AtB * AtB)
+    num = np.sum(AtB * AtB)  # trace((A.T @ B) @ (B.T @ A))
     
-    # More efficient computation of Frobenius norms
-    den = np.linalg.norm(A, 'fro')**2 * np.linalg.norm(B, 'fro')**2
-    den = np.sqrt(den)
+    AtA = A.T @ A
+    BtB = B.T @ B
+    den = np.sqrt(np.sum(AtA * AtA) * np.sum(BtB * BtB))
     
     return num / den if den != 0 else 0
 
