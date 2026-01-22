@@ -17,7 +17,7 @@ def solve_independent_old(A, k=2, rng=None, **kwargs):
     xhat = evectors @ np.diag(np.sqrt(evals))
     return [xhat], [evals]
 
-def solve_independent(A, k=2, rng=None, **kwargs):
+def ASE(A, k=2, rng=None, **kwargs):
     if rng is None:
         rng = np.random.default_rng()
     
@@ -75,8 +75,8 @@ class FitIndependent(BaseMethod):
         self.rng = rng if rng is not None else np.random.default_rng()
 
     def fit(self, *args, **kwargs):
-        Xhat, evalsX = solve_independent(self.A, k=self.k, rng=self.rng)
-        Zhat, evalsZ = solve_independent(self.B, k=self.k, rng=self.rng)
+        Xhat, evalsX = ASE(self.A, k=self.k, rng=self.rng)
+        Zhat, evalsZ = ASE(self.B, k=self.k, rng=self.rng)
         
         self.Xhat = Xhat[0]
         self.Zhat = Zhat[0]

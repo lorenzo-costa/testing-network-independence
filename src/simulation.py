@@ -34,7 +34,7 @@ if __name__ == '__main__':
     # 3. Zip keys with values to create dictionaries
     factorial_design = [dict(zip(param_names, v)) for v in param_values]
 
-    out = run_simulation(nsim=nsim, metrics=metrics, factorial_design=factorial_design, rng=rng, parallel=False)
+    out = run_simulation(nsim=nsim, metrics=metrics, factorial_design=factorial_design, rng=rng, parallel=True)
 
     out = pd.DataFrame(out)
     out['n'] = out['args'].apply(lambda x: x['n'])
