@@ -99,14 +99,14 @@ from functools import partial
 
 def run_scenario(metrics, args):
     """Run a single scenario of the simulation.
+    
     Parameters
     ----------
     metrics : list of BaseMetric
         list of metrics to compute
-    args : tuple
-        arguments for the simulation scenario. 
-        Needs to contain dpg (BaseDPG) at index 0 and 
-        method (BaseMethod) at index 1.
+    args : dict
+        arguments for the simulation scenario
+        
     Returns
     -------
     dict
@@ -119,37 +119,30 @@ def run_scenario(metrics, args):
     estimated = method.get_estimated()
     truth = method.get_truth()
     
-    out_metrics = {}
-    for metric in metrics:
-        out_metrics[metric.get_name()] = metric(truth=truth, estimated=estimated)
+    out_metrics = {
+        metric.get_name(): metric(truth=truth, estimated=estimated)
+        for metric in metrics
+    }
     out_metrics['args'] = args
     return out_metrics
 
 
-def run_single_simulation(args_tuple):
-    """Run all scenarios for a single simulation iteration.
-    
-    Parameters
-    ----------
-    args_tuple : tuple
-        Tuple of (sim_idx, factorial_design, metrics)
-        
-    Returns
-    -------
-    list
-        List of results for all scenarios in this simulation
-    """
-    sim_idx, factorial_design, metrics = args_tuple
-    # print(f"Simulation {sim_idx + 1}")
-    results = []
-    for args in factorial_design:
-        scenario_out = run_scenario(metrics, args)
-        results.append(scenario_out)
-    return results
+def run_scenario_wrapper(args_and_metrics):
+    """Wrapper to unpack args for pool.map"""
+    args, metrics = args_and_metrics
+    return run_scenario(metrics, args)
 
 
 def run_simulation_parallel(nsim, factorial_design, metrics, 
                            rng=None, n_jobs=None):
+    """Run simulations in parallel with improved batching.
+    
+    Key optimizations:
+    1. Flatten all work upfront (nsim * len(factorial_design) scenarios)
+    2. Use single Pool.map instead of nested loops
+    3. Better chunk sizing for load balancing
+    4. Reduced overhead from pool management
+    """
     if rng is None:
         rng = np.random.default_rng()
     
@@ -159,18 +152,28 @@ def run_simulation_parallel(nsim, factorial_design, metrics,
     if n_jobs is None:
         n_jobs = cpu_count()
     
-    # Create arguments for each simulation
-    sim_args = [(i, factorial_design, metrics) for i in range(nsim)]
+    # Create all scenario arguments upfront (flattened structure)
+    all_scenarios = [
+        (args, metrics) 
+        for _ in range(nsim) 
+        for args in factorial_design
+    ]
     
-    chunk_size = max(1, nsim // (n_jobs * 10))
+    total_scenarios = len(all_scenarios)
+    
+    # Better chunk size: balance between overhead and load distribution
+    chunk_size = max(1, total_scenarios // (n_jobs * 4))
     
     results = []
     with Pool(processes=n_jobs) as pool:
-        with tqdm(total=nsim, desc="Running simulations") as pbar:
-            for sim_results in pool.imap(
-                run_single_simulation, sim_args, chunksize=chunk_size
+        with tqdm(total=total_scenarios, desc="Running scenarios") as pbar:
+            # Use imap_unordered for better performance (order doesn't matter)
+            for result in pool.imap_unordered(
+                run_scenario_wrapper, 
+                all_scenarios, 
+                chunksize=chunk_size
             ):
-                results.extend(sim_results)
+                results.append(result)
                 pbar.update(1)
     
     return results

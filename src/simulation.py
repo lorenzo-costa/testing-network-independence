@@ -1,20 +1,17 @@
-
-from dgp import GaussianNetwork
-from metrics import Rejection, FalseRejection
-from methods import RVPermutationTest
-from simulation_functions import run_simulation
-from analyse_functions import aggregate_results
+from src.dgp import GaussianNetwork
+from src.metrics import Rejection, FalseRejection
+from src.methods import RVPermutationTest
+from src.simulation_functions import run_simulation
+from src.analyse_functions import aggregate_results
 
 import numpy as np 
-import matplotlib.pyplot as plt
-from scipy.linalg import norm
 import pandas as pd
 from scipy import stats
 from itertools import product
-
+from datetime import datetime
 
 if __name__ == '__main__':
-    nsim = 50
+    nsim = 100
     n = [50, 100, 200, 250, 300]
     k = [2, 5]
     sigma = [0]
@@ -43,7 +40,7 @@ if __name__ == '__main__':
     out['n'] = out['args'].apply(lambda x: x['n'])
     out['k'] = out['args'].apply(lambda x: x['k'])
     out['edge_var'] = out['args'].apply(lambda x: x['edge_var'])
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
 
-    agg_out = aggregate_results(out, y_axis='FalseRejection', x_axis='n', factors=['edge_var', 'k'])
-
-    out.to_csv("simulation_results.csv", index=False)
+    out.to_csv(f"results/simulation_results_{timestamp}.csv", index=False)
