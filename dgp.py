@@ -122,3 +122,22 @@ class GaussianNetwork:
         B = (B + B.T) / 2
         
         return A, B, Z, X
+
+    def generate_gaussian_data(self):
+        I_k = np.eye(self.k)
+        R = np.block([
+                [I_k,          self.sigma * I_k],
+                [self.sigma * I_k,  I_k        ]
+            ])
+
+        q = self.rng.multivariate_normal(np.zeros(2*self.k), R, size=self.n)
+        Z = q[:, :self.k]
+        X = q[:, self.k:]
+
+        A = self.rng.normal(loc=Z @ Z.T, scale=self.edge_var)
+        B = self.rng.normal(loc=X @ X.T, scale=self.edge_var)
+        # symmetrise
+        A = (A + A.T) / 2 
+        B = (B + B.T) / 2
+        
+        return A, B, Z, X

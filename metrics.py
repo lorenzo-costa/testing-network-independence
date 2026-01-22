@@ -3,8 +3,13 @@ from scipy.sparse.linalg import eigsh
 from scipy.linalg import norm
 
 def rv_coefficient(A, B):
-    num = np.trace((A.T @ B) @ (B.T @ A))
-    den = norm(A.T @ A, 'fro') * norm(B.T @ B, 'fro')
+    AtB = A.T @ B
+    num = np.sum(AtB * AtB)
+    
+    # More efficient computation of Frobenius norms
+    den = np.linalg.norm(A, 'fro')**2 * np.linalg.norm(B, 'fro')**2
+    den = np.sqrt(den)
+    
     return num / den if den != 0 else 0
 
 def mse(X, Xhat):
