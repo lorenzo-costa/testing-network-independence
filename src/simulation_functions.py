@@ -7,6 +7,7 @@ from multiprocessing import Pool, cpu_count
 import os
 from functools import partial 
 
+# # version 1
 # def run_scenario(metrics, args):
 #     """Run a single scenario of the simulation.
 
@@ -97,6 +98,7 @@ from functools import partial
         
 #     return results
 
+# version 2
 def run_scenario(metrics, args):
     """Run a single scenario of the simulation.
     
@@ -131,7 +133,6 @@ def run_scenario_wrapper(args_and_metrics):
     """Wrapper to unpack args for pool.map"""
     args, metrics = args_and_metrics
     return run_scenario(metrics, args)
-
 
 def run_simulation_parallel(nsim, factorial_design, metrics, 
                            rng=None, n_jobs=None):

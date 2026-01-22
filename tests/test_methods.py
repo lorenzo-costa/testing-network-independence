@@ -42,6 +42,6 @@ def test_solve_independent(n, k, sigma, rng=rng):
     
     rng = np.random.default_rng(42)
     xhat_old, evals_old = solve_independent_old(A, k=k, rng=rng)
-    
-    assert np.allclose(xhat[0], xhat_old[0])
-    assert np.allclose(evals[0], evals_old[0])
+
+    assert np.allclose(xhat[0], xhat_old[0], rtol=1e-5)
+    assert np.allclose(evals[0], evals_old[0], rtol=1e-5)

@@ -11,15 +11,15 @@ from itertools import product
 from datetime import datetime
 
 if __name__ == '__main__':
-    nsim = 100
-    n = [50, 100, 200, 250, 300]
-    k = [2, 5]
+    nsim = 10000
+    n = [100, 200, 250, 300, 500]
+    k = [2, 5, 10]
     sigma = [0]
     alpha = [0.05]
     npermutations = [5000]
     marginal_z = [stats.norm]
     marginal_x = [stats.norm]
-    edge_var = [0.5, 1]
+    edge_var = [0.5, 1, 2]
     dgp = [GaussianNetwork]
     methods = [RVPermutationTest]
     metrics = [FalseRejection()]

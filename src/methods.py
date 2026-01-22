@@ -21,8 +21,8 @@ def solve_independent(A, k=2, rng=None, **kwargs):
     if rng is None:
         rng = np.random.default_rng()
     
-    v0 = rng.standard_normal(size=A.shape[0])  # slightly faster than normal()
-    evals, evectors = eigsh(A, k=k, which='LM', v0=v0)
+    v0 = rng.standard_normal(size=A.shape[0])
+    evals, evectors = eigsh(A, k=k, which='LM', v0=v0, tol=1e-12)
     evals = np.maximum(evals - 0.5, 0)
     xhat = evectors * np.sqrt(evals)
     
