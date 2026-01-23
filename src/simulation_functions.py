@@ -99,7 +99,7 @@ from functools import partial
 #     return results
 
 # version 2
-def run_scenario(metrics, args):
+def run_scenario(metrics, args, method_params=None):
     """Run a single scenario of the simulation.
     
     Parameters
@@ -117,7 +117,7 @@ def run_scenario(metrics, args):
     dgp = args['dgp'](**args)
     method = args['method'](**args)
     data = dgp.generate()
-    method.fit(data)
+    method.fit(data, **(method_params if method_params else {}))
     estimated = method.get_estimated()
     truth = method.get_truth()
     
@@ -129,12 +129,15 @@ def run_scenario(metrics, args):
     return out_metrics
 
 
-def run_scenario_wrapper(args_and_metrics):
+def run_scenario_wrapper(args):
     """Wrapper to unpack args for pool.map"""
-    args, metrics = args_and_metrics
-    return run_scenario(metrics, args)
+    args, metrics, method_params = args
+    return run_scenario(metrics, args, method_params=method_params)
 
-def run_simulation_parallel(nsim, factorial_design, metrics, 
+def run_simulation_parallel(nsim, 
+                            factorial_design, 
+                            metrics, 
+                            method_params=None,
                            rng=None, n_jobs=None):
     """Run simulations in parallel with improved batching.
     
@@ -155,7 +158,7 @@ def run_simulation_parallel(nsim, factorial_design, metrics,
     
     # Create all scenario arguments upfront (flattened structure)
     all_scenarios = [
-        (args, metrics) 
+        (args, metrics, method_params) 
         for _ in range(nsim) 
         for args in factorial_design
     ]
@@ -163,7 +166,7 @@ def run_simulation_parallel(nsim, factorial_design, metrics,
     total_scenarios = len(all_scenarios)
     
     # Better chunk size: balance between overhead and load distribution
-    chunk_size = max(1, total_scenarios // (n_jobs * 4))
+    chunk_size = max(1, total_scenarios // (n_jobs * 64))
     
     results = []
     with Pool(processes=n_jobs) as pool:
@@ -180,13 +183,19 @@ def run_simulation_parallel(nsim, factorial_design, metrics,
     return results
 
 
-def run_simulation(nsim, factorial_design, metrics, parallel=False, 
-                   rng=None, n_jobs=None):
+def run_simulation(nsim, 
+                   factorial_design, 
+                   metrics, 
+                   method_params=None,
+                   parallel=False, 
+                   rng=None, 
+                   n_jobs=None):
     if parallel:
         return run_simulation_parallel(
             nsim=nsim,
             factorial_design=factorial_design,
             metrics=metrics,
+            method_params=method_params,
             rng=rng,
             n_jobs=n_jobs
         )
@@ -198,7 +207,7 @@ def run_simulation(nsim, factorial_design, metrics, parallel=False,
     for i in range(nsim):
         print(f"Simulation {i+1} of {nsim}")
         for args in tqdm(factorial_design, desc="Running scenarios"):
-            scenario_out = run_scenario(metrics, args)
+            scenario_out = run_scenario(metrics, args, method_params=method_params)
             results.append(scenario_out)
     
     return results
