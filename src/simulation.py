@@ -20,7 +20,7 @@ if __name__ == '__main__':
     npermutations = [2000]
     marginal_z = [stats.norm]
     marginal_x = [stats.norm]
-    edge_var = [1, 5, 10]
+    edge_var = [1, 3, 5]
     dgp = [GaussianNetwork]
     methods = [LLKRatioTest, RVPermutationTest]
     metrics = [FalseRejection(), TrueRejection(), Rejection()]

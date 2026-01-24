@@ -18,7 +18,7 @@ def solve_independent_old(A, k=2, rng=None, **kwargs):
         rng = np.random.default_rng()
     v0 = rng.normal(size=A.shape[0])
     evals, evectors = eigsh(A, k=k, which='LM', v0=v0)
-    evals = np.maximum(evals-0.5, 0)
+    evals = np.clip(np.maximum(evals-0.5, 0), 0, 1e5) # clip for numerical stability
     xhat = evectors @ np.diag(np.sqrt(evals))
     return [xhat], [evals]
 
@@ -155,7 +155,6 @@ class RVPermutationTest(BaseMethod):
         return False if self.sigma == 0 else True
 
 
-
 class LLKRatioTest(BaseMethod):
     """Asymptotic Likelihood Ratio Test
     
@@ -231,7 +230,7 @@ class LLKRatioTest(BaseMethod):
         # compute llk_score
         cca_matrix = np.linalg.inv(Xhat.T @ Xhat) @ (Xhat.T @ Zhat) @ np.linalg.inv(Zhat.T @ Zhat) @ (Zhat.T @ Xhat)
         cca_evals = np.linalg.eigvalsh(cca_matrix)
-        llk_score = np.prod((1-cca_evals**2)**(-n/2))
+        # llk_score = np.prod((1-cca_evals**2)**(-n/2))
         # wilks score defined as llkratio**(2/n)
         wilks_score = np.prod((1-cca_evals))
         
@@ -260,7 +259,7 @@ class LLKRatioTest(BaseMethod):
             self.p_value = 1.0 - stats.f.cdf(F_stat, df1, df2)
         
         self.rejected = self.p_value < self.alpha
-        return llk_score
+        return wilks_score
 
     def get_estimated(self):
         """Return true if the null hypothesis is rejected"""
