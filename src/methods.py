@@ -227,12 +227,19 @@ class LLKRatioTest(BaseMethod):
         self.Xhat = Xhat
         self.Zhat = Zhat
         
-        # compute llk_score
-        cca_matrix = np.linalg.inv(Xhat.T @ Xhat) @ (Xhat.T @ Zhat) @ np.linalg.inv(Zhat.T @ Zhat) @ (Zhat.T @ Xhat)
-        cca_evals = np.linalg.eigvalsh(cca_matrix)
-        # llk_score = np.prod((1-cca_evals**2)**(-n/2))
-        # wilks score defined as llkratio**(2/n)
-        wilks_score = np.prod((1-cca_evals))
+        # # compute llk_score
+        # cca_matrix = np.linalg.inv(Xhat.T @ Xhat) @ (Xhat.T @ Zhat) @ np.linalg.inv(Zhat.T @ Zhat) @ (Zhat.T @ Xhat)
+        # cca_evals = np.linalg.eigvals(cca_matrix)
+        # # llk_score = np.prod((1-cca_evals**2)**(-n/2))
+        # # wilks score defined as llkratio**(2/n)
+        # wilks_score = np.prod((1-cca_evals))
+        
+        # faster code
+        Qx, _ = np.linalg.qr(Xhat)
+        Qz, _ = np.linalg.qr(Zhat)
+        S = np.linalg.svd(Qx.T @ Qz, compute_uv=False)
+        cca_evals = S**2
+        wilks_score = np.prod(1 - cca_evals)
         
         # approximate quantiles of the null 
         if self.approximation == 'beta':
