@@ -140,7 +140,7 @@ class RVPermutationTest(BaseMethod):
             rv_distr.append(rv_perm)
         self.rv_distr = rv_distr
 
-        pvalue = np.mean([rv < rv_est for rv in rv_distr])
+        pvalue = np.mean([rv >= rv_est for rv in rv_distr])
         self.pvalue = pvalue
         self.rejected = self.pvalue < self.alpha
 
@@ -148,8 +148,11 @@ class RVPermutationTest(BaseMethod):
         """Return true if the null hypothesis is rejected"""
         return self.rejected
     def get_truth(self):
-        """Return True if the null hypothesis is true, False otherwise"""
-        return True if self.sigma == 0 else False
+        """
+        FIXED: Return True if H1 is true (Signal exists), False if H0 is true.
+        """
+        # Old code: return True if self.sigma == 0 else False (BACKWARD)
+        return False if self.sigma == 0 else True
 
 
 
@@ -264,13 +267,19 @@ class LLKRatioTest(BaseMethod):
         return self.rejected
     
     def get_truth(self):
-        """Return True if the null hypothesis is true, False otherwise"""
-        return True if self.sigma == 0 else False
+        """Return True if the null hypothesis is False (i.e. should be rejected)"""
+        return False if self.sigma == 0 else True
     
 class OMNITest(BaseMethod):
-    def __init__(self, sigma, npermutations=100,
-                 alpha=0.05, rng=None, **args):
+    def __init__(self, 
+                 sigma,
+                 alpha=0.05, 
+                 rng=None, 
+                 **args):
         super().__init__()
+        self.sigma = sigma
+        self.alpha = alpha
+        self.rng = rng if rng is not None else np.random.default_rng()
 
     def fit(self, A, B=None, k=2, *args, **kwargs):
         """OMNI embedding with ase, approximate asymptotic distribution, 
@@ -286,14 +295,15 @@ class OMNITest(BaseMethod):
         self.Mhat = ASE(M, k=k, rng=self.rng)[0][0]
         self.Xhat = self.Mhat[:A.shape[0]]
         self.Zhat = self.Mhat[A.shape[0]:]
+        
         return
 
     def get_estimated(self):
         """Return true if the null hypothesis is rejected"""
         return self.rejected
     def get_truth(self):
-        """Return True if the null hypothesis is true, False otherwise"""
-        return True if self.sigma == 0 else False
+        """Return True if the null hypothesis is False (i.e. should be rejected)"""
+        return False if self.sigma == 0 else True
 
 # class FitDependent(BaseMethod):
 #     # TODO: finish implementation of this

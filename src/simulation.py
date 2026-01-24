@@ -12,31 +12,26 @@ from datetime import datetime
 from functools import partial
 
 if __name__ == '__main__':
-    nsim = 200
-    n = [50, 100, 200, 300, 400]
+    nsim = 10000
+    n = [10, 50, 100, 150, 200, 250]
     k = [2, 5]
-    sigma = [0]
+    sigma = [0, 0.5, 0.99]
     alpha = [0.05]
     npermutations = [2000]
     marginal_z = [stats.norm]
     marginal_x = [stats.norm]
-    edge_var = [1]
+    edge_var = [1, 5, 10]
     dgp = [GaussianNetwork]
-    methods = [LLKRatioTest]
-    metrics = [FalseRejection(), TrueRejection()]
-    approximation = ['chi-sq', 'F-distr']
+    methods = [LLKRatioTest, RVPermutationTest]
+    metrics = [FalseRejection(), TrueRejection(), Rejection()]
+    approximation = ['F-distr']
 
     rng = np.random.default_rng(1)
 
-    # for rvtest
-    # param_names = ["dgp", "method", "n", "k", "sigma", "alpha", "npermutations", "marginal_z", "marginal_x", "edge_var"]
-    # param_values = product(dgp, methods, n, k, sigma, alpha, npermutations, marginal_z, marginal_x, edge_var)
-
-    # for llkratio test
-    param_names = ["dgp", "method", "n", "k", "sigma", "alpha", 
+    param_names = ["dgp", "method", "n", "k", "sigma", "alpha", "npermutations", 
                    "marginal_z", "marginal_x", "edge_var", "approximation"]
-    param_values = product(dgp, methods, n, k, sigma, alpha, marginal_z, 
-                           marginal_x, edge_var, approximation)
+    param_values = product(dgp, methods, n, k, sigma, alpha, npermutations, 
+                           marginal_z, marginal_x, edge_var, approximation)
 
     # 3. Zip keys with values to create dictionaries
     factorial_design = [dict(zip(param_names, v)) for v in param_values]

@@ -105,31 +105,28 @@ class Rejection(BaseMetric):
 
     def get_name(self):
         return "Rejection"
-    
+
 class FalseRejection(BaseMetric):
-    """False Rejection (i.e. Type I error)"""
+    """False Rejection (Type I Error / False Positive)"""
     def __call__(self, estimated, truth):
-        # Type I Error: Null is True (1) AND we Reject (1)
-        if truth == 1 and estimated == 1:
-            return True
-        # Correct Decision: Null is True (1) but we do NOT Reject (0)
-        elif truth == 1 and estimated == 0:
-            return False
-        # If truth is 0 (Null is false), Type I error is impossible
-        return False
-
-    def get_name(self):
-        return "FalseRejection"
-
-class TrueAcceptance(BaseMetric):
-    """True Acceptance (i.e. Type II error)"""
-    def __call__(self, estimated, truth):
+        # Truth is False (H0), but we Estimated True (Reject H0)
         if truth == 0 and estimated == 1:
             return True
         return False
 
     def get_name(self):
-        return "TrueAcceptance"
+        return "FalseRejection"
+
+class FalseAcceptance(BaseMetric):
+    """False Acceptance (Type II Error / False Negative)"""
+    def __call__(self, estimated, truth):
+        # Truth is True (H1), but we Estimated False (Accept H0)
+        if truth == 1 and estimated == 0:
+            return True
+        return False
+
+    def get_name(self):
+        return "FalseAcceptance"
 
 class TrueRejection(BaseMetric):
     """True Rejection"""
@@ -141,12 +138,12 @@ class TrueRejection(BaseMetric):
     def get_name(self):
         return "TrueRejection"
 
-class TrueNegative(BaseMetric):
-    """True Negative"""
+class TrueAcceptance(BaseMetric):
+    """True Acceptance"""
     def __call__(self, estimated, truth):
         if truth == 0 and estimated == 0:
             return True
         return False
 
     def get_name(self):
-        return "TrueNegative"
+        return "TrueAcceptance"
