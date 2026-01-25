@@ -1,5 +1,5 @@
 from src.dgp import GaussianNetwork
-from src.metrics import Rejection, FalseRejection, TrueRejection
+from src.metrics import Rejection, FalseRejection, TrueRejection, FalseAcceptance, TrueAcceptance
 from src.methods import RVPermutationTest, LLKRatioTest
 from src.simulation_functions import run_simulation
 from src.analyse_functions import aggregate_results
@@ -12,18 +12,18 @@ from datetime import datetime
 from functools import partial
 
 if __name__ == '__main__':
-    nsim = 10000
-    n = [10, 50, 100, 150, 200, 250]
-    k = [2, 5]
-    sigma = [0, 0.5, 0.99]
+    nsim = 20000
+    n = [10, 25, 50, 100, 150]
+    k = [2, 3, 5]
+    sigma = [0, 0.001, 0.01, 0.1, 0.99]
     alpha = [0.05]
     npermutations = [2000]
     marginal_z = [stats.norm]
-    marginal_x = [stats.norm]
+    marginal_x = [stats.norm] 
     edge_var = [1, 3, 5]
     dgp = [GaussianNetwork]
     methods = [LLKRatioTest, RVPermutationTest]
-    metrics = [FalseRejection(), TrueRejection(), Rejection()]
+    metrics = [FalseRejection(), TrueRejection(), Rejection(), FalseAcceptance(), TrueAcceptance()]
     approximation = ['F-distr']
 
     rng = np.random.default_rng(1)
