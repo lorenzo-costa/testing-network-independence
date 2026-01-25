@@ -10,7 +10,7 @@ from functools import partial
 # TODO:
 # - this could be sped up by having dpg run once and then feed data to each arg combination
 # (it has a specific name i don't remember not)
-
+# - add intermediate saves to avoid losing all progress if interrupted
 def run_scenario(metrics, args, method_params=None):
     """Run a single scenario of the simulation.
     
