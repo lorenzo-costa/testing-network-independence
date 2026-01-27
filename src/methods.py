@@ -6,14 +6,76 @@ from .metrics import rv_coefficient
 import sys
 import os 
 from scipy import stats
+from scipy.optimize import minimize
+from scipy.special import expit
 
 sys.path.append(os.path.abspath(os.path.join(os.getcwd(), '..'))) 
 
 # TODO:
-# - implement hoff llk ratio method 
 # - implement OMNI method 
 
+def logistic_grad(params, X, y, mu=None):
+    """Utility function for scipy optimizer returning loss and gradient for logistic regression"""
+    if mu is None:
+        coef = params[:-1]
+        mu = params[-1]
+    else:
+        coef = params
+
+    logits = X @ coef + mu
+    loss = np.sum(np.logaddexp(0, logits) - y * logits)
+    p = expit(logits)
+    error = p - y
+    grad_w = X.T @ error
+    return loss, grad_w
+
+def solve_logistic_scipy(X, y, mu=None):
+    """Solve logistic regression with (possibly) fixed intercept and positive coefficients
+
+    Parameters
+    ----------
+    X : np.ndarray
+        Feature matrix
+    y : np.ndarray
+        Target vector
+    mu : float, optional
+        Intercept term, by default None. If None estimate it
+
+    Returns
+    -------
+    np.ndarray
+        Coefficients of the logistic regression
+    float
+        Intercept term
+    """
+    
+    n_samples, n_features = X.shape
+    
+    if mu is None:
+        initial_params = np.zeros(n_features + 1)
+        bounds = [(0, None)] * n_features + [(None, None)]
+        # jac=True tells scipy the objective function returns (loss, gradient)
+        res = minimize(logistic_grad, 
+                    initial_params, 
+                    args=(X, y),
+                    method='L-BFGS-B', 
+                    bounds=bounds, 
+                    jac=True)
+    else:
+        initial_params = np.zeros(n_features)
+        bounds = [(0, None)] * n_features
+        # jac=True tells scipy the objective function returns (loss, gradient)
+        res = minimize(logistic_grad, 
+                    initial_params, 
+                    args=(X, y, mu),
+                    method='L-BFGS-B', 
+                    bounds=bounds, 
+                    jac=True)
+
+    return res.x[:n_features], res.x[-1] if mu is None else mu
+
 def MLE_logistic(A, k=2, rng=None, shrink=0, **kwargs):
+    #print("WARNING: MLE_logistic is experimental and might not work as expected.")
     """Maximum Likelihood Estimation for Logistic link adjacency matrix
 
     Parameters
@@ -35,22 +97,44 @@ def MLE_logistic(A, k=2, rng=None, shrink=0, **kwargs):
     if rng is None:
         rng = np.random.default_rng()
         
+    # useful quantities
     n = A.shape[0]
-    a_norm = norm(A, 'fro')
-    # mean centered matrix
-    B = A - 1/(n*(n-1)) * a_norm
-    v0 = rng.standard_normal(size=A.shape[0])
     
-    evals, evectors = eigsh(B, k=k, which='LA', v0=v0)
+    # in the paper it seems to use the frob norm NOT squared, i get better results
+    # squaring it
+    a_norm_scaled = 1/(n*(n-1)) * norm(A, 'fro')**2
+    eps = 1e-10
+    a_norm_scaled = np.clip(a_norm_scaled, eps, 1.0 - eps)
+    
+    # mean centered matrix
+    A_centered = A - a_norm_scaled
+    
+    # from paper, mle of \mu
+    mu_hat = -np.log(a_norm_scaled/(1-a_norm_scaled))
+    
+    # use this to fix randomness in eigsh
+    v0 = rng.standard_normal(size=A_centered.shape[0])
+
+    evals, evectors = eigsh(A_centered, k=k, which='LM', v0=v0)
     idx = np.argsort(evals)[::-1]
     evals = evals[idx]
     evectors = evectors[:, idx]
+
+    # build the matrix of features
+    X_big = np.zeros((n*(n-1)//2, k))
+
+    for i in range(k):
+        t = np.outer(evectors[:, i], evectors[:, i])
+        X_big[:, i] = t[np.triu_indices(n, k=1)] 
     
-    # Consistency: Clip negative eigenvalues to 0
-    evals = np.maximum(evals, 0)
-    
-    # Scale eigenvectors by sqrt of eigenvalues
-    xhat = evectors * np.sqrt(evals)
+    # define as target the upper diagonal part of A (equal to lower since 
+    # A symmetric)
+    target = A[np.triu_indices(n, k=1)]
+
+    # solve logistic regression with fixed mu and positive constrained coefs
+    coefs, mu = solve_logistic_scipy(X_big, target, mu=mu_hat)
+
+    xhat = evectors * np.sqrt(coefs)
     
     return [xhat], [evals]
 
@@ -138,14 +222,16 @@ class FitIndependent(BaseMethod):
     def __init__(self, 
                  rng=None,
                  shrink=0,
+                 solver=None,
                  **kwargs):
         super().__init__()
         
         self.rng = rng if rng is not None else np.random.default_rng()
         self.shrink = shrink
+        self.solver = solver if solver is not None else ASE
 
     def fit(self, A, B=None, X=None, Z=None, 
-            solver=ASE, *args, **kwargs):
+            *args, **kwargs):
         # this implementatio is mega messy, need to make it better TODO
         if B is None:
             if isinstance(A, (tuple, list)):
@@ -177,8 +263,8 @@ class FitIndependent(BaseMethod):
             self.Z = Z
             self.k = Z.shape[1]
 
-        Xhat, evalsX = solver(self.A, k=self.k, rng=self.rng, shrink=self.shrink)
-        Zhat, evalsZ = solver(self.B, k=self.k, rng=self.rng, shrink=self.shrink)
+        Xhat, evalsX = self.solver(self.A, k=self.k, rng=self.rng, shrink=self.shrink)
+        Zhat, evalsZ = self.solver(self.B, k=self.k, rng=self.rng, shrink=self.shrink)
 
         self.Xhat = Xhat[0]
         self.Zhat = Zhat[0]

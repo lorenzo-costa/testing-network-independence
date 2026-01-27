@@ -1,6 +1,6 @@
-from src.dgp import GaussianNetwork
-from src.metrics import Rejection, FalseRejection, TrueRejection, FalseAcceptance, TrueAcceptance
-from src.methods import RVPermutationTest, LLKRatioTest
+from src.dgp import GaussianNetwork, BernoulliNetwork
+from src.metrics import Rejection, FalseRejection, TrueRejection, FalseAcceptance, TrueAcceptance, RelativeFrobeniusNorm
+from src.methods import RVPermutationTest, LLKRatioTest, MLE_gaussian, MLE_logistic, ASE, FitIndependent
 from src.simulation_functions import run_simulation
 from src.analyse_functions import aggregate_results
 
@@ -12,26 +12,30 @@ from datetime import datetime
 from functools import partial
 
 if __name__ == '__main__':
-    nsim = 20000
-    n = [10, 25, 50, 100, 150]
+    print("Starting simulation logistic rdpg")
+    
+    nsim = 10000
+    n = [50, 100, 200, 300]
     k = [2, 3, 5]
-    sigma = [0, 0.001, 0.01, 0.1, 0.99]
+    sigma = [0]
     alpha = [0.05]
-    npermutations = [2000]
     marginal_z = [stats.norm]
-    marginal_x = [stats.norm] 
+    marginal_x = [stats.norm]
+    marginal_x_params = [{'a': 2, 'b': 5}]
+    marginal_z_params = [{'a': 2, 'b': 5}]
+    solver = [MLE_logistic, ASE, MLE_gaussian]
     edge_var = [1, 3, 5]
-    dgp = [GaussianNetwork]
-    methods = [LLKRatioTest, RVPermutationTest]
-    metrics = [FalseRejection(), TrueRejection(), Rejection(), FalseAcceptance(), TrueAcceptance()]
-    approximation = ['F-distr']
+    dgp = [GaussianNetwork, BernoulliNetwork]
+    methods = [FitIndependent]
+    metrics = [RelativeFrobeniusNorm(gram_matrix=True)]
 
     rng = np.random.default_rng(1)
 
-    param_names = ["dgp", "method", "n", "k", "sigma", "alpha", "npermutations", 
-                   "marginal_z", "marginal_x", "edge_var", "approximation"]
-    param_values = product(dgp, methods, n, k, sigma, alpha, npermutations, 
-                           marginal_z, marginal_x, edge_var, approximation)
+    param_names = ["dgp", "method", "n", "k", "sigma", "alpha", "marginal_z", "marginal_x", 
+                "edge_var", "solver"]
+
+    param_values = product(dgp, methods, n, k, sigma, alpha, marginal_z, marginal_x, 
+                       edge_var, solver)
 
     # 3. Zip keys with values to create dictionaries
     factorial_design = [dict(zip(param_names, v)) for v in param_values]
