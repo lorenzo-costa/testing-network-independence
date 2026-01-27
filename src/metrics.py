@@ -89,13 +89,41 @@ class MSE(BaseMetric):
 
 class RelativeFrobeniusNorm(BaseMetric):
     """Relative Frobenius Norm, computed as ||Xhat - X||_F / ||X||_F"""
+    def __init__(self, gram_matrix=False):
+        super().__init__()
+        # when feeding the estimate latent positions we compute the gram matrix to 
+        # get rid of orthogonal invariance
+        self.gram_matrix = gram_matrix
+
     def __call__(self, estimated, truth):
+        # another very messy implementation, change this TODO
+        if isinstance(estimated, tuple):
+            out = []
+            for i in range(len(estimated)):
+                if self.gram_matrix:
+                    # Compute the Gram matrix for both estimated and truth
+                    est = estimated[i] @ estimated[i].T
+                    true = truth[i] @ truth[i].T
+                else:
+                    est = estimated[i]
+                    true = truth[i]
+                    
+                num = norm(est-true, 'fro')
+                den = norm(true, 'fro')
+                out.append(num / den if den != 0 else 0)
+            return out
+        
+        if self.gram_matrix:
+            # Compute the Gram matrix for both estimated and truth
+            estimated = estimated @ estimated.T
+            truth = truth @ truth.T
+            
         num = norm(estimated-truth, 'fro')
         den = norm(truth, 'fro')
         return num / den if den != 0 else 0
 
     def get_name(self):
-        return "Relative Frobenius Norm"
+        return "RelativeFrobeniusNorm"
 
 class Rejection(BaseMetric):
     def __call__(self, truth, estimated):

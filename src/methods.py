@@ -13,22 +13,98 @@ sys.path.append(os.path.abspath(os.path.join(os.getcwd(), '..')))
 # - implement hoff llk ratio method 
 # - implement OMNI method 
 
-def solve_independent_old(A, k=2, rng=None, **kwargs):
+def MLE_logistic(A, k=2, rng=None, shrink=0, **kwargs):
+    """Maximum Likelihood Estimation for Logistic link adjacency matrix
+
+    Parameters
+    ----------
+    A : np.ndarray
+        Adjacency matrix
+    k : int, optional
+        Number of latent dimensions, by default 2
+    rng : np.random.Generator, optional
+        Random number generator, by default None
+    shrink : int, optional
+        Shrinkage parameter, by default 0
+
+    Returns
+    -------
+    _type_
+        _description_
+    """
     if rng is None:
         rng = np.random.default_rng()
-    v0 = rng.normal(size=A.shape[0])
-    evals, evectors = eigsh(A, k=k, which='LM', v0=v0)
-    evals = np.clip(np.maximum(evals-0.5, 0), 0, 1e5) # clip for numerical stability
-    xhat = evectors @ np.diag(np.sqrt(evals))
+        
+    n = A.shape[0]
+    a_norm = norm(A, 'fro')
+    # mean centered matrix
+    B = A - 1/(n*(n-1)) * a_norm
+    v0 = rng.standard_normal(size=A.shape[0])
+    
+    evals, evectors = eigsh(B, k=k, which='LA', v0=v0)
+    idx = np.argsort(evals)[::-1]
+    evals = evals[idx]
+    evectors = evectors[:, idx]
+    
+    # Consistency: Clip negative eigenvalues to 0
+    evals = np.maximum(evals, 0)
+    
+    # Scale eigenvectors by sqrt of eigenvalues
+    xhat = evectors * np.sqrt(evals)
+    
     return [xhat], [evals]
 
-def ASE(A, k=2, rng=None, **kwargs):
+def ASE(A, k=2, rng=None, shrink=0, **kwargs):
+    if rng is None:
+        rng = np.random.default_rng()
+
+    # v0 for fixing randomness
+    v0 = rng.standard_normal(size=A.shape[0])
+    
+    # don't remember why LA instead of LM
+    evals, evectors = eigsh(A, k=k, which='LA', v0=v0)
+    idx = np.argsort(evals)[::-1]
+    evals = evals[idx]
+    evectors = evectors[:, idx]
+        
+    evals = np.maximum(evals, 0)
+    
+    xhat = evectors * np.sqrt(evals)
+    
+    return [xhat], [evals]
+
+def MLE_gaussian(A, k=2, rng=None, shrink=0.5, **kwargs):
+    """Maximum Likelihood Estimation for Gaussian adjacency matrix
+
+    Parameters
+    ----------
+    A : np.ndarray
+        Adjacency matrix
+    k : int, optional
+        Number of latent dimensions, by default 2
+    rng : np.random.Generator, optional
+        Random number generator, by default None
+    shrink : float, optional
+        Shrinkage parameter, by default 0.5 (coming from MLE computation)
+
+    Returns
+    -------
+    np.ndarray, np.ndarray
+        Estimated latent positions, estimated eigenvalues
+    """
     if rng is None:
         rng = np.random.default_rng()
     
     v0 = rng.standard_normal(size=A.shape[0])
     evals, evectors = eigsh(A, k=k, which='LM', v0=v0)
-    evals = np.abs(evals-0.5)
+    # evals = np.clip(np.maximum(evals-0.5, 0), 0, 1e5) # clip for numerical stability
+    evals = np.abs(evals-shrink)
+
+    # manual sorting just to be sure
+    idx = np.argsort(evals)[::-1]
+    evals = evals[idx]
+    evectors = evectors[:, idx]
+    
     xhat = evectors * np.sqrt(evals)
     
     return [xhat], [evals]
@@ -59,8 +135,27 @@ class FitIndependent(BaseMethod):
     Z: np.ndarray
         Latent positions for second network
     """
-    def __init__(self, A, B, X=None, Z=None, rng=None):
+    def __init__(self, 
+                 rng=None,
+                 shrink=0,
+                 **kwargs):
         super().__init__()
+        
+        self.rng = rng if rng is not None else np.random.default_rng()
+        self.shrink = shrink
+
+    def fit(self, A, B=None, X=None, Z=None, 
+            solver=ASE, *args, **kwargs):
+        # this implementatio is mega messy, need to make it better TODO
+        if B is None:
+            if isinstance(A, (tuple, list)):
+                if len(A) == 2:
+                    A, B = A[0], A[1]
+                elif len(A) == 4:
+                    A, B, X, Z = A[0], A[1], A[2], A[3]
+            else:
+                raise ValueError("B must be provided if A is not a tuple of (A, B)")
+        
         self.A = A
         self.B = B
         if A.shape != B.shape:
@@ -68,20 +163,23 @@ class FitIndependent(BaseMethod):
             self.nb = B.shape[0]
         else:
             self.n = A.shape[0]
-            
+        
+        # saving the true X and Z when fitting is not the most natural/logical 
+        # implementation but I need this to make it consistent with RV permutation test
+        # a better way would be to feed A, B when initialising but this required me 
+        # to change code in simulation_functions.py
+        # adding this as a TODO
+        
         if X is not None:
             self.X = X
             self.k = X.shape[1]
         if Z is not None:
             self.Z = Z
             self.k = Z.shape[1]
-        
-        self.rng = rng if rng is not None else np.random.default_rng()
 
-    def fit(self, *args, **kwargs):
-        Xhat, evalsX = ASE(self.A, k=self.k, rng=self.rng)
-        Zhat, evalsZ = ASE(self.B, k=self.k, rng=self.rng)
-        
+        Xhat, evalsX = solver(self.A, k=self.k, rng=self.rng, shrink=self.shrink)
+        Zhat, evalsZ = solver(self.B, k=self.k, rng=self.rng, shrink=self.shrink)
+
         self.Xhat = Xhat[0]
         self.Zhat = Zhat[0]
 
@@ -96,18 +194,22 @@ class FitIndependent(BaseMethod):
     def get_truth(self):
         return self.X, self.Z
 
-
-
 class RVPermutationTest(BaseMethod):
-    def __init__(self, sigma, npermutations=100,
-                 alpha=0.05, rng=None, **args):
+    def __init__(self, 
+                 sigma, 
+                 npermutations=100,
+                 alpha=0.05, 
+                 rng=None, 
+                 **args):
         super().__init__()
         self.sigma = sigma
         self.alpha = alpha
         self.npermutations = npermutations
         self.rng = np.random.default_rng() if rng is None else rng
 
-    def fit(self, A, B=None, k=2, *args, **kwargs):
+    def fit(self, A, B=None, 
+            solver=ASE, 
+            k=2, *args, **kwargs):
         """Bootstrap the null distribution of the RV coefficient
         The function estimates the latent position of the networks independently
         using ASE, computes the RV coefficient and bootstraps the null distribution.
@@ -118,6 +220,11 @@ class RVPermutationTest(BaseMethod):
             Number of dimensions for the latent space, by default 2
         nperm : int, optional
             Number of permutations for the bootstrap, by default 100
+        solver : callable, optional
+            Function to estimate the latent positions. 
+            Possible values choices:
+            - ASE for adjacency spectral embedding
+            - MLE gaussian for modified version of ASE for MLE in Gaussian-Gaussian model
         """
         if B is None:
             if isinstance(A, (tuple, list)):
@@ -125,8 +232,8 @@ class RVPermutationTest(BaseMethod):
             else:
                 raise ValueError("B must be provided if A is not a tuple of (A, B)")
         
-        Xhat = ASE(A, k=k, rng=self.rng)[0][0]
-        Zhat = ASE(B, k=k, rng=self.rng)[0][0]
+        Xhat = solver(A, k=k, rng=self.rng)[0][0]
+        Zhat = solver(B, k=k, rng=self.rng)[0][0]
         self.Xhat = Xhat
         self.Zhat = Zhat
         
@@ -200,6 +307,7 @@ class LLKRatioTest(BaseMethod):
             A, 
             B=None, 
             k=2, 
+            solver=ASE,
             **kwargs):
         """Estimates the latent positions and computes p-value
 
@@ -211,6 +319,10 @@ class LLKRatioTest(BaseMethod):
             Adjacency matrix for second network
         k : int, optional
             Number of dimensions for the latent space, by default 2
+        solver : callable, optional
+            Function to estimate the latent positions. Possible values choices:
+            - ASE for adjacency spectral embedding
+            - MLE gaussian for modified version of ASE for MLE in Gaussian-Gaussian model
         """
         if B is None:
             if isinstance(A, (tuple, list)):
@@ -222,8 +334,8 @@ class LLKRatioTest(BaseMethod):
         n = A.shape[0]
         
         # extract latent positions
-        Xhat = ASE(A, k=k, rng=self.rng)[0][0]
-        Zhat = ASE(B, k=k, rng=self.rng)[0][0]
+        Xhat = solver(A, k=k, rng=self.rng)[0][0]
+        Zhat = solver(B, k=k, rng=self.rng)[0][0]
         self.Xhat = Xhat
         self.Zhat = Zhat
         
@@ -275,41 +387,42 @@ class LLKRatioTest(BaseMethod):
     def get_truth(self):
         """Return True if the null hypothesis is False (i.e. should be rejected)"""
         return False if self.sigma == 0 else True
+
     
-class OMNITest(BaseMethod):
-    def __init__(self, 
-                 sigma,
-                 alpha=0.05, 
-                 rng=None, 
-                 **args):
-        super().__init__()
-        self.sigma = sigma
-        self.alpha = alpha
-        self.rng = rng if rng is not None else np.random.default_rng()
+# class OMNITest(BaseMethod):
+#     def __init__(self, 
+#                  sigma,
+#                  alpha=0.05, 
+#                  rng=None, 
+#                  **args):
+#         super().__init__()
+#         self.sigma = sigma
+#         self.alpha = alpha
+#         self.rng = rng if rng is not None else np.random.default_rng()
 
-    def fit(self, A, B=None, k=2, *args, **kwargs):
-        """OMNI embedding with ase, approximate asymptotic distribution, 
-        get p-value.
-        Assumes only two graphs
+#     def fit(self, A, B=None, k=2, *args, **kwargs):
+#         """OMNI embedding with ase, approximate asymptotic distribution, 
+#         get p-value.
+#         Assumes only two graphs
         
-        Need to figure our point 2
-        """
-        # build OMNI matrix
-        M = np.block([[A, (A+B)/2],
-                       [(A+B)/2, B]])
+#         Need to figure our point 2
+#         """
+#         # build OMNI matrix
+#         M = np.block([[A, (A+B)/2],
+#                        [(A+B)/2, B]])
         
-        self.Mhat = ASE(M, k=k, rng=self.rng)[0][0]
-        self.Xhat = self.Mhat[:A.shape[0]]
-        self.Zhat = self.Mhat[A.shape[0]:]
+#         self.Mhat = ASE(M, k=k, rng=self.rng)[0][0]
+#         self.Xhat = self.Mhat[:A.shape[0]]
+#         self.Zhat = self.Mhat[A.shape[0]:]
         
-        return
+#         return
 
-    def get_estimated(self):
-        """Return true if the null hypothesis is rejected"""
-        return self.rejected
-    def get_truth(self):
-        """Return True if the null hypothesis is False (i.e. should be rejected)"""
-        return False if self.sigma == 0 else True
+#     def get_estimated(self):
+#         """Return true if the null hypothesis is rejected"""
+#         return self.rejected
+#     def get_truth(self):
+#         """Return True if the null hypothesis is False (i.e. should be rejected)"""
+#         return False if self.sigma == 0 else True
 
 # class FitDependent(BaseMethod):
 #     # TODO: finish implementation of this
