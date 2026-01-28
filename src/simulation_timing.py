@@ -14,8 +14,8 @@ from functools import partial
 if __name__ == '__main__':
     print("Starting simulation logistic rdpg")
     
-    nsim = 5000
-    n = [50, 100, 150, 200]
+    nsim = 2
+    n = [50, 100, 150]
     k = [2, 5]
     sigma = [0]
     alpha = [0.05]
@@ -24,7 +24,7 @@ if __name__ == '__main__':
     marginal_x_params = [{'a': 2, 'b': 5}]
     marginal_z_params = [{'a': 2, 'b': 5}]
     solver = [MLE_logistic, ASE, MLE_gaussian]
-    edge_var = [1, 3]
+    edge_var = [1]
     dgp = [GaussianNetwork, BernoulliNetwork]
     methods = [FitIndependent]
     metrics = [RelativeFrobeniusNorm(gram_matrix=True)]
@@ -44,7 +44,7 @@ if __name__ == '__main__':
                          metrics=metrics, 
                          factorial_design=factorial_design, 
                          rng=rng, 
-                         parallel=True)
+                         parallel=False)
 
     out = pd.DataFrame(out)
     out['n'] = out['args'].apply(lambda x: x['n'])

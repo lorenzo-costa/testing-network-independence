@@ -8,25 +8,57 @@ import os
 from scipy import stats
 from scipy.optimize import minimize
 from scipy.special import expit
+import numba as nb 
 
 sys.path.append(os.path.abspath(os.path.join(os.getcwd(), '..'))) 
 
 # TODO:
 # - implement OMNI method 
 
-def logistic_grad(params, X, y, mu=None):
-    """Utility function for scipy optimizer returning loss and gradient for logistic regression"""
-    if mu is None:
-        coef = params[:-1]
-        mu = params[-1]
-    else:
-        coef = params
 
-    logits = X @ coef + mu
-    loss = np.sum(np.logaddexp(0, logits) - y * logits)
-    p = expit(logits)
-    error = p - y
-    grad_w = X.T @ error
+# def logistic_grad(params, X, y, mu=None):
+#     """Utility function for scipy optimizer returning loss and gradient for logistic regression"""
+#     if mu is None:
+#         coef = params[:-1]
+#         mu = params[-1]
+#     else:
+#         coef = params
+
+#     logits = X @ coef + mu
+    
+#     loss = np.sum(np.logaddexp(0, logits) - y * logits)
+    
+#     p = 1.0 / (1.0 + np.exp(-logits))
+#     error = p - y
+#     grad_w = X.T @ error
+#     grad_mu = np.sum(error) if mu is None else 0
+    
+#     return loss, grad_w + grad_mu
+
+@nb.njit(cache=True)
+def logistic_grad_fixed_mu(coef, X, y, mu):
+    n, d = X.shape
+    grad_w = np.zeros(d)
+    loss = 0.0
+    
+    for i in range(n):
+        # Calculate logit for this row
+        logit = np.dot(X[i], coef) + mu
+        
+        # Numerically stable log-loss: log(1 + exp(z))
+        if logit > 0:
+            loss += logit + np.log(1.0 + np.exp(-logit)) - y[i] * logit
+        else:
+            loss += np.log(1.0 + np.exp(logit)) - y[i] * logit
+        
+        # Probability and Error
+        p = 1.0 / (1.0 + np.exp(-logit))
+        err = p - y[i]
+        
+        # Accumulate gradient
+        for j in range(d):
+            grad_w[j] += X[i, j] * err
+            
     return loss, grad_w
 
 def solve_logistic_scipy(X, y, mu=None):
@@ -65,7 +97,7 @@ def solve_logistic_scipy(X, y, mu=None):
         initial_params = np.zeros(n_features)
         bounds = [(0, None)] * n_features
         # jac=True tells scipy the objective function returns (loss, gradient)
-        res = minimize(logistic_grad, 
+        res = minimize(logistic_grad_fixed_mu, 
                     initial_params, 
                     args=(X, y, mu),
                     method='L-BFGS-B', 
