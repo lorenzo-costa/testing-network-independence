@@ -28,6 +28,31 @@ def rv_coefficient(A, B):
     
     return num / den if den != 0 else 0
 
+def rv_coefficient_adjusted(A, B):
+    """Adjusted version of RV coef from Mordant Gilles; Segers Johan (2022).
+    
+    Given Sigma_XX pxp matrix, Sigma_ZZ qxq matrix (here Sigma_XX = AA^T) define:
+    - Lambda_x, Lambda_y the diagonal matrices of eigenvalues of Sigma_XX, Sigma_ZZ
+    - Pi = [I_q, O_px(q-p)]
+    The adjusted RV coefficient is defined as:
+        RV(Sigma_XX, Sigma_ZZ) = Tr(Sigma_XX Sigma_ZZ)/Tr(Lambda_X Pi Lambda_Z)
+        
+    """
+    AtB = A.T @ B
+    # Flattening to 1D and using dot(x, x) is often faster than sum(x*x)
+    temp_num = AtB.ravel()
+    num = temp_num.dot(temp_num)
+
+    # note evals of A^TA are square of singular values 
+    # so use svd to avoid matrix computation
+    sx = np.linalg.svd(A, compute_uv=False)
+    sy = np.linalg.svd(B, compute_uv=False)
+    m = min(len(sx), len(sy))
+    den = np.sum((sx[:m]**2) * (sy[:m]**2))
+
+    return num / den if den != 0 else 0
+    
+
 def mse(X, Xhat):
     return ((X-Xhat)**2).mean()
 
@@ -79,6 +104,13 @@ class RVCoefficient(BaseMetric):
 
     def get_name(self):
         return "RV Coefficient"
+
+class AdjustedRVCoefficient(BaseMetric):
+    def __call__(self, estimated, truth):
+        return rv_coefficient_adjusted(estimated, truth)
+
+    def get_name(self):
+        return "Adjusted RV Coefficient"
 
 class MSE(BaseMetric):
     def __call__(self, estimated, truth):

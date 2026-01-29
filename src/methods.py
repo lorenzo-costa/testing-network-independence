@@ -2,7 +2,7 @@ import numpy as np
 from scipy.sparse.linalg import eigsh
 from scipy.linalg import norm
 import pandas as pd
-from .metrics import rv_coefficient
+from .metrics import rv_coefficient, rv_coefficient_adjusted
 import sys
 import os 
 from scipy import stats
@@ -15,25 +15,6 @@ sys.path.append(os.path.abspath(os.path.join(os.getcwd(), '..')))
 # TODO:
 # - implement OMNI method 
 
-
-# def logistic_grad(params, X, y, mu=None):
-#     """Utility function for scipy optimizer returning loss and gradient for logistic regression"""
-#     if mu is None:
-#         coef = params[:-1]
-#         mu = params[-1]
-#     else:
-#         coef = params
-
-#     logits = X @ coef + mu
-    
-#     loss = np.sum(np.logaddexp(0, logits) - y * logits)
-    
-#     p = 1.0 / (1.0 + np.exp(-logits))
-#     error = p - y
-#     grad_w = X.T @ error
-#     grad_mu = np.sum(error) if mu is None else 0
-    
-#     return loss, grad_w + grad_mu
 
 @nb.njit(cache=True)
 def logistic_grad_fixed_mu(coef, X, y, mu):
@@ -303,8 +284,8 @@ class FitIndependent(BaseMethod):
 
         return Xhat, Zhat
 
-    def name(self):
-        return "IndependentMethod"
+    def get_name(self):
+        return "FitIndependent"
 
     def get_estimated(self):
         return self.Xhat, self.Zhat
@@ -325,8 +306,11 @@ class RVPermutationTest(BaseMethod):
         self.npermutations = npermutations
         self.rng = np.random.default_rng() if rng is None else rng
 
-    def fit(self, A, B=None, 
-            solver=ASE, 
+    def fit(self, 
+            A, 
+            B=None, 
+            solver=ASE,
+            rv_coefficient_function=rv_coefficient,
             k=2, *args, **kwargs):
         """Bootstrap the null distribution of the RV coefficient
         The function estimates the latent position of the networks independently
@@ -355,19 +339,21 @@ class RVPermutationTest(BaseMethod):
         self.Xhat = Xhat
         self.Zhat = Zhat
         
-        rv_est = rv_coefficient(Xhat, Zhat)
+        rv_est = rv_coefficient_function(Xhat, Zhat)
         self.rv_est = rv_est
         rv_distr = []
         for _ in range(self.npermutations):
             perm = self.rng.permutation(self.Xhat.shape[0])
             X_perm = self.Xhat[perm, :]
-            rv_perm = rv_coefficient(X_perm, self.Zhat)
+            rv_perm = rv_coefficient_function(X_perm, self.Zhat)
             rv_distr.append(rv_perm)
         self.rv_distr = rv_distr
 
         pvalue = np.mean([rv >= rv_est for rv in rv_distr])
         self.pvalue = pvalue
         self.rejected = self.pvalue < self.alpha
+
+        return self.Xhat, self.Zhat
 
     def get_estimated(self):
         """Return true if the null hypothesis is rejected"""
@@ -378,6 +364,8 @@ class RVPermutationTest(BaseMethod):
         """
         # Old code: return True if self.sigma == 0 else False (BACKWARD)
         return False if self.sigma == 0 else True
+    def get_name(self):
+        return "RVPermutationTest"
 
 
 class LLKRatioTest(BaseMethod):

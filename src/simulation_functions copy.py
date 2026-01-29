@@ -10,7 +10,7 @@ from functools import partial
 # TODO:
 # - this could be sped up by having dpg run once and then feed data to each arg combination
 # (it has a specific name i don't remember not)
-# - add intermediate save 
+# - add intermediate saves to avoid losing all progress if interrupted
 def run_scenario(metrics, args, method_params=None):
     """Run a single scenario of the simulation.
     
@@ -35,7 +35,7 @@ def run_scenario(metrics, args, method_params=None):
     
     out_metrics = {
         metric.get_name(): metric(truth=truth, estimated=estimated)
-        for metric in metrics
+        for metric in metrics[method.get_name()]
     }
     out_metrics['args'] = args
     return out_metrics

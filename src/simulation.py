@@ -14,28 +14,29 @@ from functools import partial
 if __name__ == '__main__':
     print("Starting simulation logistic rdpg")
     
-    nsim = 5000
-    n = [50, 100, 150, 200]
-    k = [2, 5]
-    sigma = [0]
+    nsim = 500
+    n = [50, 100, 150, 200, 250]
+    k = [2, 3, 5]
+    sigma = [0, 0.01, 0.1, 0.5]
     alpha = [0.05]
     marginal_z = [stats.norm]
     marginal_x = [stats.norm]
     marginal_x_params = [{'a': 2, 'b': 5}]
     marginal_z_params = [{'a': 2, 'b': 5}]
-    solver = [MLE_logistic, ASE, MLE_gaussian]
-    edge_var = [1, 3]
+    solver = [MLE_logistic, MLE_gaussian, ASE]
+    edge_var = [1, 3, 5]
     dgp = [GaussianNetwork, BernoulliNetwork]
     methods = [FitIndependent]
     metrics = [RelativeFrobeniusNorm(gram_matrix=True)]
+    approximation = ['F-distr']
 
     rng = np.random.default_rng(1)
 
     param_names = ["dgp", "method", "n", "k", "sigma", "alpha", "marginal_z", "marginal_x", 
-                "edge_var", "solver"]
+                "edge_var", "solver", "approximation"]
 
     param_values = product(dgp, methods, n, k, sigma, alpha, marginal_z, marginal_x, 
-                       edge_var, solver)
+                       edge_var, solver, approximation)
 
     # 3. Zip keys with values to create dictionaries
     factorial_design = [dict(zip(param_names, v)) for v in param_values]
