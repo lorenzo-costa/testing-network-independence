@@ -9,6 +9,7 @@ from scipy import stats
 from scipy.optimize import minimize
 from scipy.special import expit
 import numba as nb 
+from .solvers import ASE
 
 sys.path.append(os.path.abspath(os.path.join(os.getcwd(), '..'))) 
 
@@ -52,46 +53,55 @@ class FitIndependent(BaseMethod):
         self.shrink = shrink
         self.solver = solver if solver is not None else ASE
 
-    def fit(self, A, B=None, X=None, Z=None, 
+    def fit(self, 
+            data,
+            k=None, 
             *args, **kwargs):
-        # this implementatio is mega messy, need to make it better TODO
-        if B is None:
-            if isinstance(A, (tuple, list)):
-                if len(A) == 2:
-                    A, B = A[0], A[1]
-                elif len(A) == 4:
-                    A, B, X, Z = A[0], A[1], A[2], A[3]
-            else:
-                raise ValueError("B must be provided if A is not a tuple of (A, B)")
-        
+        """Estimate latent positions independently
+
+        Parameters
+        ----------
+        data : tuple
+            A tuple containing (A, B, X, Z) where A and B are adjacency matrices
+            and X and Z are latent positions.
+        k : int, optional
+            Number of dimensions for the latent space, by default None
+
+        Returns
+        -------
+        Xhat, Zhat
+            Estimated latent positions for the two networks.
+
+        Raises
+        ------
+        ValueError
+            If the input data is not valid.
+        """
+
+        if not isinstance(data, tuple) or len(data) != 4:
+            raise ValueError("Invalid data format. Expected a tuple of (A, B, X, Z).")
+
+        A, B, X, Z = data
+
         self.A = A
         self.B = B
-        if A.shape != B.shape:
-            self.na = A.shape[0]
-            self.nb = B.shape[0]
+        self.X = X
+        self.Z = Z
+        if X is not None or Z is not None:
+            self.k = X.shape[1] if X is not None else Z.shape[1]
         else:
-            self.n = A.shape[0]
-        
-        # saving the true X and Z when fitting is not the most natural/logical 
-        # implementation but I need this to make it consistent with RV permutation test
-        # a better way would be to feed A, B when initialising but this required me 
-        # to change code in simulation_functions.py
-        # adding this as a TODO
-        
-        if X is not None:
-            self.X = X
-            self.k = X.shape[1]
-        if Z is not None:
-            self.Z = Z
-            self.k = Z.shape[1]
+            if k is None:
+                raise ValueError("Number of dimensions (k) must be specified if X and Z are not provided.")
+            self.k = k
 
         Xhat, evalsX = self.solver(self.A, k=self.k, rng=self.rng, shrink=self.shrink)
         Zhat, evalsZ = self.solver(self.B, k=self.k, rng=self.rng, shrink=self.shrink)
 
         self.Xhat = Xhat[0]
         self.Zhat = Zhat[0]
+        
 
-        return Xhat, Zhat
+        return self.Xhat, self.Zhat, X, Z
 
     def get_name(self):
         return "FitIndependent"
@@ -100,7 +110,7 @@ class FitIndependent(BaseMethod):
         return None
 
     def get_truth(self):
-        return self.X, self.Z
+        return None
 
 class RVPermutationTest(BaseMethod):
     def __init__(self, 
@@ -108,17 +118,17 @@ class RVPermutationTest(BaseMethod):
                  npermutations=100,
                  alpha=0.05, 
                  rng=None, 
+                 solver=None,
                  **args):
         super().__init__()
         self.sigma = sigma
         self.alpha = alpha
         self.npermutations = npermutations
         self.rng = np.random.default_rng() if rng is None else rng
+        self.solver = solver if solver is not None else ASE
 
     def fit(self, 
-            A, 
-            B=None, 
-            solver=ASE,
+            data,
             rv_coefficient_function=rv_coefficient_adjusted,
             k=2, *args, **kwargs):
         """Bootstrap the null distribution of the RV coefficient
@@ -127,24 +137,34 @@ class RVPermutationTest(BaseMethod):
 
         Parameters
         ----------
+        data : list
+            A list containing (A, B, X, Z) where A and B are adjacency matrices
+            and X and Z are latent positions.
         k : int, optional
             Number of dimensions for the latent space, by default 2
-        nperm : int, optional
-            Number of permutations for the bootstrap, by default 100
         solver : callable, optional
             Function to estimate the latent positions. 
             Possible values choices:
             - ASE for adjacency spectral embedding
             - MLE gaussian for modified version of ASE for MLE in Gaussian-Gaussian model
+
+        Returns
+        -------
+        Xhat, Zhat
+            Estimated latent positions for the two networks.
         """
-        if B is None:
-            if isinstance(A, (tuple, list)):
-                A, B = A[0], A[1]
-            else:
-                raise ValueError("B must be provided if A is not a tuple of (A, B)")
         
-        Xhat = solver(A, k=k, rng=self.rng)[0][0]
-        Zhat = solver(B, k=k, rng=self.rng)[0][0]
+        A, B, X, Z = data
+
+        if X is not None and Z is not None:
+            self.k = X.shape[1] if X is not None else Z.shape[1]
+        else:
+            if k is None:
+                raise ValueError("Number of dimensions (k) must be specified if X and Z are not provided.")
+            self.k = k
+
+        Xhat = self.solver(A, k=self.k, rng=self.rng)[0][0]
+        Zhat = self.solver(B, k=self.k, rng=self.rng)[0][0]
         self.Xhat = Xhat
         self.Zhat = Zhat
         
@@ -162,7 +182,7 @@ class RVPermutationTest(BaseMethod):
         self.pvalue = pvalue
         self.rejected = self.pvalue < self.alpha
 
-        return self.Xhat, self.Zhat
+        return self.Xhat, self.Zhat, X, Z
 
     def get_estimated(self):
         """Return true if the null hypothesis is rejected"""
@@ -171,12 +191,12 @@ class RVPermutationTest(BaseMethod):
         """
         FIXED: Return True if H1 is true (Signal exists), False if H0 is true.
         """
-        # Old code: return True if self.sigma == 0 else False (BACKWARD)
         return False if self.sigma == 0 else True
     def get_name(self):
         return "RVPermutationTest"
 
 
+# TODO finish modifying this
 class LLKRatioTest(BaseMethod):
     """Asymptotic Likelihood Ratio Test
     

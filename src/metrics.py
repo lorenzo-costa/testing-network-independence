@@ -210,7 +210,8 @@ class TrueAcceptance(BaseMetric):
 
 class ComputeAll(BaseMetric):
     """Single class to compute testing and latent position errors"""
-    def __call__(self, estimated=None, truth=None, true_latent=None, estimated_latent=None):
+    def __call__(self, estimated=None, truth=None, fit_out=None):
+        out = {}
         if estimated is not None and truth is not None:
             # compute test metrics
             test_metrics = {
@@ -220,15 +221,20 @@ class ComputeAll(BaseMetric):
                 'TrueRejection': TrueRejection()(estimated, truth),
                 'TrueAcceptance': TrueAcceptance()(estimated, truth)
             }
+            out.update(test_metrics)
 
-        if true_latent is not None and estimated_latent is not None:
+        if fit_out is not None:
+            Xhat, Zhat, X, Z = fit_out
             # compute latent position metrics
             latent_metrics = {
-                'MSE': MSE()(estimated_latent, true_latent),
-                'RelativeFrobeniusNorm': RelativeFrobeniusNorm(gram_matrix=True)(estimated_latent, true_latent),
+                'MSE_x': MSE()(Xhat, X),
+                'MSE_z': MSE()(Zhat, Z),
+                'RelativeFrobeniusNorm_x': RelativeFrobeniusNorm(gram_matrix=True)(Xhat, X),
+                'RelativeFrobeniusNorm_z': RelativeFrobeniusNorm(gram_matrix=True)(Zhat, Z),
             }
+            out.update(latent_metrics)
 
-        return {**test_metrics, **latent_metrics} if true_latent is not None and estimated_latent is not None else test_metrics
+        return out
 
     def get_name(self):
         return "ComputeAll"
