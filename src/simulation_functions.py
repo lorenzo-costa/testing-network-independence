@@ -29,14 +29,20 @@ def run_scenario(metrics, args, method_params=None):
     dgp = args['dgp'](**args)
     method = args['method'](**args)
     data = dgp.generate()
-    method.fit(data, **(method_params if method_params else {}))
+    fit_out = method.fit(data, **(method_params if method_params else {}))
     estimated = method.get_estimated()
     truth = method.get_truth()
     
-    out_metrics = {
-        metric.get_name(): metric(truth=truth, estimated=estimated)
-        for metric in metrics
-    }
+    if len(metrics) == 1:
+        # here assume that metric() return a dict with maney metrics inside, probabley 
+        # there's a smarter way to do this
+        out_metrics = metrics[0](truth=truth, estimated=estimated, fit_out=fit_out)
+
+    else:
+        out_metrics = {
+            metric.get_name(): metric(truth=truth, estimated=estimated, fit_out=fit_out)
+            for metric in metrics
+        }
     out_metrics['args'] = args
     return out_metrics
 

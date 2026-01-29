@@ -158,7 +158,7 @@ class RelativeFrobeniusNorm(BaseMetric):
         return "RelativeFrobeniusNorm"
 
 class Rejection(BaseMetric):
-    def __call__(self, truth, estimated):
+    def __call__(self, truth, estimated, fit_out=None):
         if estimated == 1:
             return True
         return False
@@ -168,7 +168,7 @@ class Rejection(BaseMetric):
 
 class FalseRejection(BaseMetric):
     """False Rejection (Type I Error / False Positive)"""
-    def __call__(self, estimated, truth):
+    def __call__(self, estimated, truth, fit_out=None):
         # Truth is False (H0), but we Estimated True (Reject H0)
         if truth == 0 and estimated == 1:
             return True
@@ -179,7 +179,7 @@ class FalseRejection(BaseMetric):
 
 class FalseAcceptance(BaseMetric):
     """False Acceptance (Type II Error / False Negative)"""
-    def __call__(self, estimated, truth):
+    def __call__(self, estimated, truth, fit_out=None):
         # Truth is True (H1), but we Estimated False (Accept H0)
         if truth == 1 and estimated == 0:
             return True
@@ -190,7 +190,7 @@ class FalseAcceptance(BaseMetric):
 
 class TrueRejection(BaseMetric):
     """True Rejection"""
-    def __call__(self, estimated, truth):
+    def __call__(self, estimated, truth, fit_out=None):
         if truth == 1 and estimated == 1:
             return True
         return False
@@ -200,10 +200,35 @@ class TrueRejection(BaseMetric):
 
 class TrueAcceptance(BaseMetric):
     """True Acceptance"""
-    def __call__(self, estimated, truth):
+    def __call__(self, estimated, truth, fit_out=None):
         if truth == 0 and estimated == 0:
             return True
         return False
 
     def get_name(self):
         return "TrueAcceptance"
+
+class ComputeAll(BaseMetric):
+    """Single class to compute testing and latent position errors"""
+    def __call__(self, estimated=None, truth=None, true_latent=None, estimated_latent=None):
+        if estimated is not None and truth is not None:
+            # compute test metrics
+            test_metrics = {
+                'Rejection': Rejection()(estimated, truth),
+                'FalseRejection': FalseRejection()(estimated, truth),
+                'FalseAcceptance': FalseAcceptance()(estimated, truth),
+                'TrueRejection': TrueRejection()(estimated, truth),
+                'TrueAcceptance': TrueAcceptance()(estimated, truth)
+            }
+
+        if true_latent is not None and estimated_latent is not None:
+            # compute latent position metrics
+            latent_metrics = {
+                'MSE': MSE()(estimated_latent, true_latent),
+                'RelativeFrobeniusNorm': RelativeFrobeniusNorm(gram_matrix=True)(estimated_latent, true_latent),
+            }
+
+        return {**test_metrics, **latent_metrics} if true_latent is not None and estimated_latent is not None else test_metrics
+
+    def get_name(self):
+        return "ComputeAll"

@@ -53,7 +53,7 @@ if __name__ == '__main__':
     out['edge_var'] = out['args'].apply(lambda x: x.get('edge_var', 'NA'))
     out['approximation'] = out['args'].apply(lambda x: x.get('approximation', 'NA'))
     out['dgp'] = out['args'].apply(lambda x: x['dgp'].__name__)
-    #out['solver'] = out['args'].apply(lambda x: x.get('solver', 'NA').__name__)
+    out['solver'] = out['args'].apply(lambda x: x.get('solver', 'NA').__name__)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
 
