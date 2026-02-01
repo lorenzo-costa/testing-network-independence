@@ -46,16 +46,18 @@ class FitIndependent(BaseMethod):
                  rng=None,
                  shrink=0,
                  solver=None,
+                 k=None,
                  **kwargs):
         super().__init__()
         
         self.rng = rng if rng is not None else np.random.default_rng()
         self.shrink = shrink
         self.solver = solver if solver is not None else ASE
+        self.k = k
+        print(k)
 
     def fit(self, 
             data,
-            k=None, 
             *args, **kwargs):
         """Estimate latent positions independently
 
@@ -87,12 +89,13 @@ class FitIndependent(BaseMethod):
         self.B = B
         self.X = X
         self.Z = Z
+        
         if X is not None or Z is not None:
             self.k = X.shape[1] if X is not None else Z.shape[1]
         else:
-            if k is None:
+            if self.k is None:
                 raise ValueError("Number of dimensions (k) must be specified if X and Z are not provided.")
-            self.k = k
+            self.k = self.k
 
         Xhat, evalsX = self.solver(self.A, k=self.k, rng=self.rng, shrink=self.shrink)
         Zhat, evalsZ = self.solver(self.B, k=self.k, rng=self.rng, shrink=self.shrink)
@@ -119,6 +122,7 @@ class RVPermutationTest(BaseMethod):
                  alpha=0.05, 
                  rng=None, 
                  solver=None,
+                 k=None,
                  **args):
         super().__init__()
         self.sigma = sigma
@@ -126,11 +130,13 @@ class RVPermutationTest(BaseMethod):
         self.npermutations = npermutations
         self.rng = np.random.default_rng() if rng is None else rng
         self.solver = solver if solver is not None else ASE
+        self.k = k
 
     def fit(self, 
             data,
             rv_coefficient_function=rv_coefficient_adjusted,
-            k=2, *args, **kwargs):
+            *args,
+            **kwargs):
         """Bootstrap the null distribution of the RV coefficient
         The function estimates the latent position of the networks independently
         using ASE, computes the RV coefficient and bootstraps the null distribution.
@@ -159,10 +165,10 @@ class RVPermutationTest(BaseMethod):
         if X is not None and Z is not None:
             self.k = X.shape[1] if X is not None else Z.shape[1]
         else:
-            if k is None:
+            if self.k is None:
                 raise ValueError("Number of dimensions (k) must be specified if X and Z are not provided.")
-            self.k = k
-
+            self.k = self.k
+        
         Xhat = self.solver(A, k=self.k, rng=self.rng)[0][0]
         Zhat = self.solver(B, k=self.k, rng=self.rng)[0][0]
         self.Xhat = Xhat
@@ -227,21 +233,21 @@ class LLKRatioTest(BaseMethod):
                  alpha=0.05, 
                  rng=None, 
                  approximation='beta', 
+                 k=None,
                  **args):
         
         super().__init__()
         self.sigma = sigma
         self.alpha = alpha
         self.approximation = approximation
+        self.k = k
         if rng is None:
             self.rng = np.random.default_rng()
         else:
             self.rng = rng
 
     def fit(self, 
-            A, 
-            B=None, 
-            k=2, 
+            data, 
             solver=ASE,
             **kwargs):
         """Estimates the latent positions and computes p-value
@@ -259,14 +265,11 @@ class LLKRatioTest(BaseMethod):
             - ASE for adjacency spectral embedding
             - MLE gaussian for modified version of ASE for MLE in Gaussian-Gaussian model
         """
-        if B is None:
-            if isinstance(A, (tuple, list)):
-                A, B = A[0], A[1]
-            else:
-                raise ValueError("B must be provided if A is not a tuple of (A, B)")
         
+        A, B, X, Z = data
         
         n = A.shape[0]
+        k = self.k
         
         # extract latent positions
         Xhat = solver(A, k=k, rng=self.rng)[0][0]
@@ -313,7 +316,7 @@ class LLKRatioTest(BaseMethod):
             self.p_value = 1.0 - stats.f.cdf(F_stat, df1, df2)
         
         self.rejected = self.p_value < self.alpha
-        return wilks_score
+        return self.Xhat, self.Zhat, X, Z
 
     def get_estimated(self):
         """Return true if the null hypothesis is rejected"""

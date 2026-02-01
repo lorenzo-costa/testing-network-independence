@@ -36,7 +36,7 @@ def run_scenario(metrics, args, method_params=None):
     if len(metrics) == 1:
         # here assume that metric() return a dict with maney metrics inside, probabley 
         # there's a smarter way to do this
-        out_metrics = metrics[0](truth=truth, estimated=estimated, fit_out=fit_out)
+        out_metrics = {metrics[0].get_name(): metrics[0](truth=truth, estimated=estimated, fit_out=fit_out)}
 
     else:
         out_metrics = {

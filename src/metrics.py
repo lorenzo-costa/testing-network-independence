@@ -127,8 +127,12 @@ class RelativeFrobeniusNorm(BaseMetric):
         # get rid of orthogonal invariance
         self.gram_matrix = gram_matrix
 
-    def __call__(self, estimated, truth):
+    def __call__(self, estimated=None, truth=None, fit_out=None):
         # another very messy implementation, change this TODO
+        if fit_out is not None:
+            estimated = fit_out[:2]
+            truth = fit_out[2:]
+            
         if isinstance(estimated, tuple):
             out = []
             for i in range(len(estimated)):
@@ -153,6 +157,7 @@ class RelativeFrobeniusNorm(BaseMetric):
         num = norm(estimated-truth, 'fro')
         den = norm(truth, 'fro')
         return num / den if den != 0 else 0
+        
 
     def get_name(self):
         return "RelativeFrobeniusNorm"

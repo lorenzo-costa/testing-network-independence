@@ -114,13 +114,13 @@ class GaussianNetwork(BaseDPG):
         # apply inverse CDF of desired marginals
         Z = self.marginal_z.ppf(u_z, **self.marginal_z_params)
         X = self.marginal_x.ppf(u_x, **self.marginal_x_params)
-        
+
         # generate adj matrices
         # note, for some marginals (eg heavy tails) the dot product can be very large, 
         # maybe it is worth looking into ways of somehow normalising this
         expected_A = Z @ Z.T
         expected_B = X @ X.T
-        
+
         A = self.rng.normal(loc=expected_A, scale=self.edge_var)
         B = self.rng.normal(loc=expected_B, scale=self.edge_var)
         
