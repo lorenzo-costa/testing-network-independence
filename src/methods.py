@@ -280,8 +280,8 @@ class LLKRatioTest(BaseMethod):
         # # compute llk_score
         # cca_matrix = np.linalg.inv(Xhat.T @ Xhat) @ (Xhat.T @ Zhat) @ np.linalg.inv(Zhat.T @ Zhat) @ (Zhat.T @ Xhat)
         # cca_evals = np.linalg.eigvals(cca_matrix)
-        # # llk_score = np.prod((1-cca_evals**2)**(-n/2))
-        # # wilks score defined as llkratio**(2/n)
+        # llk_score = np.prod((1-cca_evals**2)**(-n/2))
+        # wilks score defined as llkratio**(2/n)
         # wilks_score = np.prod((1-cca_evals))
         
         # faster code
@@ -308,11 +308,12 @@ class LLKRatioTest(BaseMethod):
             # df_{1}=u^{2}
             # df_{2}=u(n-2k+u-1)
             # then \frac{1-W^{1/u}}{W^{1/u}} (n-2k+u-1)(u)\approx F_{df_{1}, df_{2}}
-            u = np.sqrt((k**4 - 4) / (2*k**2 - 5))
+            a = np.sqrt((k**4 - 4) / (2*k**2 - 5))
+            b = (n-1-(2*k+1)/2)
             df1 = k**2
-            df2 = u * (n - 2*k + u - 1)
-            W_u = wilks_score**(1.0 / u)
-            F_stat = ((1.0 - W_u) / W_u) * ((n - 2*k + u - 1) / u)
+            df2 = a * b - k**2/2 +1 
+            W_a = wilks_score**(1.0 / a)
+            F_stat = ((1.0 - W_a) / W_a) * (a * b-k**2/2+1)/k**2
             self.p_value = 1.0 - stats.f.cdf(F_stat, df1, df2)
         
         self.rejected = self.p_value < self.alpha

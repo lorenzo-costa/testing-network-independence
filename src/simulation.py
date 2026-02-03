@@ -17,16 +17,13 @@ from functools import partial
 if __name__ == '__main__':
     print("Starting simulation logistic rdpg")
     
-    nsim = 200
+    nsim = 400
     n = [10, 25, 50, 100]
     k = [2, 5]
     sigma = [0, 0.01, 0.1, 0.5]
     alpha = [0.05]
     marginal_z = [stats.norm, stats.beta(a=2, b=5)]
-    marginal_x = [stats.norm, stats.beta(a=2, b=5)]
-    marginal_x_params = [{'a': 2, 'b': 5}]
-    marginal_z_params = [{'a': 2, 'b': 5}]
-    solver = [MLE_gaussian, MLE_logistic]
+    #solver = [MLE_gaussian, MLE_logistic]
     edge_var = [1, 3, 5]
     dgp = [GaussianNetwork, BernoulliNetwork]
     methods = [RVPermutationTest, LLKRatioTest]
@@ -37,11 +34,11 @@ if __name__ == '__main__':
 
     rng = np.random.default_rng(1)
 
-    param_names = ["dgp", "method", "n", "k", "sigma", "alpha", "marginal_z", "marginal_x", 
-                "edge_var", "solver", "approximation", "npermutations"]
+    param_names = ["dgp", "method", "n", "k", "sigma", "alpha", "marginal_z", 
+                "edge_var", "approximation", "npermutations"]
 
-    param_values = product(dgp, methods, n, k, sigma, alpha, marginal_z, marginal_x, 
-                       edge_var, solver, approximation, npermutations)
+    param_values = product(dgp, methods, n, k, sigma, alpha, marginal_z, 
+                       edge_var, approximation, npermutations)
 
     # 3. Zip keys with values to create dictionaries
     factorial_design = [dict(zip(param_names, v)) for v in param_values]

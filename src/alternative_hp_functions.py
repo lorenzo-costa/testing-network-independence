@@ -5,8 +5,11 @@ import numpy as np
 from methods import solve_independent
 from metrics import rv_coefficient
 
-def solve_dependent(A, B, k, niters, lambda_reg=None, delta_reg=1.0, 
-                    fit_sigma=True, sigma=None, rng=None, step_size=1.0):
+def solve_dependent(A, B, k, niters, 
+                    lambda_reg=None, delta_reg=1.0, 
+                    fit_sigma=True, sigma=None, 
+                    rng=None, step_size=1.0):
+    
     if rng is None:
         rng = np.random.default_rng()
         
@@ -88,7 +91,10 @@ def solve_dependent(A, B, k, niters, lambda_reg=None, delta_reg=1.0,
         # Step 2: Proximal Operator to enforce SPD
         evals, evecs = np.linalg.eigh(Y)
         
-        evals_prox = np.maximum(evals, 0)
+        threshold = lambda_reg / L 
+
+        # Soft-thresholding operator: relu(x - threshold)
+        evals_prox = np.maximum(evals - threshold, 0)
 
         M = evecs @ np.diag(evals_prox) @ evecs.T
         # Enforce symmetry explicitly (do we really need this?)

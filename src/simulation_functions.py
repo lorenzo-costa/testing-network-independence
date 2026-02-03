@@ -6,6 +6,7 @@ import itertools
 from multiprocessing import Pool, cpu_count
 import os
 from functools import partial 
+from src.solvers import MLE_gaussian, MLE_logistic
 
 # TODO:
 # - this could be sped up by having dpg run once and then feed data to each arg combination
@@ -27,6 +28,10 @@ def run_scenario(metrics, args, method_params=None):
         Dictionary containing the computed metrics.
     """
     dgp = args['dgp'](**args)
+    if dgp.name() == "GaussianNetwork":
+        args['solver'] = MLE_gaussian
+    if dgp.name() == "BernoulliNetwork":
+        args['solver'] = MLE_logistic
     method = args['method'](**args)
     data = dgp.generate()
     fit_out = method.fit(data, **(method_params if method_params else {}))

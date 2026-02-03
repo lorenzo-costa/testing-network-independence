@@ -46,7 +46,7 @@ class GaussianNetwork(BaseDPG):
     """
     def __init__(self, n, k, sigma, 
                  marginal_z=stats.norm, 
-                 marginal_x=stats.norm,
+                 marginal_x=None,
                  marginal_z_params=None, 
                  marginal_x_params=None,
                  edge_var=1, rng=None,
@@ -61,7 +61,11 @@ class GaussianNetwork(BaseDPG):
         
         # Marginals
         self.marginal_z = marginal_z
-        self.marginal_x = marginal_x
+        if marginal_x is None:
+            self.marginal_x = marginal_z
+        else:
+            self.marginal_x = marginal_x
+            
         self.marginal_z_params = marginal_z_params if marginal_z_params else {}
         self.marginal_x_params = marginal_x_params if marginal_x_params else {}
             
@@ -181,7 +185,7 @@ class BernoulliNetwork(BaseDPG):
     """
     def __init__(self, n, k, sigma, 
                  marginal_z=stats.norm, 
-                 marginal_x=stats.norm,
+                 marginal_x=None,
                  marginal_z_params=None, 
                  marginal_x_params=None,
                  edge_var=1, rng=None,
@@ -196,7 +200,10 @@ class BernoulliNetwork(BaseDPG):
         
         # Marginals
         self.marginal_z = marginal_z
-        self.marginal_x = marginal_x
+        if marginal_x is None:
+            self.marginal_x = marginal_z
+        else:
+            self.marginal_x = marginal_x
         self.marginal_z_params = marginal_z_params if marginal_z_params else {}
         self.marginal_x_params = marginal_x_params if marginal_x_params else {}
             
@@ -206,7 +213,7 @@ class BernoulliNetwork(BaseDPG):
                 f"marginal_z={self.marginal_z}, marginal_x={self.marginal_x})")
 
     def name(self):
-        return "GaussianNetwork"
+        return "BernoulliNetwork"
 
     def _generate_correlated_gaussians(self):
         """
