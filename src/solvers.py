@@ -132,8 +132,13 @@ def MLE_logistic(A, k=2, rng=None, shrink=0, **kwargs):
     
     # use this to fix randomness in eigsh
     v0 = rng.standard_normal(size=A_centered.shape[0])
-
-    evals, evectors = eigsh(A_centered, k=k, which='LM', v0=v0)
+    
+    try:
+        evals, evectors = eigsh(A_centered, k=k, which='LM', v0=v0)
+    except:
+        A_dense = A_centered.toarray() if hasattr(A_centered, 'toarray') else A_centered
+        evals, evectors = np.linalg.eigh(A_dense)
+    
     idx = np.argsort(evals)[::-1]
     evals = evals[idx]
     evectors = evectors[:, idx]
@@ -164,7 +169,12 @@ def ASE(A, k=2, rng=None, shrink=0, **kwargs):
     v0 = rng.standard_normal(size=A.shape[0])
     
     # don't remember why LA instead of LM
-    evals, evectors = eigsh(A, k=k, which='LA', v0=v0)
+    try:
+        evals, evectors = eigsh(A, k=k, which='LM', v0=v0)
+    except:
+        A_dense = A.toarray() if hasattr(A, 'toarray') else A
+        evals, evectors = np.linalg.eigh(A_dense)
+   
     idx = np.argsort(evals)[::-1]
     evals = evals[idx]
     evectors = evectors[:, idx]
@@ -198,14 +208,19 @@ def MLE_gaussian(A, k=2, rng=None, shrink=0.5, **kwargs):
         rng = np.random.default_rng()
     
     v0 = rng.standard_normal(size=A.shape[0])
-    evals, evectors = eigsh(A, k=k, which='LM', v0=v0)
-    # evals = np.clip(np.maximum(evals-0.5, 0), 0, 1e5) # clip for numerical stability
-    evals = np.abs(evals-shrink)
+    try:
+        evals, evectors = eigsh(A, k=k, which='LM', v0=v0)
+    except:
+        A_dense = A.toarray() if hasattr(A, 'toarray') else A
+        evals, evectors = np.linalg.eigh(A_dense)
 
     # manual sorting just to be sure
     idx = np.argsort(evals)[::-1]
     evals = evals[idx]
     evectors = evectors[:, idx]
+    
+    # evals = np.clip(np.maximum(evals-0.5, 0), 0, 1e5) # clip for numerical stability
+    evals = np.abs(evals-shrink)
     
     xhat = evectors * np.sqrt(evals)
     

@@ -202,7 +202,6 @@ class RVPermutationTest(BaseMethod):
         return "RVPermutationTest"
 
 
-# TODO finish modifying this
 class LLKRatioTest(BaseMethod):
     """Asymptotic Likelihood Ratio Test
     
@@ -234,6 +233,7 @@ class LLKRatioTest(BaseMethod):
                  rng=None, 
                  approximation='beta', 
                  k=None,
+                 solver=None,
                  **args):
         
         super().__init__()
@@ -241,6 +241,7 @@ class LLKRatioTest(BaseMethod):
         self.alpha = alpha
         self.approximation = approximation
         self.k = k
+        self.solver = solver if solver is not None else ASE
         if rng is None:
             self.rng = np.random.default_rng()
         else:
@@ -248,7 +249,6 @@ class LLKRatioTest(BaseMethod):
 
     def fit(self, 
             data, 
-            solver=ASE,
             **kwargs):
         """Estimates the latent positions and computes p-value
 
@@ -269,11 +269,19 @@ class LLKRatioTest(BaseMethod):
         A, B, X, Z = data
         
         n = A.shape[0]
-        k = self.k
+
+        if X is not None and Z is not None:
+            self.k = X.shape[1] if X is not None else Z.shape[1]
+        else:
+            if self.k is None:
+                raise ValueError("Number of dimensions (k) must be specified if X and Z are not provided.")
+            self.k = self.k
+            
+        k=self.k
         
         # extract latent positions
-        Xhat = solver(A, k=k, rng=self.rng)[0][0]
-        Zhat = solver(B, k=k, rng=self.rng)[0][0]
+        Xhat = self.solver(A, k=k, rng=self.rng)[0][0]
+        Zhat = self.solver(B, k=k, rng=self.rng)[0][0]
         self.Xhat = Xhat
         self.Zhat = Zhat
         
@@ -289,7 +297,8 @@ class LLKRatioTest(BaseMethod):
         Qz, _ = np.linalg.qr(Zhat)
         S = np.linalg.svd(Qx.T @ Qz, compute_uv=False)
         cca_evals = S**2
-        wilks_score = np.prod(1 - cca_evals)
+        log_wilks = np.sum(np.log(1 - cca_evals + 1e-12)) 
+        wilks_score = np.exp(log_wilks)
         
         # approximate quantiles of the null 
         if self.approximation == 'beta':

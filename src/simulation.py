@@ -14,16 +14,27 @@ from itertools import product
 from datetime import datetime
 from functools import partial
 
-if __name__ == '__main__':
-    print("Starting simulation logistic rdpg")
+def get_dist_string(dist_obj):
+    name = dist_obj.dist.name
     
-    nsim = 400
-    n = [10, 25, 50, 100]
-    k = [2, 5]
+    # Combine positional args and keyword args into one list of strings
+    args_str = [str(a) for a in dist_obj.args]
+    kwds_str = [f"{k}={v}" for k, v in dist_obj.kwds.items()]
+    
+    # Join them together with commas
+    params_join = ", ".join(args_str + kwds_str)
+    
+    return f"{name}({params_join})"
+
+
+if __name__ == '__main__':
+    
+    nsim = 20
+    n = [10, 25, 50, 100, 150]
+    k = [2, 5, 7]
     sigma = [0, 0.01, 0.1, 0.5]
     alpha = [0.05]
-    marginal_z = [stats.norm, stats.beta(a=2, b=5)]
-    #solver = [MLE_gaussian, MLE_logistic]
+    marginal_z = [stats.norm(loc=0, scale=1), stats.laplace(loc=0, scale=1)]
     edge_var = [1, 3, 5]
     dgp = [GaussianNetwork, BernoulliNetwork]
     methods = [RVPermutationTest, LLKRatioTest]
@@ -56,6 +67,8 @@ if __name__ == '__main__':
     out['approximation'] = out['args'].apply(lambda x: x.get('approximation', 'NA'))
     out['dgp'] = out['args'].apply(lambda x: x['dgp'].__name__)
     out['solver'] = out['args'].apply(lambda x: x.get('solver', 'NA').__name__)
+    out['marginal_z'] = out['args'].apply(lambda x: get_dist_string(x.get('marginal_z', 'NA')))
+    out['method'] = out['args'].apply(lambda x: x['method'].__name__)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
 
