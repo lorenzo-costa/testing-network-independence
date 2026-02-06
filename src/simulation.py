@@ -29,7 +29,7 @@ def get_dist_string(dist_obj):
 
 if __name__ == '__main__':
     
-    nsim = 20
+    nsim = 500
     n = [10, 25, 50, 100, 150]
     k = [2, 5, 7]
     sigma = [0, 0.01, 0.1, 0.5]

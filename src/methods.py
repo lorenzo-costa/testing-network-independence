@@ -10,6 +10,7 @@ from scipy.optimize import minimize
 from scipy.special import expit
 import numba as nb 
 from .solvers import ASE
+from scipy.spatial.distance import pdist, squareform
 
 sys.path.append(os.path.abspath(os.path.join(os.getcwd(), '..'))) 
 
@@ -54,7 +55,6 @@ class FitIndependent(BaseMethod):
         self.shrink = shrink
         self.solver = solver if solver is not None else ASE
         self.k = k
-        print(k)
 
     def fit(self, 
             data,
@@ -171,6 +171,7 @@ class RVPermutationTest(BaseMethod):
         
         Xhat = self.solver(A, k=self.k, rng=self.rng)[0][0]
         Zhat = self.solver(B, k=self.k, rng=self.rng)[0][0]
+        
         self.Xhat = Xhat
         self.Zhat = Zhat
         
@@ -326,6 +327,200 @@ class LLKRatioTest(BaseMethod):
             self.p_value = 1.0 - stats.f.cdf(F_stat, df1, df2)
         
         self.rejected = self.p_value < self.alpha
+        return self.Xhat, self.Zhat, X, Z
+
+    def get_estimated(self):
+        """Return true if the null hypothesis is rejected"""
+        return self.rejected
+    
+    def get_truth(self):
+        """Return True if the null hypothesis is False (i.e. should be rejected)"""
+        return False if self.sigma == 0 else True
+
+
+class DiffusionCorrelation(BaseMethod):
+    """
+    Implementation of Diffusion Correlation algorithm for testing 
+    association between graph structure and nodal attributes.
+    """
+    
+    def __init__(self, 
+                 rng=None, 
+                 k=None,
+                 test_method='mgc',
+                 sigma=None,
+                 n_permutations=1000,
+                 alpha=None,
+                 **kwargs):
+        """
+        Parameters:
+        -----------
+        max_t : int
+            Maximum diffusion time steps to consider
+        n_permutations : int
+            Number of permutations for p-value computation
+        """
+        self.rng = np.random.default_rng() if rng is None else rng
+        self.n_permutations = n_permutations
+        self.k = k
+        self.test_method = test_method
+        self.sigma = sigma
+        self.alpha = alpha
+    
+    def compute_normalized_laplacian(self, K):
+        """
+        Step 2: Compute normalized graph Laplacian
+        L = B^(-1/2) * K * B^(-1/2)
+        where B is the degree matrix
+        """
+        # Compute degree matrix
+        degrees = np.sum(K, axis=1)
+        # Avoid division by zero
+        degrees[degrees == 0] = 1
+        B_inv_sqrt = np.diag(1.0 / np.sqrt(degrees))
+        
+        # Normalized Laplacian
+        L = B_inv_sqrt @ K @ B_inv_sqrt
+        return L
+    
+    def compute_distance_matrix(self, U):
+        """
+        Step 4: Compute Euclidean distance matrix
+        """
+        return squareform(pdist(U, metric='euclidean'))
+    
+    def compute_dcorr(self, D1, D2):
+        """
+        Compute distance correlation between two distance matrices
+        
+        This is a simplified version - you may want to use the full
+        distance correlation formula or mgc library
+        """
+        # Center the distance matrices
+        n = D1.shape[0]
+        
+        # Double centering
+        D1_centered = self._double_center(D1)
+        D2_centered = self._double_center(D2)
+        
+        # Compute distance covariance
+        dcov = np.sqrt(np.sum(D1_centered * D2_centered) / (n * n))
+        
+        # Compute distance variances
+        dvar1 = np.sqrt(np.sum(D1_centered * D1_centered) / (n * n))
+        dvar2 = np.sqrt(np.sum(D2_centered * D2_centered) / (n * n))
+        
+        # Distance correlation
+        if dvar1 * dvar2 > 0:
+            dcorr = dcov / np.sqrt(dvar1 * dvar2)
+        else:
+            dcorr = 0
+        
+        return dcorr
+    
+    def _double_center(self, D):
+        """
+        Double centering of distance matrix
+        """
+        n = D.shape[0]
+        row_mean = np.mean(D, axis=1, keepdims=True)
+        col_mean = np.mean(D, axis=0, keepdims=True)
+        total_mean = np.mean(D)
+        
+        return D - row_mean - col_mean + total_mean
+    
+    def permutation_test(self, A, X, test_statistic):
+        """
+        Step 7: Compute p-value using permutation test
+        
+        Parameters:
+        -----------
+        A : array-like, shape (n, n)
+            Adjacency matrix
+        X : array-like, shape (n, p)
+            Nodal attributes
+        test_statistic : float
+            Observed test statistic
+        
+        Returns:
+        --------
+        p_value : float
+            Permutation p-value
+        """
+        n = A.shape[0]
+        null_distribution = []
+        
+        for _ in range(self.n_permutations):
+            # Permute nodal attributes
+            perm_idx = np.random.permutation(n)
+            X_perm = X[perm_idx, :]
+            
+            # Compute test statistic under null
+            _, stats = self.test(A, X_perm, return_details=True)
+            null_distribution.append(stats['mgc_star'])
+        
+        # Compute p-value
+        null_distribution = np.array(null_distribution)
+        p_value = np.mean(null_distribution >= test_statistic)
+        
+        return p_value, null_distribution
+    
+    def fit(self, 
+             data, 
+             **kwargs):
+        """
+        Main testing procedure
+        
+        Parameters:
+        -----------
+        data : array-like, shape (n, n)
+            
+        return_details : bool
+            Whether to return detailed results
+        
+        Returns:
+        --------
+        p_value : float
+            P-value for the test
+        results : dict (if return_details=True)
+            Dictionary containing detailed results
+        """
+        A, B, X, Z = data
+
+        A_symm = (A + A.T) / 2
+        B_symm = (B + B.T) / 2
+
+        # Step 2: Compute normalized Laplacian
+        A_laplacian = self.compute_normalized_laplacian(A_symm)
+        B_laplacian = self.compute_normalized_laplacian(B_symm)
+
+        # Step 3: Diffusion map for t=1 (i.e. ASE)
+        Xhat, _ = ASE(A_laplacian, k=self.k)
+        Zhat, _ = ASE(B_laplacian, k=self.k)
+        Xhat = Xhat[0]
+        Zhat = Zhat[0]
+
+        distances_A = self.compute_distance_matrix(Xhat)
+        distances_B = self.compute_distance_matrix(Zhat)
+        
+        if self.test_method == 'mgc':
+            random_state = self.rng.integers(100)
+            
+            p_value = stats.multiscale_graphcorr(
+                distances_A, 
+                distances_B,
+                compute_distance=None,
+                random_state=random_state)
+        elif self.test_method == 'dcorr':
+            dcorr = self.compute_dcorr(distances_A, distances_B)
+            p_value, null_dist = self.permutation_test(A, X, dcorr)
+        else:
+            print(self.test_method)
+            raise ValueError("Unknown method for computing test statistic.")
+
+        self.pvalue = p_value
+
+        self.rejected = self.pvalue < self.alpha
         return self.Xhat, self.Zhat, X, Z
 
     def get_estimated(self):

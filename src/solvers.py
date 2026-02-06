@@ -162,6 +162,24 @@ def MLE_logistic(A, k=2, rng=None, shrink=0, **kwargs):
     return [xhat], [evals]
 
 def ASE(A, k=2, rng=None, shrink=0, **kwargs):
+    """Adjacency Spectral Embedding
+
+    Parameters
+    ----------
+    A : np.ndarray
+        Adjacency matrix
+    k : int, optional
+        Number of dimensions for the latent space, by default 2
+    rng : np.random.Generator, optional
+        Random number generator, by default None
+    shrink : int, optional
+        Shrinkage parameter, by default 0
+
+    Returns
+    -------
+    list, list
+        Estimated latent positions, estimated eigenvalues
+    """
     if rng is None:
         rng = np.random.default_rng()
 
