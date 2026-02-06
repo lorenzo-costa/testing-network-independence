@@ -4,30 +4,36 @@ from scipy.linalg import norm
 import pandas as pd
 from .metrics import rv_coefficient, rv_coefficient_adjusted
 import sys
-import os 
+import os
 from scipy import stats
 from scipy.optimize import minimize
 from scipy.special import expit
-import numba as nb 
+import numba as nb
 from .solvers import ASE
 from scipy.spatial.distance import pdist, squareform
 
-sys.path.append(os.path.abspath(os.path.join(os.getcwd(), '..'))) 
+sys.path.append(os.path.abspath(os.path.join(os.getcwd(), "..")))
 
 # TODO:
-# - implement OMNI method 
+# - implement OMNI method
+
 
 class BaseMethod:
     def __init__(self):
         pass
+
     def fit(self, *args, **kwargs):
         raise NotImplementedError("Subclasses should implement this!")
+
     def name(self):
         raise NotImplementedError("Subclasses should implement this!")
+
     def get_estimated(self):
         raise NotImplementedError("Subclasses should implement this!")
+
     def get_truth(self):
         raise NotImplementedError("Subclasses should implement this!")
+
 
 class FitIndependent(BaseMethod):
     """Method to fit ase independently to each network
@@ -43,22 +49,16 @@ class FitIndependent(BaseMethod):
     Z: np.ndarray
         Latent positions for second network
     """
-    def __init__(self, 
-                 rng=None,
-                 shrink=0,
-                 solver=None,
-                 k=None,
-                 **kwargs):
+
+    def __init__(self, rng=None, shrink=0, solver=None, k=None, **kwargs):
         super().__init__()
-        
+
         self.rng = rng if rng is not None else np.random.default_rng()
         self.shrink = shrink
         self.solver = solver if solver is not None else ASE
         self.k = k
 
-    def fit(self, 
-            data,
-            *args, **kwargs):
+    def fit(self, data, *args, **kwargs):
         """Estimate latent positions independently
 
         Parameters
@@ -89,12 +89,14 @@ class FitIndependent(BaseMethod):
         self.B = B
         self.X = X
         self.Z = Z
-        
+
         if X is not None or Z is not None:
             self.k = X.shape[1] if X is not None else Z.shape[1]
         else:
             if self.k is None:
-                raise ValueError("Number of dimensions (k) must be specified if X and Z are not provided.")
+                raise ValueError(
+                    "Number of dimensions (k) must be specified if X and Z are not provided."
+                )
             self.k = self.k
 
         Xhat, evalsX = self.solver(self.A, k=self.k, rng=self.rng, shrink=self.shrink)
@@ -102,7 +104,6 @@ class FitIndependent(BaseMethod):
 
         self.Xhat = Xhat[0]
         self.Zhat = Zhat[0]
-        
 
         return self.Xhat, self.Zhat, X, Z
 
@@ -115,15 +116,18 @@ class FitIndependent(BaseMethod):
     def get_truth(self):
         return None
 
+
 class RVPermutationTest(BaseMethod):
-    def __init__(self, 
-                 sigma, 
-                 npermutations=100,
-                 alpha=0.05, 
-                 rng=None, 
-                 solver=None,
-                 k=None,
-                 **args):
+    def __init__(
+        self,
+        sigma,
+        npermutations=100,
+        alpha=0.05,
+        rng=None,
+        solver=None,
+        k=None,
+        **args,
+    ):
         super().__init__()
         self.sigma = sigma
         self.alpha = alpha
@@ -132,11 +136,9 @@ class RVPermutationTest(BaseMethod):
         self.solver = solver if solver is not None else ASE
         self.k = k
 
-    def fit(self, 
-            data,
-            rv_coefficient_function=rv_coefficient_adjusted,
-            *args,
-            **kwargs):
+    def fit(
+        self, data, rv_coefficient_function=rv_coefficient_adjusted, *args, **kwargs
+    ):
         """Bootstrap the null distribution of the RV coefficient
         The function estimates the latent position of the networks independently
         using ASE, computes the RV coefficient and bootstraps the null distribution.
@@ -149,7 +151,7 @@ class RVPermutationTest(BaseMethod):
         k : int, optional
             Number of dimensions for the latent space, by default 2
         solver : callable, optional
-            Function to estimate the latent positions. 
+            Function to estimate the latent positions.
             Possible values choices:
             - ASE for adjacency spectral embedding
             - MLE gaussian for modified version of ASE for MLE in Gaussian-Gaussian model
@@ -159,22 +161,24 @@ class RVPermutationTest(BaseMethod):
         Xhat, Zhat
             Estimated latent positions for the two networks.
         """
-        
+
         A, B, X, Z = data
 
         if X is not None and Z is not None:
             self.k = X.shape[1] if X is not None else Z.shape[1]
         else:
             if self.k is None:
-                raise ValueError("Number of dimensions (k) must be specified if X and Z are not provided.")
+                raise ValueError(
+                    "Number of dimensions (k) must be specified if X and Z are not provided."
+                )
             self.k = self.k
-        
+
         Xhat = self.solver(A, k=self.k, rng=self.rng)[0][0]
         Zhat = self.solver(B, k=self.k, rng=self.rng)[0][0]
-        
+
         self.Xhat = Xhat
         self.Zhat = Zhat
-        
+
         rv_est = rv_coefficient_function(Xhat, Zhat)
         self.rv_est = rv_est
         rv_distr = []
@@ -194,26 +198,28 @@ class RVPermutationTest(BaseMethod):
     def get_estimated(self):
         """Return true if the null hypothesis is rejected"""
         return self.rejected
+
     def get_truth(self):
         """
         FIXED: Return True if H1 is true (Signal exists), False if H0 is true.
         """
         return False if self.sigma == 0 else True
+
     def get_name(self):
         return "RVPermutationTest"
 
 
 class LLKRatioTest(BaseMethod):
     """Asymptotic Likelihood Ratio Test
-    
-    Adapted from Fosdick & Hoff (2015). Assume that the two networks have gaussian latent 
-    positions, we want to test the null hypothesis that the cross-covariance matrix is zero 
+
+    Adapted from Fosdick & Hoff (2015). Assume that the two networks have gaussian latent
+    positions, we want to test the null hypothesis that the cross-covariance matrix is zero
     (i.e. independence for Gaussian).
-    We estimate the latent positions using ASE (MLE in Gaussian case) and define the 
+    We estimate the latent positions using ASE (MLE in Gaussian case) and define the
     LRT as the ratio of likelihood given the estimated latent positions:
     LRT = sup L_0(Sigma|X, Z)/sup L(Sigma|X, Z) = prod_{i=1}^k (1-r_i^2)^{-n/2}
     for r_i^2 the eigenvalues of (X^TX)^{-1/2}(X^TN)(N^TN)^{-1}(N^TX)(X^TX)^{-1/2}
- 
+
     Parameters
     ----------
     sigma : float
@@ -221,22 +227,24 @@ class LLKRatioTest(BaseMethod):
     alpha : float, optional
         The significance level (default 0.05)
     approximation : str, optional
-        Approximation method to use for p-value computation. 
+        Approximation method to use for p-value computation.
         Choices are:
         - beta: use the exact product of Beta distribution of the Wilks lambda
-        Not implemented but requires some way of approximating quantiles 
+        Not implemented but requires some way of approximating quantiles
         - chi-sq: use the chi-squared approximation
         - F-distr: use the F-distribution approximation
     """
-    def __init__(self, 
-                 sigma,
-                 alpha=0.05, 
-                 rng=None, 
-                 approximation='beta', 
-                 k=None,
-                 solver=None,
-                 **args):
-        
+
+    def __init__(
+        self,
+        sigma,
+        alpha=0.05,
+        rng=None,
+        approximation="beta",
+        k=None,
+        solver=None,
+        **args,
+    ):
         super().__init__()
         self.sigma = sigma
         self.alpha = alpha
@@ -248,9 +256,7 @@ class LLKRatioTest(BaseMethod):
         else:
             self.rng = rng
 
-    def fit(self, 
-            data, 
-            **kwargs):
+    def fit(self, data, **kwargs):
         """Estimates the latent positions and computes p-value
 
         Parameters
@@ -266,73 +272,75 @@ class LLKRatioTest(BaseMethod):
             - ASE for adjacency spectral embedding
             - MLE gaussian for modified version of ASE for MLE in Gaussian-Gaussian model
         """
-        
+
         A, B, X, Z = data
-        
+
         n = A.shape[0]
 
         if X is not None and Z is not None:
             self.k = X.shape[1] if X is not None else Z.shape[1]
         else:
             if self.k is None:
-                raise ValueError("Number of dimensions (k) must be specified if X and Z are not provided.")
+                raise ValueError(
+                    "Number of dimensions (k) must be specified if X and Z are not provided."
+                )
             self.k = self.k
-            
-        k=self.k
-        
+
+        k = self.k
+
         # extract latent positions
         Xhat = self.solver(A, k=k, rng=self.rng)[0][0]
         Zhat = self.solver(B, k=k, rng=self.rng)[0][0]
         self.Xhat = Xhat
         self.Zhat = Zhat
-        
+
         # # compute llk_score
         # cca_matrix = np.linalg.inv(Xhat.T @ Xhat) @ (Xhat.T @ Zhat) @ np.linalg.inv(Zhat.T @ Zhat) @ (Zhat.T @ Xhat)
         # cca_evals = np.linalg.eigvals(cca_matrix)
         # llk_score = np.prod((1-cca_evals**2)**(-n/2))
         # wilks score defined as llkratio**(2/n)
         # wilks_score = np.prod((1-cca_evals))
-        
+
         # faster code
         Qx, _ = np.linalg.qr(Xhat)
         Qz, _ = np.linalg.qr(Zhat)
         S = np.linalg.svd(Qx.T @ Qz, compute_uv=False)
         cca_evals = S**2
-        log_wilks = np.sum(np.log(1 - cca_evals + 1e-12)) 
+        log_wilks = np.sum(np.log(1 - cca_evals + 1e-12))
         wilks_score = np.exp(log_wilks)
-        
-        # approximate quantiles of the null 
-        if self.approximation == 'beta':
+
+        # approximate quantiles of the null
+        if self.approximation == "beta":
             # use the exact product of beta distributions
             # TODO: find a way to approximate the quantiles
             raise NotImplementedError("Beta approximation not implemented yet")
-        if self.approximation == 'chi-sq':
+        if self.approximation == "chi-sq":
             # chi squared approximation -(n-1- (2k+1/2) log(llkratio^{2/n})\approx \chi^{2}_{k^{2}}
-            chi = -(n-1-(2*k+1)/2) * np.log(wilks_score)
-            self.p_value = 1-stats.chi2.cdf(chi, df=k**2)
-        if self.approximation == 'F-distr':
+            chi = -(n - 1 - (2 * k + 1) / 2) * np.log(wilks_score)
+            self.p_value = 1 - stats.chi2.cdf(chi, df=k**2)
+        if self.approximation == "F-distr":
             # define:
             # W : wilks score llk_ratio^{2/n}
-            # a=\sqrt{(k^{4}-4)(2k^{2}-5) 
+            # a=\sqrt{(k^{4}-4)(2k^{2}-5)
             # b=(n-2k-2)/2
             # df_{1}=u^{2}
             # df_{2}=u(n-2k+u-1)
             # then \frac{1-W^{1/u}}{W^{1/u}} (n-2k+u-1)(u)\approx F_{df_{1}, df_{2}}
-            a = np.sqrt((k**4 - 4) / (2*k**2 - 5))
-            b = (n-1-(2*k+1)/2)
+            a = np.sqrt((k**4 - 4) / (2 * k**2 - 5))
+            b = n - 1 - (2 * k + 1) / 2
             df1 = k**2
-            df2 = a * b - k**2/2 +1 
-            W_a = wilks_score**(1.0 / a)
-            F_stat = ((1.0 - W_a) / W_a) * (a * b-k**2/2+1)/k**2
+            df2 = a * b - k**2 / 2 + 1
+            W_a = wilks_score ** (1.0 / a)
+            F_stat = ((1.0 - W_a) / W_a) * (a * b - k**2 / 2 + 1) / k**2
             self.p_value = 1.0 - stats.f.cdf(F_stat, df1, df2)
-        
+
         self.rejected = self.p_value < self.alpha
         return self.Xhat, self.Zhat, X, Z
 
     def get_estimated(self):
         """Return true if the null hypothesis is rejected"""
         return self.rejected
-    
+
     def get_truth(self):
         """Return True if the null hypothesis is False (i.e. should be rejected)"""
         return False if self.sigma == 0 else True
@@ -340,18 +348,20 @@ class LLKRatioTest(BaseMethod):
 
 class DiffusionCorrelation(BaseMethod):
     """
-    Implementation of Diffusion Correlation algorithm for testing 
+    Implementation of Diffusion Correlation algorithm for testing
     association between graph structure and nodal attributes.
     """
-    
-    def __init__(self, 
-                 rng=None, 
-                 k=None,
-                 test_method='mgc',
-                 sigma=None,
-                 n_permutations=1000,
-                 alpha=None,
-                 **kwargs):
+
+    def __init__(
+        self,
+        rng=None,
+        k=None,
+        test_method="mgc",
+        sigma=None,
+        n_permutations=1000,
+        alpha=None,
+        **kwargs,
+    ):
         """
         Parameters:
         -----------
@@ -366,7 +376,7 @@ class DiffusionCorrelation(BaseMethod):
         self.test_method = test_method
         self.sigma = sigma
         self.alpha = alpha
-    
+
     def compute_normalized_laplacian(self, K):
         """
         Step 2: Compute normalized graph Laplacian
@@ -378,46 +388,46 @@ class DiffusionCorrelation(BaseMethod):
         # Avoid division by zero
         degrees[degrees == 0] = 1
         B_inv_sqrt = np.diag(1.0 / np.sqrt(degrees))
-        
+
         # Normalized Laplacian
         L = B_inv_sqrt @ K @ B_inv_sqrt
         return L
-    
+
     def compute_distance_matrix(self, U):
         """
         Step 4: Compute Euclidean distance matrix
         """
-        return squareform(pdist(U, metric='euclidean'))
-    
+        return squareform(pdist(U, metric="euclidean"))
+
     def compute_dcorr(self, D1, D2):
         """
         Compute distance correlation between two distance matrices
-        
+
         This is a simplified version - you may want to use the full
         distance correlation formula or mgc library
         """
         # Center the distance matrices
         n = D1.shape[0]
-        
+
         # Double centering
         D1_centered = self._double_center(D1)
         D2_centered = self._double_center(D2)
-        
+
         # Compute distance covariance
         dcov = np.sqrt(np.sum(D1_centered * D2_centered) / (n * n))
-        
+
         # Compute distance variances
         dvar1 = np.sqrt(np.sum(D1_centered * D1_centered) / (n * n))
         dvar2 = np.sqrt(np.sum(D2_centered * D2_centered) / (n * n))
-        
+
         # Distance correlation
         if dvar1 * dvar2 > 0:
             dcorr = dcov / np.sqrt(dvar1 * dvar2)
         else:
             dcorr = 0
-        
+
         return dcorr
-    
+
     def _double_center(self, D):
         """
         Double centering of distance matrix
@@ -426,13 +436,13 @@ class DiffusionCorrelation(BaseMethod):
         row_mean = np.mean(D, axis=1, keepdims=True)
         col_mean = np.mean(D, axis=0, keepdims=True)
         total_mean = np.mean(D)
-        
+
         return D - row_mean - col_mean + total_mean
-    
+
     def permutation_test(self, A, X, test_statistic):
         """
         Step 7: Compute p-value using permutation test
-        
+
         Parameters:
         -----------
         A : array-like, shape (n, n)
@@ -441,7 +451,7 @@ class DiffusionCorrelation(BaseMethod):
             Nodal attributes
         test_statistic : float
             Observed test statistic
-        
+
         Returns:
         --------
         p_value : float
@@ -449,35 +459,33 @@ class DiffusionCorrelation(BaseMethod):
         """
         n = A.shape[0]
         null_distribution = []
-        
+
         for _ in range(self.n_permutations):
             # Permute nodal attributes
             perm_idx = np.random.permutation(n)
             X_perm = X[perm_idx, :]
-            
+
             # Compute test statistic under null
             _, stats = self.test(A, X_perm, return_details=True)
-            null_distribution.append(stats['mgc_star'])
-        
+            null_distribution.append(stats["mgc_star"])
+
         # Compute p-value
         null_distribution = np.array(null_distribution)
         p_value = np.mean(null_distribution >= test_statistic)
-        
+
         return p_value, null_distribution
-    
-    def fit(self, 
-             data, 
-             **kwargs):
+
+    def fit(self, data, **kwargs):
         """
         Main testing procedure
-        
+
         Parameters:
         -----------
         data : array-like, shape (n, n)
-            
+
         return_details : bool
             Whether to return detailed results
-        
+
         Returns:
         --------
         p_value : float
@@ -502,16 +510,17 @@ class DiffusionCorrelation(BaseMethod):
 
         distances_A = self.compute_distance_matrix(Xhat)
         distances_B = self.compute_distance_matrix(Zhat)
-        
-        if self.test_method == 'mgc':
+
+        if self.test_method == "mgc":
             random_state = self.rng.integers(100)
-            
+
             p_value = stats.multiscale_graphcorr(
-                distances_A, 
+                distances_A,
                 distances_B,
                 compute_distance=None,
-                random_state=random_state)
-        elif self.test_method == 'dcorr':
+                random_state=random_state,
+            )
+        elif self.test_method == "dcorr":
             dcorr = self.compute_dcorr(distances_A, distances_B)
             p_value, null_dist = self.permutation_test(A, X, dcorr)
         else:
@@ -526,17 +535,17 @@ class DiffusionCorrelation(BaseMethod):
     def get_estimated(self):
         """Return true if the null hypothesis is rejected"""
         return self.rejected
-    
+
     def get_truth(self):
         """Return True if the null hypothesis is False (i.e. should be rejected)"""
         return False if self.sigma == 0 else True
 
-    
+
 # class OMNITest(BaseMethod):
-#     def __init__(self, 
+#     def __init__(self,
 #                  sigma,
-#                  alpha=0.05, 
-#                  rng=None, 
+#                  alpha=0.05,
+#                  rng=None,
 #                  **args):
 #         super().__init__()
 #         self.sigma = sigma
@@ -544,20 +553,20 @@ class DiffusionCorrelation(BaseMethod):
 #         self.rng = rng if rng is not None else np.random.default_rng()
 
 #     def fit(self, A, B=None, k=2, *args, **kwargs):
-#         """OMNI embedding with ase, approximate asymptotic distribution, 
+#         """OMNI embedding with ase, approximate asymptotic distribution,
 #         get p-value.
 #         Assumes only two graphs
-        
+
 #         Need to figure our point 2
 #         """
 #         # build OMNI matrix
 #         M = np.block([[A, (A+B)/2],
 #                        [(A+B)/2, B]])
-        
+
 #         self.Mhat = ASE(M, k=k, rng=self.rng)[0][0]
 #         self.Xhat = self.Mhat[:A.shape[0]]
 #         self.Zhat = self.Mhat[A.shape[0]:]
-        
+
 #         return
 
 #     def get_estimated(self):
@@ -591,14 +600,14 @@ class DiffusionCorrelation(BaseMethod):
 #             self.nb = B.shape[0]
 #         else:
 #             self.n = A.shape[0]
-            
+
 #         if X is not None:
 #             self.X = X
 #             self.k = X.shape[1]
 #         if Z is not None:
 #             self.Z = Z
 #             self.k = Z.shape[1]
-        
+
 #         self.rng = rng if rng is not None else np.random.default_rng()
 
 #     def fit(self, *args, **kwargs):

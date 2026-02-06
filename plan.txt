@@ -17,8 +17,9 @@ Data generating processes:
 -> use alwasy gaussian latent positions
 
 For the code i will have:
-- DPG: these will have a generate_data() method which returns two adjacency matrices A, B and the true latent positiosn X, Z
+- DPG: these will have a generate() method which returns two adjacency matrices A, B and the true latent positiosn X, Z
     methods: these will have a fit() method which performs the test and a get_result() method which returns a dictionary with the
     true and computed quantities
-
-- Metrics: will take a result object and return
+- Metrics: will take a result object and extract from that what they need
+- Methods: these should be end-to-end pipeline to estimate and perform the test
+- Simulation function should take a dgp:solver dictionary as input
