@@ -502,6 +502,8 @@ class QAP(BaseMethod):
         A dictionary with 'estimated_latent', 'true_latent', 'p-value', 'reject_null', and 'null' keys.
         """
         results = {
+            'estimated_latent': None,
+            'true_latent': None,
             'p-value' : self.pvalue,
             'reject_null' : self.reject_null,
             'null' : self.null

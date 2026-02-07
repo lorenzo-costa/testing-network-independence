@@ -10,7 +10,7 @@ from src.metrics import Rejection, TrueRejection, FalseRejection, RelativeFroben
 from src.simulation_functions import run_simulation
 from src.solvers import ASE, MLE_gaussian, MLE_logistic
 from src.dgp import GaussianNetwork, BernoulliNetwork
-from src.methods import RVPermutationTest, LLKRatioTest
+from src.methods import RVPermutationTest, LLKRatioTest, QAP
 from itertools import product
 
 
@@ -23,7 +23,7 @@ def test_simulation_run():
     alpha = [0.05]
     marginals = [stats.norm]
     edge_var = [1, 2]
-    methods = [RVPermutationTest, LLKRatioTest]
+    methods = [RVPermutationTest, LLKRatioTest, QAP]
 
     setups = [
         (GaussianNetwork, ASE),
@@ -31,13 +31,7 @@ def test_simulation_run():
         (GaussianNetwork, MLE_gaussian)
     ]
     
-    metrics = [
-        Rejection(), 
-        TrueRejection(), 
-        FalseRejection(), 
-        RelativeFrobeniusNorm(), 
-        ComputeAll()
-    ]
+    metrics = [ComputeAll()]
     
     approximation = ['F-distr', 'chi-sq']
 
