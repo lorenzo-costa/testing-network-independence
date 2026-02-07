@@ -153,7 +153,7 @@ class RVPermutationTest(BaseMethod):
         else:
             self.null = False
         
-        self.rv_distr = []
+        self.permutation_distribution = []
         
         self.alpha = alpha
         self.npermutations = npermutations
@@ -210,27 +210,27 @@ class RVPermutationTest(BaseMethod):
         self.Zhat = Zhat
         self.Xhat = Xhat
 
-        rv_est = self.test_function(Zhat, Xhat)
-        self.rv_est = rv_est
+        test_stat_estimate = self.test_function(Zhat, Xhat)
+        self.test_stat_estimate = test_stat_estimate
         # permute one of the observe networks, re-estimate latent positions and compute RV coefficient
         if self.permutation_type == 'observed':
             for _ in range(self.npermutations):
                 perm = self.rng.permutation(A.shape[0])
                 B_perm = B[perm][:, perm]
                 Xhat_perm = self.solver(B_perm, k=self.k, rng=self.rng)[0]
-                rv_perm = self.test_function(Zhat, Xhat_perm)
-                self.rv_distr.append(rv_perm)
+                test_stat_perm = self.test_function(Zhat, Xhat_perm)
+                self.permutation_distribution.append(test_stat_perm)
         # estimate latent positions once, permute them and compute rv_coefficient
         elif self.permutation_type == 'latent':
             for _ in range(self.npermutations):
                 perm = self.rng.permutation(Zhat.shape[0])
                 Xhat_perm = Xhat[perm, :]
-                rv_perm = self.test_function(Zhat, Xhat_perm)
-                self.rv_distr.append(rv_perm)
-        
+                test_stat_perm = self.test_function(Zhat, Xhat_perm)
+                self.permutation_distribution.append(test_stat_perm)
+
         # compute pvalue
-        pvalue = np.mean([rv >= rv_est for rv in self.rv_distr])
-        self.pvalue = pvalue
+        pvalue = np.mean([i >= self.test_stat_estimate for i in self.permutation_distribution])
+        self.pvalue = bool(pvalue)
         self.reject_null = self.pvalue < self.alpha
 
         return
@@ -269,7 +269,7 @@ class LLKRatioTest(BaseMethod):
     Parameters
     ----------
     sigma : float
-        The true signal strength.
+        Correlation between latent positions (zero under independence i.e. H0 is true)
     alpha : float, optional
         The significance level (default 0.05)
     approximation : str, optional
@@ -419,36 +419,161 @@ class LLKRatioTest(BaseMethod):
         }
         return results
 
+class QAP(BaseMethod):
+    """Quadratic Assignment Procedure
 
-class DiffusionCorrelation(BaseMethod):
-    """
-    Implementation of Diffusion Correlation algorithm for testing
-    association between graph structure and nodal attributes.
+    Parameters
+    ----------
+    sigma : float
+        Correlation between latent positions (zero under independence i.e. H0 is true)
+    alpha : float, optional
+        The significance level (default 0.05)
+    npermutations : int, optional
+        The number of permutations for the test (default 100)
+    rng : np.random.Generator, optional
+        Random number generator for reproducibility.
     """
 
     def __init__(
         self,
+        sigma,
+        alpha=0.05,
+        npermutations=100,
+        null_hypothesis='independence',
         rng=None,
+        **args,
+    ):
+        super().__init__()
+        
+        if rng is None:
+            self.rng = np.random.default_rng()
+        else:
+            self.rng = rng
+        
+        self.sigma = sigma
+        if sigma == 0:
+            self.null = True
+        else:
+            self.null = False
+            
+        self.alpha = alpha
+        self.npermutations = npermutations
+        self.null_hypothesis = null_hypothesis
+        self.permutation_distribution = []
+
+    def fit(self, data, **kwargs):
+        """Estimates the latent positions and computes p-value
+
+        Parameters
+        ----------
+        data : dict
+            A dictionary containing keys 'A', 'B' i.e. adjacency matrices
+        """
+        
+        if not isinstance(data, dict):
+            raise ValueError("Invalid data format. Expected a dictionary with keys 'A', 'B'.")
+
+        A = data.get('A')
+        B = data.get('B')
+        self.A = A
+        self.B = B
+        n = A.shape[0]
+
+        self.test_stat_estimate = self._compute_test_stat(A, B)
+
+        for i in range(self.npermutations):
+            permutation = np.random.permutation(n)
+            B_perm = B[permutation, :][:, permutation]
+            test_stat_perm = self._compute_test_stat(A, B_perm)
+            self.permutation_distribution.append(test_stat_perm)
+        
+        # compute pvalue
+        pvalue = np.mean([i >= self.test_stat_estimate for i in self.permutation_distribution])
+        self.pvalue = bool(pvalue)
+        self.reject_null = self.pvalue < self.alpha
+
+        return
+
+    def get_estimated(self):
+        """Get fit results 
+         
+        Returns
+        -------
+        A dictionary with 'estimated_latent', 'true_latent', 'p-value', 'reject_null', and 'null' keys.
+        """
+        results = {
+            'p-value' : self.pvalue,
+            'reject_null' : self.reject_null,
+            'null' : self.null
+        }
+        return results    
+    
+    def _compute_test_stat(self, A, B):
+        """Returns sqrt(n)rho if null hypothesis is independence (H0s) and sqrt(n)rho/v_w 
+        if null hypothesis is un-correlated (H0w)"""
+        
+        n = A.shape[0]
+        A_centered = A - A.mean(axis=0)
+        B_centered = B - B.mean(axis=0)
+        
+        phi_0_hat = 1/(n*(n-1)-1) * np.sum(A_centered * B_centered)
+        
+        eta_hat_2_alpha = 1/(n*(n-1)-1) * np.sum(A_centered**2)
+        eta_hat_2_beta = 1/(n*(n-1)-1) * np.sum(B_centered**2)
+        
+        # eta_hat_1_alpha = 1/n * np.sum((1/(n-1)*np.sum(A_centered * B_centered, axis = 1))**2)
+        # eta_hat_1_beta = 1/n * np.sum((1/(n-1)*np.sum(B_centered * B_centered, axis = 1))**2)
+
+        rho_hat = phi_0_hat / np.sqrt(eta_hat_2_alpha * eta_hat_2_beta)
+        
+        if self.null_hypothesis == 'independence':
+            return np.sqrt(n) * rho_hat
+        
+        eta_hat_1_phi = 1/n * np.sum((1/(n-1)*np.sum(A_centered * B_centered, axis = 1))**2)
+        
+        v_w_hat = 4 * eta_hat_1_phi / (eta_hat_2_alpha * eta_hat_2_beta)
+
+        return np.sqrt(n) * rho_hat / np.sqrt(v_w_hat)
+
+class DiffusionCorrelation(BaseMethod):
+    """Implementation of Diffusion Correlation algorithm.
+
+    Parameters
+    ----------
+    sigma : float
+        Correlation between latent positions (zero under independence i.e. H0 is true)
+    k : int
+        Dimensionality of the latent space.
+    test_method : str
+        Statistical test method to use. Options: "mgc", "dcorr".
+    npermutations : int
+        Number of permutations for significance testing.
+    alpha : float
+        Significance level for hypothesis testing.
+    rng : np.random.Generator, optional
+        Random number generator for reproducibility.
+    """
+    def __init__(
+        self,
+        sigma,
         k=None,
         test_method="mgc",
-        sigma=None,
-        n_permutations=1000,
-        alpha=None,
+        npermutations=1000,
+        alpha=0.05,
+        rng=None,
         **kwargs,
     ):
-        """
-        Parameters:
-        -----------
-        max_t : int
-            Maximum diffusion time steps to consider
-        n_permutations : int
-            Number of permutations for p-value computation
-        """
         self.rng = np.random.default_rng() if rng is None else rng
-        self.n_permutations = n_permutations
+        self.npermutations = npermutations
         self.k = k
         self.test_method = test_method
+        
+        if sigma == 0:
+            self.null = True
+        else:
+            self.null = False
         self.sigma = sigma
+        
         self.alpha = alpha
 
     def compute_normalized_laplacian(self, K):
@@ -468,39 +593,7 @@ class DiffusionCorrelation(BaseMethod):
         return L
 
     def compute_distance_matrix(self, U):
-        """
-        Step 4: Compute Euclidean distance matrix
-        """
         return squareform(pdist(U, metric="euclidean"))
-
-    def compute_dcorr(self, D1, D2):
-        """
-        Compute distance correlation between two distance matrices
-
-        This is a simplified version - you may want to use the full
-        distance correlation formula or mgc library
-        """
-        # Center the distance matrices
-        n = D1.shape[0]
-
-        # Double centering
-        D1_centered = self._double_center(D1)
-        D2_centered = self._double_center(D2)
-
-        # Compute distance covariance
-        dcov = np.sqrt(np.sum(D1_centered * D2_centered) / (n * n))
-
-        # Compute distance variances
-        dvar1 = np.sqrt(np.sum(D1_centered * D1_centered) / (n * n))
-        dvar2 = np.sqrt(np.sum(D2_centered * D2_centered) / (n * n))
-
-        # Distance correlation
-        if dvar1 * dvar2 > 0:
-            dcorr = dcov / np.sqrt(dvar1 * dvar2)
-        else:
-            dcorr = 0
-
-        return dcorr
 
     def _double_center(self, D):
         """
@@ -513,185 +606,91 @@ class DiffusionCorrelation(BaseMethod):
 
         return D - row_mean - col_mean + total_mean
 
-    def permutation_test(self, A, X, test_statistic):
+    def fit(self, data):
+        """Compute p-value using permutation test
+
+        Parameters
+        ----------
+        data : dict
+            A dictionary containing keys 'A', 'B', 'X', 'Z' where 'A' and 'B' are adjacency matrices
+            and 'X' and 'Z' are latent positions.
         """
-        Step 7: Compute p-value using permutation test
+        if not isinstance(data, dict):
+            raise ValueError("Invalid data format. Expected a dictionary with keys 'A', 'B'.")
 
-        Parameters:
-        -----------
-        A : array-like, shape (n, n)
-            Adjacency matrix
-        X : array-like, shape (n, p)
-            Nodal attributes
-        test_statistic : float
-            Observed test statistic
+        A = data.get('A')
+        B = data.get('B')
+        self.A = A
+        self.B = B
+        # true latent positions may not be provided
+        X = data.get('X', None)
+        Z = data.get('Z', None)
+        self.X = X
+        self.Z = Z
 
-        Returns:
-        --------
-        p_value : float
-            Permutation p-value
-        """
-        n = A.shape[0]
-        null_distribution = []
-
-        for _ in range(self.n_permutations):
-            # Permute nodal attributes
-            perm_idx = np.random.permutation(n)
-            X_perm = X[perm_idx, :]
-
-            # Compute test statistic under null
-            _, stats = self.test(A, X_perm, return_details=True)
-            null_distribution.append(stats["mgc_star"])
-
-        # Compute p-value
-        null_distribution = np.array(null_distribution)
-        p_value = np.mean(null_distribution >= test_statistic)
-
-        return p_value, null_distribution
-
-    def fit(self, data, **kwargs):
-        """
-        Main testing procedure
-
-        Parameters:
-        -----------
-        data : array-like, shape (n, n)
-
-        return_details : bool
-            Whether to return detailed results
-
-        Returns:
-        --------
-        p_value : float
-            P-value for the test
-        results : dict (if return_details=True)
-            Dictionary containing detailed results
-        """
-        A, B, X, Z = data
+        # get the number of dimensions (k). If X or Z is provided, use its 
+        # shape (i.e. the "true" value of k)
+        if X is not None or Z is not None:
+            self.k = X.shape[1] if X is not None else Z.shape[1]
+        else:
+            if self.k is None:
+                raise ValueError(
+                    "Number of dimensions (k) must be specified if X and Z are not provided."
+                )
+            self.k = self.k
 
         A_symm = (A + A.T) / 2
         B_symm = (B + B.T) / 2
 
-        # Step 2: Compute normalized Laplacian
+        # compute normalized Laplacian
         A_laplacian = self.compute_normalized_laplacian(A_symm)
         B_laplacian = self.compute_normalized_laplacian(B_symm)
 
-        # Step 3: Diffusion map for t=1 (i.e. ASE)
+        # diffusion map for t=1 (i.e. ASE)
         Xhat, _ = ASE(A_laplacian, k=self.k)
         Zhat, _ = ASE(B_laplacian, k=self.k)
-        Xhat = Xhat[0]
-        Zhat = Zhat[0]
+        self.Xhat = Xhat
+        self.Zhat = Zhat
 
         distances_A = self.compute_distance_matrix(Xhat)
         distances_B = self.compute_distance_matrix(Zhat)
 
         if self.test_method == "mgc":
-            random_state = self.rng.integers(100)
+            # random_state = self.rng.integers(100)
 
             p_value = stats.multiscale_graphcorr(
                 distances_A,
                 distances_B,
                 compute_distance=None,
-                random_state=random_state,
+                random_state=self.rng,
             )
-        elif self.test_method == "dcorr":
-            dcorr = self.compute_dcorr(distances_A, distances_B)
-            p_value, null_dist = self.permutation_test(A, X, dcorr)
+        # elif self.test_method == "dcorr":
+        #     dcorr = self.compute_dcorr(distances_A, distances_B)
+        #     p_value, null_dist = self.permutation_test(A, X, dcorr)
         else:
             print(self.test_method)
             raise ValueError("Unknown method for computing test statistic.")
 
         self.pvalue = p_value
 
-        self.rejected = self.pvalue < self.alpha
-        return self.Xhat, self.Zhat, X, Z
+        self.reject_null = self.pvalue < self.alpha
+        return 
 
     def get_estimated(self):
-        """Return true if the null hypothesis is rejected"""
-        return self.rejected
+        """Get fit results 
+         
+        Returns
+        -------
+        A dictionary with 'estimated_latent', 'true_latent', 'p-value', 'reject_null', and 'null' keys.
+        """
+        results = {
+            'estimated_latent': (self.Xhat, self.Zhat),
+            'true_latent': (self.X, self.Z),
+            'p-value' : self.pvalue,
+            'reject_null' : self.reject_null,
+            'null' : self.null
+        }
+        return results
 
-    def get_truth(self):
-        """Return True if the null hypothesis is False (i.e. should be rejected)"""
-        return False if self.sigma == 0 else True
 
 
-# class OMNITest(BaseMethod):
-#     def __init__(self,
-#                  sigma,
-#                  alpha=0.05,
-#                  rng=None,
-#                  **args):
-#         super().__init__()
-#         self.sigma = sigma
-#         self.alpha = alpha
-#         self.rng = rng if rng is not None else np.random.default_rng()
-
-#     def fit(self, A, B=None, k=2, *args, **kwargs):
-#         """OMNI embedding with ase, approximate asymptotic distribution,
-#         get p-value.
-#         Assumes only two graphs
-
-#         Need to figure our point 2
-#         """
-#         # build OMNI matrix
-#         M = np.block([[A, (A+B)/2],
-#                        [(A+B)/2, B]])
-
-#         self.Mhat = ASE(M, k=k, rng=self.rng)[0][0]
-#         self.Xhat = self.Mhat[:A.shape[0]]
-#         self.Zhat = self.Mhat[A.shape[0]:]
-
-#         return
-
-#     def get_estimated(self):
-#         """Return true if the null hypothesis is rejected"""
-#         return self.rejected
-#     def get_truth(self):
-#         """Return True if the null hypothesis is False (i.e. should be rejected)"""
-#         return False if self.sigma == 0 else True
-
-# class FitDependent(BaseMethod):
-#     # TODO: finish implementation of this
-#     """Method to fit a shared embedding to both networks
-
-#     Parameters
-#     ----------
-#     A: np.ndarray
-#         Adjacency matrix for first network
-#     B: np.ndarray
-#         Adjacency matrix for second network
-#     X: np.ndarray
-#         Latent positions for first network
-#     Z: np.ndarray
-#         Latent positions for second network
-#     """
-#     def __init__(self, A, B, X=None, Z=None, rng=None):
-#         super().__init__()
-#         self.A = A
-#         self.B = B
-#         if A.shape != B.shape:
-#             self.na = A.shape[0]
-#             self.nb = B.shape[0]
-#         else:
-#             self.n = A.shape[0]
-
-#         if X is not None:
-#             self.X = X
-#             self.k = X.shape[1]
-#         if Z is not None:
-#             self.Z = Z
-#             self.k = Z.shape[1]
-
-#         self.rng = rng if rng is not None else np.random.default_rng()
-
-#     def fit(self, *args, **kwargs):
-#         pass
-
-#     def name(self):
-#         return "DependentMethod"
-
-#     def get_estimated(self):
-#         pass
-
-#     def get_truth(self):
-#         return self.X, self.Z
