@@ -227,8 +227,6 @@ class ComputeAll(BaseMetric):
 
         if estimated_latent is not None:
             latent_metrics = {
-                "MSE_x": MSE()(results),
-                "MSE_z": MSE()(results),
                 "RelativeFrobeniusNorm_x": RelativeFrobeniusNorm(
                     gram_matrix=self.gram_matrix
                 )(results),

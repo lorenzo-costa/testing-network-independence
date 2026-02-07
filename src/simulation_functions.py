@@ -21,38 +21,26 @@ def run_scenario(metrics, args, method_params=None):
     metrics : list of BaseMetric
         list of metrics to compute
     args : dict
-        arguments for the simulation scenario
+        arguments for the simulation scenario. Should contain 'setup' key with 
+        (dgp, method) tuple.
 
     Returns
     -------
     dict
         Dictionary containing the computed metrics.
     """
-    dgp = args["dgp"](**args)
-    if dgp.name() == "GaussianNetwork":
-        args["solver"] = MLE_gaussian
-    if dgp.name() == "BernoulliNetwork":
-        args["solver"] = MLE_logistic
-    method = args["method"](**args)
+    dgp, solver = args['setup']
+    method = args['methods']
+
+    dgp = dgp(**args)
+    method = method(solver=solver, **args)
+
     data = dgp.generate()
-    fit_out = method.fit(data, **(method_params if method_params else {}))
-    estimated = method.get_estimated()
-    truth = method.get_truth()
+    method.fit(data, **(method_params if method_params else {}))
+    results = method.get_estimated()
 
-    if len(metrics) == 1:
-        # here assume that metric() return a dict with maney metrics inside, probabley
-        # there's a smarter way to do this
-        out_metrics = {
-            metrics[0].get_name(): metrics[0](
-                truth=truth, estimated=estimated, fit_out=fit_out
-            )
-        }
-
-    else:
-        out_metrics = {
-            metric.get_name(): metric(truth=truth, estimated=estimated, fit_out=fit_out)
-            for metric in metrics
-        }
+    out_metrics = {metric.get_name(): metric(results) for metric in metrics}
+    
     out_metrics["args"] = args
     return out_metrics
 
@@ -66,14 +54,6 @@ def run_scenario_wrapper(args):
 def run_simulation_parallel(
     nsim, factorial_design, metrics, method_params=None, rng=None, n_jobs=None
 ):
-    """Run simulations in parallel with improved batching.
-
-    Key optimizations:
-    1. Flatten all work upfront (nsim * len(factorial_design) scenarios)
-    2. Use single Pool.map instead of nested loops
-    3. Better chunk sizing for load balancing
-    4. Reduced overhead from pool management
-    """
     if rng is None:
         rng = np.random.default_rng()
 

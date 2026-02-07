@@ -103,8 +103,8 @@ class FitIndependent(BaseMethod):
 
     def get_estimated(self):
         results = {
-            'estimated_latent' : [self.Xhat, self.Zhat],
-            'true_latent' : [self.X, self.Z]
+            'estimated_latent' : (self.Xhat, self.Zhat),
+            'true_latent' : (self.X, self.Z)
         }
         return results
 
@@ -243,8 +243,8 @@ class RVPermutationTest(BaseMethod):
         A dictionary with 'estimated_latent', 'true_latent', 'p-value', 'reject_null', and 'null' keys.
         """
         results = {
-            'estimated_latent': [self.Xhat, self.Zhat],
-            'true_latent': [self.X, self.Z],
+            'estimated_latent': (self.Xhat, self.Zhat),
+            'true_latent': (self.X, self.Z),
             'p-value' : self.pvalue,
             'reject_null' : self.reject_null,
             'null' : self.null
@@ -383,7 +383,7 @@ class LLKRatioTest(BaseMethod):
         if self.approximation == "chi-sq":
             # chi squared approximation -(n-1- (2k+1/2) log(llkratio^{2/n})\approx \chi^{2}_{k^{2}}
             chi = -(n - 1 - (2 * k + 1) / 2) * np.log(wilks_score)
-            self.p_value = 1 - stats.chi2.cdf(chi, df=k**2)
+            self.pvalue = 1 - stats.chi2.cdf(chi, df=k**2)
         if self.approximation == "F-distr":
             # define:
             # W : wilks score llk_ratio^{2/n}
@@ -398,9 +398,9 @@ class LLKRatioTest(BaseMethod):
             df2 = a * b - k**2 / 2 + 1
             W_a = wilks_score ** (1.0 / a)
             F_stat = ((1.0 - W_a) / W_a) * (a * b - k**2 / 2 + 1) / k**2
-            self.p_value = 1.0 - stats.f.cdf(F_stat, df1, df2)
+            self.pvalue = 1.0 - stats.f.cdf(F_stat, df1, df2)
 
-        self.rejected = self.p_value < self.alpha
+        self.reject_null = self.pvalue < self.alpha
         return
 
     def get_estimated(self):
@@ -411,8 +411,8 @@ class LLKRatioTest(BaseMethod):
         A dictionary with 'estimated_latent', 'true_latent', 'p-value', 'reject_null', and 'null' keys.
         """
         results = {
-            'estimated_latent': [self.Xhat, self.Zhat],
-            'true_latent': [self.X, self.Z],
+            'estimated_latent': (self.Xhat, self.Zhat),
+            'true_latent': (self.X, self.Z),
             'p-value' : self.pvalue,
             'reject_null' : self.reject_null,
             'null' : self.null

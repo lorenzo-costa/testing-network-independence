@@ -100,8 +100,7 @@ def solve_logistic_scipy(X, y, mu=None):
     return res.x[:n_features], res.x[-1] if mu is None else mu
 
 
-def MLE_logistic(A, k=2, rng=None, shrink=0, **kwargs):
-    # print("WARNING: MLE_logistic is experimental and might not work as expected.")
+def MLE_logistic(A, k=2, rng=None, **kwargs):
     """Maximum Likelihood Estimation for Logistic link adjacency matrix
 
     Parameters
@@ -112,13 +111,11 @@ def MLE_logistic(A, k=2, rng=None, shrink=0, **kwargs):
         Number of latent dimensions, by default 2
     rng : np.random.Generator, optional
         Random number generator, by default None
-    shrink : int, optional
-        Shrinkage parameter, by default 0
 
     Returns
     -------
-    _type_
-        _description_
+    np.ndarray, np.ndarray
+        Estimated latent positions, estimated eigenvalues
     """
     if rng is None:
         rng = np.random.default_rng()
@@ -169,7 +166,7 @@ def MLE_logistic(A, k=2, rng=None, shrink=0, **kwargs):
 
     return xhat, evals
 
-def ASE(A, k=2, rng=None, shrink=0, **kwargs):
+def ASE(A, k=2, rng=None, **kwargs):
     """Adjacency Spectral Embedding
 
     Parameters
@@ -180,12 +177,10 @@ def ASE(A, k=2, rng=None, shrink=0, **kwargs):
         Number of dimensions for the latent space, by default 2
     rng : np.random.Generator, optional
         Random number generator, by default None
-    shrink : int, optional
-        Shrinkage parameter, by default 0
 
     Returns
     -------
-    list, list
+    np.ndarray, np.ndarray
         Estimated latent positions, estimated eigenvalues
     """
     if rng is None:
@@ -246,9 +241,8 @@ def MLE_gaussian(A, k=2, rng=None, shrink=0.5, **kwargs):
     evals = evals[idx]
     evectors = evectors[:, idx]
 
-    # evals = np.clip(np.maximum(evals-0.5, 0), 0, 1e5) # clip for numerical stability
-    evals = np.abs(evals - shrink)
-
+    evals = np.clip(np.maximum(evals-0.5, 0), 0, 1e10) # clip for numerical stability
+    
     xhat = evectors * np.sqrt(evals)
 
     return xhat, evals

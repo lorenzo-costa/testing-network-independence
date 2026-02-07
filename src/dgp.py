@@ -125,8 +125,15 @@ class GaussianNetwork(BaseDPG, CopulaDGP):
         # Symmetrise
         A = (A + A.T) / 2
         B = (B + B.T) / 2
+        
+        out = {
+            'A': A,
+            'B': B,
+            'Z': Z,
+            'X': X
+        }
 
-        return A, B, Z, X
+        return out
 
     def _type_check(self, marginals):
         # for now only continuous marginals allowed
@@ -223,8 +230,14 @@ class BernoulliNetwork(BaseDPG, CopulaDGP):
         A = A + A.T
         B = B + B.T
 
-        return A, B, Z, X
-    
+        out = {
+            'A': A,
+            'B': B,
+            'Z': Z,
+            'X': X
+        }
+        return out
+
     def __repr__(self):
         return (
             f"BernoulliNetwork(n={self.n}, k={self.k}, sigma={self.sigma}, "

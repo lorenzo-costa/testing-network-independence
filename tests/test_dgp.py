@@ -37,7 +37,11 @@ def test_GaussianNetwork(
         rng=rng,
         edge_var=edge_var,
     )
-    A, B, X, Z = md.generate()
+    out = md.generate()
+    A = out['A']
+    B = out['B']
+    X = out['X']
+    Z = out['Z']
     assert A.shape == (n, n)
     assert B.shape == (n, n)
     assert X.shape == (n, k)
@@ -73,7 +77,11 @@ def test_BernoulliNetwork(
         rng=rng,
         edge_var=edge_var,
     )
-    A, B, X, Z = md.generate()
+    out = md.generate()
+    A = out['A']
+    B = out['B']
+    X = out['X']
+    Z = out['Z']
     assert A.shape == (n, n)
     assert B.shape == (n, n)
     assert X.shape == (n, k)
