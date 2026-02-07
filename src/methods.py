@@ -1,14 +1,8 @@
 import numpy as np
-from scipy.sparse.linalg import eigsh
-from scipy.linalg import norm
-import pandas as pd
-from .metrics import rv_coefficient, rv_coefficient_adjusted
+from .metrics import rv_coefficient_adjusted
 import sys
 import os
 from scipy import stats
-from scipy.optimize import minimize
-from scipy.special import expit
-import numba as nb
 from .solvers import ASE
 from scipy.spatial.distance import pdist, squareform
 

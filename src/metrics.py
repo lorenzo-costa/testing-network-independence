@@ -1,7 +1,4 @@
-import numpy as np
-from scipy.sparse.linalg import eigsh
 from scipy.linalg import norm
-from scipy.linalg import blas
 from ._metrics_helper import rv_coefficient, rv_coefficient_adjusted
 
 

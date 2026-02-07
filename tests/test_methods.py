@@ -1,14 +1,8 @@
 import pytest
-import sys
-from pathlib import Path
 import numpy as np
 from src.dgp import GaussianNetwork
-from scipy import stats
-import sys
-from pathlib import Path
 from src.methods import RVPermutationTest, QAP
 from src.solvers import ASE, MLE_gaussian, MLE_logistic
-from scipy.sparse.linalg import eigsh
 from src.metrics import rv_coefficient
 from src.dgp import GaussianNetwork, BernoulliNetwork
 

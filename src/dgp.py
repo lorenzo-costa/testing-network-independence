@@ -122,6 +122,9 @@ class GaussianNetwork(BaseDPG, CopulaDGP):
         A = self.rng.normal(loc=expected_A, scale=self.edge_var)
         B = self.rng.normal(loc=expected_B, scale=self.edge_var)
 
+        A[np.diag_indices_from(A)] = 0
+        B[np.diag_indices_from(B)] = 0
+
         # Symmetrise
         A = (A + A.T) / 2
         B = (B + B.T) / 2

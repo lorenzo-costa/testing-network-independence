@@ -1,26 +1,19 @@
 import pytest
-import sys
-from pathlib import Path
 import numpy as np
 from src.dgp import GaussianNetwork
 from scipy import stats
 import sys
-from pathlib import Path
-from src.metrics import (
-    Rejection,
-    TrueRejection,
-    FalseRejection,
-    RelativeFrobeniusNorm,
-    ComputeAll,
-)
+from src.metrics import ComputeAll
 from src.simulation_functions import run_simulation
 from src.solvers import ASE, MLE_gaussian, MLE_logistic
 from src.dgp import GaussianNetwork, BernoulliNetwork
 from src.methods import RVPermutationTest, LLKRatioTest, QAP
 from itertools import product
 
-
-def test_simulation_run():
+@pytest.mark.parametrize(
+    'parallel', [True, False]
+)
+def test_simulation_run(parallel):
     # test only that simulation function actually runs
     nsim = 2
     n = [10, 20]
@@ -29,9 +22,9 @@ def test_simulation_run():
     alpha = [0.05]
     marginals = [stats.norm]
     edge_var = [1, 2]
-    methods = [RVPermutationTest, LLKRatioTest, QAP]
+    method = [RVPermutationTest, LLKRatioTest, QAP]
 
-    setups = [
+    setup = [
         (GaussianNetwork, ASE),
         (BernoulliNetwork, MLE_logistic),
         (GaussianNetwork, MLE_gaussian),
@@ -45,7 +38,7 @@ def test_simulation_run():
 
     param_names = [
         "setup",
-        "methods",
+        "method",
         "n",
         "k",
         "sigma",
@@ -56,7 +49,7 @@ def test_simulation_run():
     ]
 
     param_values = product(
-        setups, methods, n, k, sigma, alpha, marginals, edge_var, approximation
+        setup, method, n, k, sigma, alpha, marginals, edge_var, approximation
     )
 
     factorial_design = [dict(zip(param_names, v)) for v in param_values]
@@ -66,6 +59,6 @@ def test_simulation_run():
         metrics=metrics,
         factorial_design=factorial_design,
         rng=rng,
-        parallel=False,
+        parallel=parallel,
     )
     assert out is not None

@@ -30,7 +30,7 @@ def run_scenario(metrics, args, method_params=None):
         Dictionary containing the computed metrics.
     """
     dgp, solver = args["setup"]
-    method = args["methods"]
+    method = args["method"]
 
     dgp = dgp(**args)
     method = method(solver=solver, **args)
