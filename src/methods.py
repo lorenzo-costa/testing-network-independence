@@ -17,7 +17,6 @@ sys.path.append(os.path.abspath(os.path.join(os.getcwd(), "..")))
 # TODO:
 # - implement OMNI method
 
-
 class BaseMethod:
     def __init__(self):
         pass
@@ -29,9 +28,6 @@ class BaseMethod:
         raise NotImplementedError("Subclasses should implement this!")
 
     def get_estimated(self):
-        raise NotImplementedError("Subclasses should implement this!")
-
-    def get_truth(self):
         raise NotImplementedError("Subclasses should implement this!")
 
 
@@ -50,46 +46,41 @@ class FitIndependent(BaseMethod):
         Latent positions for second network
     """
 
-    def __init__(self, rng=None, shrink=0, solver=None, k=None, **kwargs):
+    def __init__(self, rng=None, solver=None, k=None, **kwargs):
         super().__init__()
 
         self.rng = rng if rng is not None else np.random.default_rng()
-        self.shrink = shrink
-        self.solver = solver if solver is not None else ASE
+        if solver is None:
+            raise ValueError("Solver must be provided")
+        self.solver = solver
         self.k = k
 
-    def fit(self, data, *args, **kwargs):
+    def fit(self, data, **kwargs):
         """Estimate latent positions independently
 
         Parameters
         ----------
-        data : tuple
-            A tuple containing (A, B, X, Z) where A and B are adjacency matrices
-            and X and Z are latent positions.
-        k : int, optional
-            Number of dimensions for the latent space, by default None
-
-        Returns
-        -------
-        Xhat, Zhat
-            Estimated latent positions for the two networks.
-
-        Raises
-        ------
-        ValueError
-            If the input data is not valid.
+        data : dict
+            A dictionary containing keys 'A', 'B', 'X', 'Z' where 'A' and 'B' are adjacency matrices
+            and 'X' and 'Z' are latent positions.
         """
 
-        if not isinstance(data, tuple) or len(data) != 4:
-            raise ValueError("Invalid data format. Expected a tuple of (A, B, X, Z).")
+        if not isinstance(data, dict):
+            raise ValueError("Invalid data format. Expected a dictionary with keys 'A', 'B'.")
 
-        A, B, X, Z = data
+        A = data.get('A')
+        B = data.get('B')
+        # true latent positions may not be provided
+        X = data.get('X', None)
+        Z = data.get('Z', None)
 
         self.A = A
         self.B = B
         self.X = X
         self.Z = Z
 
+        # get the number of dimensions (k). If X or Z is provided, use its 
+        # shape (i.e. the "true" value of k)
         if X is not None or Z is not None:
             self.k = X.shape[1] if X is not None else Z.shape[1]
         else:
@@ -99,25 +90,49 @@ class FitIndependent(BaseMethod):
                 )
             self.k = self.k
 
-        Xhat, evalsX = self.solver(self.A, k=self.k, rng=self.rng, shrink=self.shrink)
-        Zhat, evalsZ = self.solver(self.B, k=self.k, rng=self.rng, shrink=self.shrink)
+        Xhat, evalsX = self.solver(self.A, k=self.k, rng=self.rng)
+        Zhat, evalsZ = self.solver(self.B, k=self.k, rng=self.rng)
 
-        self.Xhat = Xhat[0]
-        self.Zhat = Zhat[0]
+        self.Xhat = Xhat
+        self.Zhat = Zhat
 
-        return self.Xhat, self.Zhat, X, Z
+        return
 
     def get_name(self):
         return "FitIndependent"
 
     def get_estimated(self):
-        return None
-
-    def get_truth(self):
-        return None
+        results = {
+            'estimated_latent' : [self.Xhat, self.Zhat],
+            'true_latent' : [self.X, self.Z]
+        }
+        return results
 
 
 class RVPermutationTest(BaseMethod):
+    """Perform RV permutation test for network independence.
+
+    Parameters
+    ----------
+    sigma : float
+        Correlation between latent positions (zero under independence i.e. H0 is true)
+    npermutations : int
+        Number of permutations to perform for the test.
+    alpha : float
+        Significance level for the test.
+    solver : callable
+        Function to estimate latent positions from the adjacency matrix.
+    k : int
+        Number of dimensions for the latent space.
+    test_function : callable
+        Function to compute the test statistic.
+    permutation_type : str
+        Type of permutation to use. Options:
+        - latent: permute the estimated latent positions
+        - observed: permute the observed data and re-estimate latent positions each time.
+    rng : np.random.Generator
+        Random number generator for reproducibility.
+    """
     def __init__(
         self,
         sigma,
@@ -126,45 +141,61 @@ class RVPermutationTest(BaseMethod):
         rng=None,
         solver=None,
         k=None,
-        **args,
+        test_function=rv_coefficient_adjusted,
+        permutation_type='latent',
+        **kwargs,
     ):
         super().__init__()
+        
         self.sigma = sigma
+        if sigma == 0:
+            self.null = True
+        else:
+            self.null = False
+        
+        self.rv_distr = []
+        
         self.alpha = alpha
         self.npermutations = npermutations
         self.rng = np.random.default_rng() if rng is None else rng
-        self.solver = solver if solver is not None else ASE
+        
+        if solver is None:
+            raise ValueError("Solver must be provided")
+        self.solver = solver
+        
         self.k = k
+        self.test_function = test_function
+        self.permutation_type = permutation_type
 
-    def fit(
-        self, data, rv_coefficient_function=rv_coefficient_adjusted, *args, **kwargs
-    ):
-        """Bootstrap the null distribution of the RV coefficient
-        The function estimates the latent position of the networks independently
-        using ASE, computes the RV coefficient and bootstraps the null distribution.
+    def fit(self, data, **kwargs):
+        """Get null distribution of RV coefficient with permutations
 
+        The function estimates the latent position of the networks independently,
+        computes the RV coefficient and obtains the p-value by permutation.
+        
         Parameters
         ----------
-        data : list
-            A list containing (A, B, X, Z) where A and B are adjacency matrices
-            and X and Z are latent positions.
-        k : int, optional
-            Number of dimensions for the latent space, by default 2
-        solver : callable, optional
-            Function to estimate the latent positions.
-            Possible values choices:
-            - ASE for adjacency spectral embedding
-            - MLE gaussian for modified version of ASE for MLE in Gaussian-Gaussian model
-
-        Returns
-        -------
-        Xhat, Zhat
-            Estimated latent positions for the two networks.
+        data : dict
+            A dictionary containing keys 'A', 'B', 'X', 'Z' where 'A' and 'B' are adjacency matrices
+            and 'X' and 'Z' are latent positions.
         """
+        
+        if not isinstance(data, dict):
+            raise ValueError("Invalid data format. Expected a dictionary with keys 'A', 'B'.")
 
-        A, B, X, Z = data
-
-        if X is not None and Z is not None:
+        A = data.get('A')
+        B = data.get('B')
+        self.A = A
+        self.B = B
+        # true latent positions may not be provided
+        X = data.get('X', None)
+        Z = data.get('Z', None)
+        self.X = X
+        self.Z = Z
+        
+        # get the number of dimensions (k). If X or Z is provided, use its 
+        # shape (i.e. the "true" value of k)
+        if X is not None or Z is not None:
             self.k = X.shape[1] if X is not None else Z.shape[1]
         else:
             if self.k is None:
@@ -172,38 +203,53 @@ class RVPermutationTest(BaseMethod):
                     "Number of dimensions (k) must be specified if X and Z are not provided."
                 )
             self.k = self.k
-
-        Xhat = self.solver(A, k=self.k, rng=self.rng)[0][0]
-        Zhat = self.solver(B, k=self.k, rng=self.rng)[0][0]
-
-        self.Xhat = Xhat
+        
+        Zhat = self.solver(A, k=self.k, rng=self.rng)[0] # 0 is the xhat, 1 are the evalues
+        Xhat = self.solver(B, k=self.k, rng=self.rng)[0]
+        
         self.Zhat = Zhat
+        self.Xhat = Xhat
 
-        rv_est = rv_coefficient_function(Xhat, Zhat)
+        rv_est = self.test_function(Zhat, Xhat)
         self.rv_est = rv_est
-        rv_distr = []
-        for _ in range(self.npermutations):
-            perm = self.rng.permutation(self.Xhat.shape[0])
-            X_perm = self.Xhat[perm, :]
-            rv_perm = rv_coefficient_function(X_perm, self.Zhat)
-            rv_distr.append(rv_perm)
-        self.rv_distr = rv_distr
-
-        pvalue = np.mean([rv >= rv_est for rv in rv_distr])
+        # permute one of the observe networks, re-estimate latent positions and compute RV coefficient
+        if self.permutation_type == 'observed':
+            for _ in range(self.npermutations):
+                perm = self.rng.permutation(A.shape[0])
+                B_perm = B[perm][:, perm]
+                Xhat_perm = self.solver(B_perm, k=self.k, rng=self.rng)[0]
+                rv_perm = self.test_function(Zhat, Xhat_perm)
+                self.rv_distr.append(rv_perm)
+        # estimate latent positions once, permute them and compute rv_coefficient
+        elif self.permutation_type == 'latent':
+            for _ in range(self.npermutations):
+                perm = self.rng.permutation(Zhat.shape[0])
+                Xhat_perm = Xhat[perm, :]
+                rv_perm = self.test_function(Zhat, Xhat_perm)
+                self.rv_distr.append(rv_perm)
+        
+        # compute pvalue
+        pvalue = np.mean([rv >= rv_est for rv in self.rv_distr])
         self.pvalue = pvalue
-        self.rejected = self.pvalue < self.alpha
+        self.reject_null = self.pvalue < self.alpha
 
-        return self.Xhat, self.Zhat, X, Z
+        return
 
     def get_estimated(self):
-        """Return true if the null hypothesis is rejected"""
-        return self.rejected
-
-    def get_truth(self):
+        """Get fit results 
+         
+        Returns
+        -------
+        A dictionary with 'estimated_latent', 'true_latent', 'p-value', 'reject_null', and 'null' keys.
         """
-        FIXED: Return True if H1 is true (Signal exists), False if H0 is true.
-        """
-        return False if self.sigma == 0 else True
+        results = {
+            'estimated_latent': [self.Xhat, self.Zhat],
+            'true_latent': [self.X, self.Z],
+            'p-value' : self.pvalue,
+            'reject_null' : self.reject_null,
+            'null' : self.null
+        }
+        return results
 
     def get_name(self):
         return "RVPermutationTest"
@@ -230,54 +276,73 @@ class LLKRatioTest(BaseMethod):
         Approximation method to use for p-value computation.
         Choices are:
         - beta: use the exact product of Beta distribution of the Wilks lambda
-        Not implemented but requires some way of approximating quantiles
+            Not implemented but requires some way of approximating quantiles
         - chi-sq: use the chi-squared approximation
         - F-distr: use the F-distribution approximation
+    k : int, optional
+        Number of dimensions for the latent space.
+    solver : callable, optional
+        Function to estimate the latent positions.
+    rng : np.random.Generator, optional
+        Random number generator for reproducibility.
     """
 
     def __init__(
         self,
         sigma,
         alpha=0.05,
-        rng=None,
         approximation="beta",
         k=None,
         solver=None,
+        rng=None,
         **args,
     ):
         super().__init__()
-        self.sigma = sigma
-        self.alpha = alpha
-        self.approximation = approximation
-        self.k = k
-        self.solver = solver if solver is not None else ASE
+        
         if rng is None:
             self.rng = np.random.default_rng()
         else:
             self.rng = rng
+        
+        self.sigma = sigma
+        if sigma == 0:
+            self.null = True
+        else:
+            self.null = False
+            
+        self.alpha = alpha
+        self.approximation = approximation
+        self.k = k
+        if solver is None:
+            raise ValueError("Solver must be provided")
+        self.solver = solver
 
     def fit(self, data, **kwargs):
         """Estimates the latent positions and computes p-value
 
         Parameters
         ----------
-        A : np.ndarray
-            Adjacency matrix for first network
-        B : np.ndarray
-            Adjacency matrix for second network
-        k : int, optional
-            Number of dimensions for the latent space, by default 2
-        solver : callable, optional
-            Function to estimate the latent positions. Possible values choices:
-            - ASE for adjacency spectral embedding
-            - MLE gaussian for modified version of ASE for MLE in Gaussian-Gaussian model
+        data : dict
+            A dictionary containing keys 'A', 'B', 'X', 'Z' where 'A' and 'B' are adjacency matrices
+            and 'X' and 'Z' are latent positions.
         """
+        
+        if not isinstance(data, dict):
+            raise ValueError("Invalid data format. Expected a dictionary with keys 'A', 'B'.")
 
-        A, B, X, Z = data
+        A = data.get('A')
+        B = data.get('B')
+        self.A = A
+        self.B = B
+        # true latent positions may not be provided
+        X = data.get('X', None)
+        Z = data.get('Z', None)
+        self.X = X
+        self.Z = Z
 
-        n = A.shape[0]
-
-        if X is not None and Z is not None:
+        # get the number of dimensions (k). If X or Z is provided, use its 
+        # shape (i.e. the "true" value of k)
+        if X is not None or Z is not None:
             self.k = X.shape[1] if X is not None else Z.shape[1]
         else:
             if self.k is None:
@@ -285,15 +350,16 @@ class LLKRatioTest(BaseMethod):
                     "Number of dimensions (k) must be specified if X and Z are not provided."
                 )
             self.k = self.k
-
+        
+        n = A.shape[0]
         k = self.k
 
-        # extract latent positions
-        Xhat = self.solver(A, k=k, rng=self.rng)[0][0]
-        Zhat = self.solver(B, k=k, rng=self.rng)[0][0]
-        self.Xhat = Xhat
+        Zhat = self.solver(A, k=self.k, rng=self.rng)[0] # 0 is the xhat, 1 are the evalues
+        Xhat = self.solver(B, k=self.k, rng=self.rng)[0]
+        
         self.Zhat = Zhat
-
+        self.Xhat = Xhat
+        
         # # compute llk_score
         # cca_matrix = np.linalg.inv(Xhat.T @ Xhat) @ (Xhat.T @ Zhat) @ np.linalg.inv(Zhat.T @ Zhat) @ (Zhat.T @ Xhat)
         # cca_evals = np.linalg.eigvals(cca_matrix)
@@ -312,7 +378,7 @@ class LLKRatioTest(BaseMethod):
         # approximate quantiles of the null
         if self.approximation == "beta":
             # use the exact product of beta distributions
-            # TODO: find a way to approximate the quantiles
+            # TODO: find a way to approximate the quantiles, Fosdick & Hoff use some monte carlo thing
             raise NotImplementedError("Beta approximation not implemented yet")
         if self.approximation == "chi-sq":
             # chi squared approximation -(n-1- (2k+1/2) log(llkratio^{2/n})\approx \chi^{2}_{k^{2}}
@@ -335,15 +401,23 @@ class LLKRatioTest(BaseMethod):
             self.p_value = 1.0 - stats.f.cdf(F_stat, df1, df2)
 
         self.rejected = self.p_value < self.alpha
-        return self.Xhat, self.Zhat, X, Z
+        return
 
     def get_estimated(self):
-        """Return true if the null hypothesis is rejected"""
-        return self.rejected
-
-    def get_truth(self):
-        """Return True if the null hypothesis is False (i.e. should be rejected)"""
-        return False if self.sigma == 0 else True
+        """Get fit results 
+         
+        Returns
+        -------
+        A dictionary with 'estimated_latent', 'true_latent', 'p-value', 'reject_null', and 'null' keys.
+        """
+        results = {
+            'estimated_latent': [self.Xhat, self.Zhat],
+            'true_latent': [self.X, self.Z],
+            'p-value' : self.pvalue,
+            'reject_null' : self.reject_null,
+            'null' : self.null
+        }
+        return results
 
 
 class DiffusionCorrelation(BaseMethod):

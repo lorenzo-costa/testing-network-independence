@@ -167,8 +167,7 @@ def MLE_logistic(A, k=2, rng=None, shrink=0, **kwargs):
 
     xhat = evectors * np.sqrt(coefs)
 
-    return [xhat], [evals]
-
+    return xhat, evals
 
 def ASE(A, k=2, rng=None, shrink=0, **kwargs):
     """Adjacency Spectral Embedding
@@ -210,7 +209,7 @@ def ASE(A, k=2, rng=None, shrink=0, **kwargs):
 
     xhat = evectors * np.sqrt(evals)
 
-    return [xhat], [evals]
+    return xhat, evals
 
 
 def MLE_gaussian(A, k=2, rng=None, shrink=0.5, **kwargs):
@@ -252,4 +251,4 @@ def MLE_gaussian(A, k=2, rng=None, shrink=0.5, **kwargs):
 
     xhat = evectors * np.sqrt(evals)
 
-    return [xhat], [evals]
+    return xhat, evals
