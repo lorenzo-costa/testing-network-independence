@@ -17,6 +17,7 @@ sys.path.append(os.path.abspath(os.path.join(os.getcwd(), "..")))
 # TODO:
 # - implement OMNI method
 
+
 class BaseMethod:
     def __init__(self):
         pass
@@ -66,20 +67,22 @@ class FitIndependent(BaseMethod):
         """
 
         if not isinstance(data, dict):
-            raise ValueError("Invalid data format. Expected a dictionary with keys 'A', 'B'.")
+            raise ValueError(
+                "Invalid data format. Expected a dictionary with keys 'A', 'B'."
+            )
 
-        A = data.get('A')
-        B = data.get('B')
+        A = data.get("A")
+        B = data.get("B")
         # true latent positions may not be provided
-        X = data.get('X', None)
-        Z = data.get('Z', None)
+        X = data.get("X", None)
+        Z = data.get("Z", None)
 
         self.A = A
         self.B = B
         self.X = X
         self.Z = Z
 
-        # get the number of dimensions (k). If X or Z is provided, use its 
+        # get the number of dimensions (k). If X or Z is provided, use its
         # shape (i.e. the "true" value of k)
         if X is not None or Z is not None:
             self.k = X.shape[1] if X is not None else Z.shape[1]
@@ -103,8 +106,8 @@ class FitIndependent(BaseMethod):
 
     def get_estimated(self):
         results = {
-            'estimated_latent' : (self.Xhat, self.Zhat),
-            'true_latent' : (self.X, self.Z)
+            "estimated_latent": (self.Xhat, self.Zhat),
+            "true_latent": (self.X, self.Z),
         }
         return results
 
@@ -133,6 +136,7 @@ class RVPermutationTest(BaseMethod):
     rng : np.random.Generator
         Random number generator for reproducibility.
     """
+
     def __init__(
         self,
         sigma,
@@ -142,27 +146,27 @@ class RVPermutationTest(BaseMethod):
         solver=None,
         k=None,
         test_function=rv_coefficient_adjusted,
-        permutation_type='latent',
+        permutation_type="latent",
         **kwargs,
     ):
         super().__init__()
-        
+
         self.sigma = sigma
         if sigma == 0:
             self.null = True
         else:
             self.null = False
-        
+
         self.permutation_distribution = []
-        
+
         self.alpha = alpha
         self.npermutations = npermutations
         self.rng = np.random.default_rng() if rng is None else rng
-        
+
         if solver is None:
             raise ValueError("Solver must be provided")
         self.solver = solver
-        
+
         self.k = k
         self.test_function = test_function
         self.permutation_type = permutation_type
@@ -172,28 +176,30 @@ class RVPermutationTest(BaseMethod):
 
         The function estimates the latent position of the networks independently,
         computes the RV coefficient and obtains the p-value by permutation.
-        
+
         Parameters
         ----------
         data : dict
             A dictionary containing keys 'A', 'B', 'X', 'Z' where 'A' and 'B' are adjacency matrices
             and 'X' and 'Z' are latent positions.
         """
-        
-        if not isinstance(data, dict):
-            raise ValueError("Invalid data format. Expected a dictionary with keys 'A', 'B'.")
 
-        A = data.get('A')
-        B = data.get('B')
+        if not isinstance(data, dict):
+            raise ValueError(
+                "Invalid data format. Expected a dictionary with keys 'A', 'B'."
+            )
+
+        A = data.get("A")
+        B = data.get("B")
         self.A = A
         self.B = B
         # true latent positions may not be provided
-        X = data.get('X', None)
-        Z = data.get('Z', None)
+        X = data.get("X", None)
+        Z = data.get("Z", None)
         self.X = X
         self.Z = Z
-        
-        # get the number of dimensions (k). If X or Z is provided, use its 
+
+        # get the number of dimensions (k). If X or Z is provided, use its
         # shape (i.e. the "true" value of k)
         if X is not None or Z is not None:
             self.k = X.shape[1] if X is not None else Z.shape[1]
@@ -203,17 +209,19 @@ class RVPermutationTest(BaseMethod):
                     "Number of dimensions (k) must be specified if X and Z are not provided."
                 )
             self.k = self.k
-        
-        Zhat = self.solver(A, k=self.k, rng=self.rng)[0] # 0 is the xhat, 1 are the evalues
+
+        Zhat = self.solver(A, k=self.k, rng=self.rng)[
+            0
+        ]  # 0 is the xhat, 1 are the evalues
         Xhat = self.solver(B, k=self.k, rng=self.rng)[0]
-        
+
         self.Zhat = Zhat
         self.Xhat = Xhat
 
         test_stat_estimate = self.test_function(Zhat, Xhat)
         self.test_stat_estimate = test_stat_estimate
         # permute one of the observe networks, re-estimate latent positions and compute RV coefficient
-        if self.permutation_type == 'observed':
+        if self.permutation_type == "observed":
             for _ in range(self.npermutations):
                 perm = self.rng.permutation(A.shape[0])
                 B_perm = B[perm][:, perm]
@@ -221,7 +229,7 @@ class RVPermutationTest(BaseMethod):
                 test_stat_perm = self.test_function(Zhat, Xhat_perm)
                 self.permutation_distribution.append(test_stat_perm)
         # estimate latent positions once, permute them and compute rv_coefficient
-        elif self.permutation_type == 'latent':
+        elif self.permutation_type == "latent":
             for _ in range(self.npermutations):
                 perm = self.rng.permutation(Zhat.shape[0])
                 Xhat_perm = Xhat[perm, :]
@@ -229,25 +237,27 @@ class RVPermutationTest(BaseMethod):
                 self.permutation_distribution.append(test_stat_perm)
 
         # compute pvalue
-        pvalue = np.mean([i >= self.test_stat_estimate for i in self.permutation_distribution])
+        pvalue = np.mean(
+            [i >= self.test_stat_estimate for i in self.permutation_distribution]
+        )
         self.pvalue = bool(pvalue)
         self.reject_null = self.pvalue < self.alpha
 
         return
 
     def get_estimated(self):
-        """Get fit results 
-         
+        """Get fit results
+
         Returns
         -------
         A dictionary with 'estimated_latent', 'true_latent', 'p-value', 'reject_null', and 'null' keys.
         """
         results = {
-            'estimated_latent': (self.Xhat, self.Zhat),
-            'true_latent': (self.X, self.Z),
-            'p-value' : self.pvalue,
-            'reject_null' : self.reject_null,
-            'null' : self.null
+            "estimated_latent": (self.Xhat, self.Zhat),
+            "true_latent": (self.X, self.Z),
+            "p-value": self.pvalue,
+            "reject_null": self.reject_null,
+            "null": self.null,
         }
         return results
 
@@ -298,18 +308,18 @@ class LLKRatioTest(BaseMethod):
         **args,
     ):
         super().__init__()
-        
+
         if rng is None:
             self.rng = np.random.default_rng()
         else:
             self.rng = rng
-        
+
         self.sigma = sigma
         if sigma == 0:
             self.null = True
         else:
             self.null = False
-            
+
         self.alpha = alpha
         self.approximation = approximation
         self.k = k
@@ -326,21 +336,23 @@ class LLKRatioTest(BaseMethod):
             A dictionary containing keys 'A', 'B', 'X', 'Z' where 'A' and 'B' are adjacency matrices
             and 'X' and 'Z' are latent positions.
         """
-        
-        if not isinstance(data, dict):
-            raise ValueError("Invalid data format. Expected a dictionary with keys 'A', 'B'.")
 
-        A = data.get('A')
-        B = data.get('B')
+        if not isinstance(data, dict):
+            raise ValueError(
+                "Invalid data format. Expected a dictionary with keys 'A', 'B'."
+            )
+
+        A = data.get("A")
+        B = data.get("B")
         self.A = A
         self.B = B
         # true latent positions may not be provided
-        X = data.get('X', None)
-        Z = data.get('Z', None)
+        X = data.get("X", None)
+        Z = data.get("Z", None)
         self.X = X
         self.Z = Z
 
-        # get the number of dimensions (k). If X or Z is provided, use its 
+        # get the number of dimensions (k). If X or Z is provided, use its
         # shape (i.e. the "true" value of k)
         if X is not None or Z is not None:
             self.k = X.shape[1] if X is not None else Z.shape[1]
@@ -350,16 +362,18 @@ class LLKRatioTest(BaseMethod):
                     "Number of dimensions (k) must be specified if X and Z are not provided."
                 )
             self.k = self.k
-        
+
         n = A.shape[0]
         k = self.k
 
-        Zhat = self.solver(A, k=self.k, rng=self.rng)[0] # 0 is the xhat, 1 are the evalues
+        Zhat = self.solver(A, k=self.k, rng=self.rng)[
+            0
+        ]  # 0 is the xhat, 1 are the evalues
         Xhat = self.solver(B, k=self.k, rng=self.rng)[0]
-        
+
         self.Zhat = Zhat
         self.Xhat = Xhat
-        
+
         # # compute llk_score
         # cca_matrix = np.linalg.inv(Xhat.T @ Xhat) @ (Xhat.T @ Zhat) @ np.linalg.inv(Zhat.T @ Zhat) @ (Zhat.T @ Xhat)
         # cca_evals = np.linalg.eigvals(cca_matrix)
@@ -404,20 +418,21 @@ class LLKRatioTest(BaseMethod):
         return
 
     def get_estimated(self):
-        """Get fit results 
-         
+        """Get fit results
+
         Returns
         -------
         A dictionary with 'estimated_latent', 'true_latent', 'p-value', 'reject_null', and 'null' keys.
         """
         results = {
-            'estimated_latent': (self.Xhat, self.Zhat),
-            'true_latent': (self.X, self.Z),
-            'p-value' : self.pvalue,
-            'reject_null' : self.reject_null,
-            'null' : self.null
+            "estimated_latent": (self.Xhat, self.Zhat),
+            "true_latent": (self.X, self.Z),
+            "p-value": self.pvalue,
+            "reject_null": self.reject_null,
+            "null": self.null,
         }
         return results
+
 
 class QAP(BaseMethod):
     """Quadratic Assignment Procedure
@@ -439,23 +454,23 @@ class QAP(BaseMethod):
         sigma,
         alpha=0.05,
         npermutations=100,
-        null_hypothesis='independence',
+        null_hypothesis="independence",
         rng=None,
         **args,
     ):
         super().__init__()
-        
+
         if rng is None:
             self.rng = np.random.default_rng()
         else:
             self.rng = rng
-        
+
         self.sigma = sigma
         if sigma == 0:
             self.null = True
         else:
             self.null = False
-            
+
         self.alpha = alpha
         self.npermutations = npermutations
         self.null_hypothesis = null_hypothesis
@@ -469,12 +484,14 @@ class QAP(BaseMethod):
         data : dict
             A dictionary containing keys 'A', 'B' i.e. adjacency matrices
         """
-        
-        if not isinstance(data, dict):
-            raise ValueError("Invalid data format. Expected a dictionary with keys 'A', 'B'.")
 
-        A = data.get('A')
-        B = data.get('B')
+        if not isinstance(data, dict):
+            raise ValueError(
+                "Invalid data format. Expected a dictionary with keys 'A', 'B'."
+            )
+
+        A = data.get("A")
+        B = data.get("B")
         self.A = A
         self.B = B
         n = A.shape[0]
@@ -486,56 +503,61 @@ class QAP(BaseMethod):
             B_perm = B[permutation, :][:, permutation]
             test_stat_perm = self._compute_test_stat(A, B_perm)
             self.permutation_distribution.append(test_stat_perm)
-        
+
         # compute pvalue
-        pvalue = np.mean([i >= self.test_stat_estimate for i in self.permutation_distribution])
+        pvalue = np.mean(
+            [i >= self.test_stat_estimate for i in self.permutation_distribution]
+        )
         self.pvalue = bool(pvalue)
         self.reject_null = self.pvalue < self.alpha
 
         return
 
     def get_estimated(self):
-        """Get fit results 
-         
+        """Get fit results
+
         Returns
         -------
         A dictionary with 'estimated_latent', 'true_latent', 'p-value', 'reject_null', and 'null' keys.
         """
         results = {
-            'estimated_latent': None,
-            'true_latent': None,
-            'p-value' : self.pvalue,
-            'reject_null' : self.reject_null,
-            'null' : self.null
+            "estimated_latent": None,
+            "true_latent": None,
+            "p-value": self.pvalue,
+            "reject_null": self.reject_null,
+            "null": self.null,
         }
-        return results    
-    
+        return results
+
     def _compute_test_stat(self, A, B):
-        """Returns sqrt(n)rho if null hypothesis is independence (H0s) and sqrt(n)rho/v_w 
+        """Returns sqrt(n)rho if null hypothesis is independence (H0s) and sqrt(n)rho/v_w
         if null hypothesis is un-correlated (H0w)"""
-        
+
         n = A.shape[0]
         A_centered = A - A.mean(axis=0)
         B_centered = B - B.mean(axis=0)
-        
-        phi_0_hat = 1/(n*(n-1)-1) * np.sum(A_centered * B_centered)
-        
-        eta_hat_2_alpha = 1/(n*(n-1)-1) * np.sum(A_centered**2)
-        eta_hat_2_beta = 1/(n*(n-1)-1) * np.sum(B_centered**2)
-        
+
+        phi_0_hat = 1 / (n * (n - 1) - 1) * np.sum(A_centered * B_centered)
+
+        eta_hat_2_alpha = 1 / (n * (n - 1) - 1) * np.sum(A_centered**2)
+        eta_hat_2_beta = 1 / (n * (n - 1) - 1) * np.sum(B_centered**2)
+
         # eta_hat_1_alpha = 1/n * np.sum((1/(n-1)*np.sum(A_centered * B_centered, axis = 1))**2)
         # eta_hat_1_beta = 1/n * np.sum((1/(n-1)*np.sum(B_centered * B_centered, axis = 1))**2)
 
         rho_hat = phi_0_hat / np.sqrt(eta_hat_2_alpha * eta_hat_2_beta)
-        
-        if self.null_hypothesis == 'independence':
+
+        if self.null_hypothesis == "independence":
             return np.sqrt(n) * rho_hat
-        
-        eta_hat_1_phi = 1/n * np.sum((1/(n-1)*np.sum(A_centered * B_centered, axis = 1))**2)
-        
+
+        eta_hat_1_phi = (
+            1 / n * np.sum((1 / (n - 1) * np.sum(A_centered * B_centered, axis=1)) ** 2)
+        )
+
         v_w_hat = 4 * eta_hat_1_phi / (eta_hat_2_alpha * eta_hat_2_beta)
 
         return np.sqrt(n) * rho_hat / np.sqrt(v_w_hat)
+
 
 class DiffusionCorrelation(BaseMethod):
     """Implementation of Diffusion Correlation algorithm.
@@ -555,6 +577,7 @@ class DiffusionCorrelation(BaseMethod):
     rng : np.random.Generator, optional
         Random number generator for reproducibility.
     """
+
     def __init__(
         self,
         sigma,
@@ -569,13 +592,13 @@ class DiffusionCorrelation(BaseMethod):
         self.npermutations = npermutations
         self.k = k
         self.test_method = test_method
-        
+
         if sigma == 0:
             self.null = True
         else:
             self.null = False
         self.sigma = sigma
-        
+
         self.alpha = alpha
 
     def compute_normalized_laplacian(self, K):
@@ -618,19 +641,21 @@ class DiffusionCorrelation(BaseMethod):
             and 'X' and 'Z' are latent positions.
         """
         if not isinstance(data, dict):
-            raise ValueError("Invalid data format. Expected a dictionary with keys 'A', 'B'.")
+            raise ValueError(
+                "Invalid data format. Expected a dictionary with keys 'A', 'B'."
+            )
 
-        A = data.get('A')
-        B = data.get('B')
+        A = data.get("A")
+        B = data.get("B")
         self.A = A
         self.B = B
         # true latent positions may not be provided
-        X = data.get('X', None)
-        Z = data.get('Z', None)
+        X = data.get("X", None)
+        Z = data.get("Z", None)
         self.X = X
         self.Z = Z
 
-        # get the number of dimensions (k). If X or Z is provided, use its 
+        # get the number of dimensions (k). If X or Z is provided, use its
         # shape (i.e. the "true" value of k)
         if X is not None or Z is not None:
             self.k = X.shape[1] if X is not None else Z.shape[1]
@@ -676,23 +701,20 @@ class DiffusionCorrelation(BaseMethod):
         self.pvalue = p_value
 
         self.reject_null = self.pvalue < self.alpha
-        return 
+        return
 
     def get_estimated(self):
-        """Get fit results 
-         
+        """Get fit results
+
         Returns
         -------
         A dictionary with 'estimated_latent', 'true_latent', 'p-value', 'reject_null', and 'null' keys.
         """
         results = {
-            'estimated_latent': (self.Xhat, self.Zhat),
-            'true_latent': (self.X, self.Z),
-            'p-value' : self.pvalue,
-            'reject_null' : self.reject_null,
-            'null' : self.null
+            "estimated_latent": (self.Xhat, self.Zhat),
+            "true_latent": (self.X, self.Z),
+            "p-value": self.pvalue,
+            "reject_null": self.reject_null,
+            "null": self.null,
         }
         return results
-
-
-

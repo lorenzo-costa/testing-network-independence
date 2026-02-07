@@ -6,7 +6,13 @@ from src.dgp import GaussianNetwork
 from scipy import stats
 import sys
 from pathlib import Path
-from src.metrics import Rejection, TrueRejection, FalseRejection, RelativeFrobeniusNorm, ComputeAll
+from src.metrics import (
+    Rejection,
+    TrueRejection,
+    FalseRejection,
+    RelativeFrobeniusNorm,
+    ComputeAll,
+)
 from src.simulation_functions import run_simulation
 from src.solvers import ASE, MLE_gaussian, MLE_logistic
 from src.dgp import GaussianNetwork, BernoulliNetwork
@@ -28,15 +34,15 @@ def test_simulation_run():
     setups = [
         (GaussianNetwork, ASE),
         (BernoulliNetwork, MLE_logistic),
-        (GaussianNetwork, MLE_gaussian)
+        (GaussianNetwork, MLE_gaussian),
     ]
-    
+
     metrics = [ComputeAll()]
-    
-    approximation = ['F-distr', 'chi-sq']
+
+    approximation = ["F-distr", "chi-sq"]
 
     rng = np.random.default_rng(1)
-    
+
     param_names = [
         "setup",
         "methods",
@@ -46,11 +52,11 @@ def test_simulation_run():
         "alpha",
         "marginals",
         "edge_var",
-        "approximation"
+        "approximation",
     ]
 
     param_values = product(
-        setups, methods, n, k, sigma, alpha, marginals , edge_var, approximation
+        setups, methods, n, k, sigma, alpha, marginals, edge_var, approximation
     )
 
     factorial_design = [dict(zip(param_names, v)) for v in param_values]

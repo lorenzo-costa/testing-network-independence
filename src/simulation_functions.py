@@ -21,7 +21,7 @@ def run_scenario(metrics, args, method_params=None):
     metrics : list of BaseMetric
         list of metrics to compute
     args : dict
-        arguments for the simulation scenario. Should contain 'setup' key with 
+        arguments for the simulation scenario. Should contain 'setup' key with
         (dgp, method) tuple.
 
     Returns
@@ -29,8 +29,8 @@ def run_scenario(metrics, args, method_params=None):
     dict
         Dictionary containing the computed metrics.
     """
-    dgp, solver = args['setup']
-    method = args['methods']
+    dgp, solver = args["setup"]
+    method = args["methods"]
 
     dgp = dgp(**args)
     method = method(solver=solver, **args)
@@ -40,7 +40,7 @@ def run_scenario(metrics, args, method_params=None):
     results = method.get_estimated()
 
     out_metrics = {metric.get_name(): metric(results) for metric in metrics}
-    
+
     out_metrics["args"] = args
     return out_metrics
 

@@ -1,6 +1,7 @@
 # function to put together the results of simulations.
 # quick and dirty approach, these were simply copied from BHreplication code
 
+
 def _ratio_helper(df, factors, ratio_variable, y_axis, num, den):
     df_ratio = df.pivot_table(
         index=factors, columns=ratio_variable, values=y_axis + "_mean"
@@ -8,6 +9,7 @@ def _ratio_helper(df, factors, ratio_variable, y_axis, num, den):
     df_ratio[y_axis + "_ratio"] = df_ratio[num] / df_ratio[den]
 
     return df_ratio
+
 
 def aggregate_results(
     results,
