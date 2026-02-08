@@ -36,8 +36,7 @@ def get_dist_string(dist_obj):
 
 
 if __name__ == "__main__":
-    # test only that simulation function actually runs
-    nsim = 100
+    nsim = 20
     n = [50, 100, 150, 200]
     k = [3]
     sigma = [0, 0.1, 0.5]
@@ -45,7 +44,7 @@ if __name__ == "__main__":
     marginals = [stats.norm]
     edge_var = [1, 2]
     method = [RVPermutationTest, LLKRatioTest, QAP]
-    npermutations = [1000]
+    npermutations = [500]
     metrics = [ComputeAll()]
     approximation = ["F-distr"]
 
@@ -66,10 +65,11 @@ if __name__ == "__main__":
         "marginals",
         "edge_var",
         "approximation",
+        "npermutations"
     ]
 
     param_values = product(
-        setup, method, n, k, sigma, alpha, marginals, edge_var, approximation
+        setup, method, n, k, sigma, alpha, marginals, edge_var, approximation, npermutations
     )
 
     factorial_design = [dict(zip(param_names, v)) for v in param_values]
@@ -89,6 +89,7 @@ if __name__ == "__main__":
     out["approximation"] = out["args"].apply(lambda x: x.get("approximation", "NA"))
     out["dgp"] = out["args"].apply(lambda x: x["setup"][0].__name__)
     out["solver"] = out["args"].apply(lambda x: x["setup"][1].__name__)
+    out['sigma'] = out["args"].apply(lambda x: x.get("sigma", "NA"))
 
     out["method"] = out["args"].apply(lambda x: x.get("method").__name__)
     

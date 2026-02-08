@@ -23,6 +23,7 @@ def test_simulation_run(parallel):
     marginals = [stats.norm]
     edge_var = [1, 2]
     method = [RVPermutationTest, LLKRatioTest, QAP]
+    npermutations = [100]
 
     setup = [
         (GaussianNetwork, ASE),
@@ -46,10 +47,11 @@ def test_simulation_run(parallel):
         "marginals",
         "edge_var",
         "approximation",
+        "npermutations"
     ]
 
     param_values = product(
-        setup, method, n, k, sigma, alpha, marginals, edge_var, approximation
+        setup, method, n, k, sigma, alpha, marginals, edge_var, approximation, npermutations
     )
 
     factorial_design = [dict(zip(param_names, v)) for v in param_values]

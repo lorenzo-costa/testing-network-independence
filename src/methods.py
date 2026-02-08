@@ -134,7 +134,7 @@ class RVPermutationTest(BaseMethod):
     def __init__(
         self,
         sigma,
-        npermutations=100,
+        npermutations=None,
         alpha=0.05,
         rng=None,
         solver=None,
@@ -234,8 +234,8 @@ class RVPermutationTest(BaseMethod):
         pvalue = np.mean(
             [i >= self.test_stat_estimate for i in self.permutation_distribution]
         )
-        self.pvalue = bool(pvalue)
-        self.reject_null = self.pvalue < self.alpha
+        self.pvalue = pvalue
+        self.reject_null = bool(self.pvalue < self.alpha)
 
         return
 
@@ -360,9 +360,7 @@ class LLKRatioTest(BaseMethod):
         n = A.shape[0]
         k = self.k
 
-        Zhat = self.solver(A, k=self.k, rng=self.rng)[
-            0
-        ]  # 0 is the xhat, 1 are the evalues
+        Zhat = self.solver(A, k=self.k, rng=self.rng)[0]  # 0 is the xhat, 1 are the evalues
         Xhat = self.solver(B, k=self.k, rng=self.rng)[0]
 
         self.Zhat = Zhat
@@ -408,7 +406,7 @@ class LLKRatioTest(BaseMethod):
             F_stat = ((1.0 - W_a) / W_a) * (a * b - k**2 / 2 + 1) / k**2
             self.pvalue = 1.0 - stats.f.cdf(F_stat, df1, df2)
 
-        self.reject_null = self.pvalue < self.alpha
+        self.reject_null = bool(self.pvalue < self.alpha)
         return
 
     def get_estimated(self):
@@ -447,7 +445,7 @@ class QAP(BaseMethod):
         self,
         sigma,
         alpha=0.05,
-        npermutations=100,
+        npermutations=None,
         null_hypothesis="independence",
         rng=None,
         **args,
@@ -502,8 +500,8 @@ class QAP(BaseMethod):
         pvalue = np.mean(
             [i >= self.test_stat_estimate for i in self.permutation_distribution]
         )
-        self.pvalue = bool(pvalue)
-        self.reject_null = self.pvalue < self.alpha
+        self.pvalue = pvalue
+        self.reject_null = bool(self.pvalue < self.alpha)
 
         return
 

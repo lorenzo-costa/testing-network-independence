@@ -223,13 +223,10 @@ class ComputeAll(BaseMetric):
             out.update(test_metrics)
 
         if estimated_latent is not None:
+            est = RelativeFrobeniusNorm(gram_matrix=self.gram_matrix)(results)
             latent_metrics = {
-                "RelativeFrobeniusNorm_x": RelativeFrobeniusNorm(
-                    gram_matrix=self.gram_matrix
-                )(results),
-                "RelativeFrobeniusNorm_z": RelativeFrobeniusNorm(
-                    gram_matrix=self.gram_matrix
-                )(results),
+                "RelativeFrobeniusNorm_x": est[0],
+                "RelativeFrobeniusNorm_z": est[1],
             }
             out.update(latent_metrics)
 
