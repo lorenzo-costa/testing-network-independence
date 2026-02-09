@@ -8,7 +8,7 @@ from src.metrics import (
     RelativeFrobeniusNorm,
 )
 from src.metrics import ComputeAll
-from src.methods import RVPermutationTest, LLKRatioTest, QAP
+from src.methods import RVPermutationTest, LLKRatioTest, QAP, DiffusionCorrelation, CanonicalCorrelationTest
 from src.solvers import MLE_gaussian, MLE_logistic, ASE
 from src.simulation_functions import run_simulation
 from src.analyse_functions import aggregate_results
@@ -36,14 +36,23 @@ def get_dist_string(dist_obj):
 
 
 if __name__ == "__main__":
-    nsim = 20
+    nsim = 100
     n = [50, 100, 150, 200]
     k = [3]
     sigma = [0, 0.1, 0.5]
     alpha = [0.05]
     marginals = [stats.norm]
-    edge_var = [1, 2]
-    method = [RVPermutationTest, LLKRatioTest, QAP]
+    edge_var = [1, 3]
+    method = [
+        partial(RVPermutationTest, permutation_type="latent"),
+        partial(RVPermutationTest, permutation_type="observed"),
+        LLKRatioTest,
+        QAP,
+        DiffusionCorrelation,
+        partial(CanonicalCorrelationTest, permutation_type="latent"),
+        partial(CanonicalCorrelationTest, permutation_type="observed")
+    ]
+    
     npermutations = [500]
     metrics = [ComputeAll()]
     approximation = ["F-distr"]
@@ -83,6 +92,12 @@ if __name__ == "__main__":
     )
 
     out = pd.DataFrame(out)
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    file_name = f"results/simulation_results_{timestamp}.csv"
+
+    out.to_csv(file_name, index=False)
+
     out["n"] = out["args"].apply(lambda x: x["n"])
     out["k"] = out["args"].apply(lambda x: x["k"])
     out["edge_var"] = out["args"].apply(lambda x: x.get("edge_var", "NA"))
@@ -91,10 +106,10 @@ if __name__ == "__main__":
     out["solver"] = out["args"].apply(lambda x: x["setup"][1].__name__)
     out['sigma'] = out["args"].apply(lambda x: x.get("sigma", "NA"))
 
-    out["method"] = out["args"].apply(lambda x: x.get("method").__name__)
-    
+    out["method"] = out["args"].apply(lambda x: x.get("method_name", "NA"))
+
     out["marginals"] = out["args"].apply(lambda x: x.get("marginals", "NA"))
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
 
-    out.to_csv(f"results/simulation_results_{timestamp}.csv", index=False)
+    out.to_csv(file_name, index=False)

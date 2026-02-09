@@ -34,6 +34,8 @@ def run_scenario(metrics, args, method_params=None):
 
     dgp = dgp(**args)
     method = method(solver=solver, **args)
+    
+    args['method_name'] = method.get_name()
 
     data = dgp.generate()
     method.fit(data, **(method_params if method_params else {}))

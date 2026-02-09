@@ -2,10 +2,10 @@ import numpy as np
 from .metrics import rv_coefficient_adjusted
 import sys
 import os
-from scipy import stats
+from scipy import stats, linalg
 from .solvers import ASE
 from scipy.spatial.distance import pdist, squareform
-
+import warnings
 sys.path.append(os.path.abspath(os.path.join(os.getcwd(), "..")))
 
 # TODO:
@@ -19,7 +19,7 @@ class BaseMethod:
     def fit(self, *args, **kwargs):
         raise NotImplementedError("Subclasses should implement this!")
 
-    def name(self):
+    def get_name(self):
         raise NotImplementedError("Subclasses should implement this!")
 
     def get_estimated(self):
@@ -217,7 +217,7 @@ class RVPermutationTest(BaseMethod):
         # permute one of the observe networks, re-estimate latent positions and compute RV coefficient
         if self.permutation_type == "observed":
             for _ in range(self.npermutations):
-                perm = self.rng.permutation(A.shape[0])
+                perm = self.rng.permutation(B.shape[0])
                 B_perm = B[perm][:, perm]
                 Xhat_perm = self.solver(B_perm, k=self.k, rng=self.rng)[0]
                 test_stat_perm = self.test_function(Zhat, Xhat_perm)
@@ -256,7 +256,7 @@ class RVPermutationTest(BaseMethod):
         return results
 
     def get_name(self):
-        return "RVPermutationTest"
+        return "RVPermutationTest_" + self.permutation_type
 
 
 class LLKRatioTest(BaseMethod):
@@ -374,8 +374,9 @@ class LLKRatioTest(BaseMethod):
         # wilks_score = np.prod((1-cca_evals))
 
         # faster code
-        Qx, _ = np.linalg.qr(Xhat)
-        Qz, _ = np.linalg.qr(Zhat)
+        M_n = np.eye(n) - 1/n * np.ones((n, n))
+        Qx, _ = np.linalg.qr(M_n @ Xhat)
+        Qz, _ = np.linalg.qr(M_n @ Zhat)
         S = np.linalg.svd(Qx.T @ Qz, compute_uv=False)
         cca_evals = S**2
         log_wilks = np.sum(np.log(1 - cca_evals + 1e-12))
@@ -424,6 +425,9 @@ class LLKRatioTest(BaseMethod):
             "null": self.null,
         }
         return results
+    
+    def get_name(self):
+        return "LLKRatioTest"
 
 
 class QAP(BaseMethod):
@@ -520,6 +524,9 @@ class QAP(BaseMethod):
             "null": self.null,
         }
         return results
+    
+    def get_name(self):
+        return "QAP"
 
     def _compute_test_stat(self, A, B):
         """Returns sqrt(n)rho if null hypothesis is independence (H0s) and sqrt(n)rho/v_w
@@ -595,18 +602,20 @@ class DiffusionCorrelation(BaseMethod):
 
     def compute_normalized_laplacian(self, K):
         """
-        Step 2: Compute normalized graph Laplacian
-        L = B^(-1/2) * K * B^(-1/2)
-        where B is the degree matrix
+        Compute normalized graph Laplacian
+        L = B^(-1/2) * K * B^(-1/2) where B is the degree matrix
         """
-        # Compute degree matrix
         degrees = np.sum(K, axis=1)
-        # Avoid division by zero
-        degrees[degrees == 0] = 1
+
+        degrees[degrees < 1e-10] = 1.0 
+        
         B_inv_sqrt = np.diag(1.0 / np.sqrt(degrees))
 
-        # Normalized Laplacian
         L = B_inv_sqrt @ K @ B_inv_sqrt
+        
+        L = (L + L.T) / 2
+        L = np.nan_to_num(L)
+        
         return L
 
     def compute_distance_matrix(self, U):
@@ -658,12 +667,9 @@ class DiffusionCorrelation(BaseMethod):
                 )
             self.k = self.k
 
-        A_symm = (A + A.T) / 2
-        B_symm = (B + B.T) / 2
-
         # compute normalized Laplacian
-        A_laplacian = self.compute_normalized_laplacian(A_symm)
-        B_laplacian = self.compute_normalized_laplacian(B_symm)
+        A_laplacian = self.compute_normalized_laplacian(A)
+        B_laplacian = self.compute_normalized_laplacian(B)
 
         # diffusion map for t=1 (i.e. ASE)
         Xhat, _ = ASE(A_laplacian, k=self.k)
@@ -676,13 +682,18 @@ class DiffusionCorrelation(BaseMethod):
 
         if self.test_method == "mgc":
             # random_state = self.rng.integers(100)
-
-            p_value = stats.multiscale_graphcorr(
-                distances_A,
-                distances_B,
-                compute_distance=None,
-                random_state=self.rng,
-            )
+            
+            # get rid of warning for number of permutations too small
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=RuntimeWarning)
+                out_mgc = stats.multiscale_graphcorr(
+                    distances_A,
+                    distances_B,
+                    compute_distance=None,
+                    random_state=self.rng,
+                    reps=self.npermutations
+                )
+            pvalue = out_mgc.pvalue
         # elif self.test_method == "dcorr":
         #     dcorr = self.compute_dcorr(distances_A, distances_B)
         #     p_value, null_dist = self.permutation_test(A, X, dcorr)
@@ -690,9 +701,9 @@ class DiffusionCorrelation(BaseMethod):
             print(self.test_method)
             raise ValueError("Unknown method for computing test statistic.")
 
-        self.pvalue = p_value
+        self.pvalue = pvalue
 
-        self.reject_null = self.pvalue < self.alpha
+        self.reject_null = bool(self.pvalue < self.alpha)
         return
 
     def get_estimated(self):
@@ -710,3 +721,173 @@ class DiffusionCorrelation(BaseMethod):
             "null": self.null,
         }
         return results
+    
+    def get_name(self):
+        return "DiffusionCorrelation"
+    
+
+class CanonicalCorrelationTest(BaseMethod):
+    """Testing independence using Canonical Correlation Analysis
+
+    Reference: Fuchs and Keith Levin 2025
+
+    Parameters
+    ----------
+    sigma : float
+        Correlation between latent positions (zero under independence i.e. H0 is true)
+    k : int
+        Dimensionality of the latent space.
+    test_method : str
+        Statistical test method to use. Options: "mgc", "dcorr".
+    npermutations : int
+        Number of permutations for significance testing.
+    alpha : float
+        Significance level for hypothesis testing.
+    rng : np.random.Generator, optional
+        Random number generator for reproducibility.
+    """
+
+    def __init__(
+        self,
+        sigma,
+        k=None,
+        npermutations=1000,
+        solver=None,
+        alpha=0.05,
+        permutation_type="latent",
+        rng=None,
+        **kwargs,
+    ):
+        self.rng = np.random.default_rng() if rng is None else np.random.default_rng()
+        self.npermutations = npermutations
+        self.k = k
+        
+        if solver is None:
+            raise ValueError("Solver must be provided")
+        self.solver = solver
+
+        if sigma == 0:
+            self.null = True
+        else:
+            self.null = False
+        self.sigma = sigma
+
+        self.alpha = alpha
+        self.permutation_distribution = []
+        self.permutation_type = permutation_type
+
+    def fit(self, data):
+        """Compute p-value using permutation test
+
+        Parameters
+        ----------
+        data : dict
+            A dictionary containing keys 'A', 'B', 'X', 'Z' where 'A' and 'B' are adjacency matrices
+            and 'X' and 'Z' are latent positions.
+        """
+        if not isinstance(data, dict):
+            raise ValueError(
+                "Invalid data format. Expected a dictionary with keys 'A', 'B'."
+            )
+
+        A = data.get("A")
+        B = data.get("B")
+        self.A = A
+        self.B = B
+        # true latent positions may not be provided
+        X = data.get("X", None)
+        Z = data.get("Z", None)
+        self.X = X
+        self.Z = Z
+
+        # get the number of dimensions (k). If X or Z is provided, use its
+        # shape (i.e. the "true" value of k)
+        if X is not None or Z is not None:
+            self.k = X.shape[1] if X is not None else Z.shape[1]
+        else:
+            if self.k is None:
+                raise ValueError(
+                    "Number of dimensions (k) must be specified if X and Z are not provided."
+                )
+            self.k = self.k
+        
+        n = A.shape[0]
+
+        Zhat = self.solver(A, k=self.k, rng=self.rng)[0]  # 0 is the xhat, 1 are the evalues
+        Xhat = self.solver(B, k=self.k, rng=self.rng)[0]
+
+        self.Zhat = Zhat
+        self.Xhat = Xhat
+        
+        Xhat_centered = Xhat - np.mean(Xhat, axis=0)
+        Zhat_centered = Zhat - np.mean(Zhat, axis=0)
+
+        # sigma_X = Xhat_centered.T @ Xhat_centered
+        # sigma_Z = Zhat_centered.T @ Zhat_centered
+        # sigma_XZ = Xhat_centered.T @ Zhat_centered
+        # matrix = linalg.fractional_matrix_power(sigma_X, -0.5) @ sigma_XZ @ linalg.fractional_matrix_power(sigma_Z, -0.5)
+        
+        # faster using qr decomposition
+        Q_x, _ = linalg.qr(Xhat_centered, mode='economic')
+        Q_z, _ = linalg.qr(Zhat_centered, mode='economic')
+
+        matrix = Q_x.T @ Q_z
+        evals = np.linalg.svd(matrix, compute_uv=False)
+        self.test_stat_estimate = evals[0]
+        
+        if self.permutation_type == "observed":
+            for _ in range(self.npermutations):
+                perm = self.rng.permutation(n)
+                B_perm = B[perm][:, perm]
+                Xhat_perm = self.solver(B_perm, k=self.k, rng=self.rng)[0]
+                Xhat_centered_perm = Xhat_perm - np.mean(Xhat_perm, axis=0)
+                Q_x_perm, _ = linalg.qr(Xhat_centered_perm, mode='economic')
+                matrix_perm = Q_x_perm.T @ Q_z
+                evals_perm = np.linalg.svd(matrix_perm, compute_uv=False)
+                self.permutation_distribution.append(evals_perm[0])
+        elif self.permutation_type == "latent":
+            for _ in range(self.npermutations):
+                perm = self.rng.permutation(n)
+                Xhat_centered_perm = Xhat_centered[perm]
+                Q_x_perm, _ = linalg.qr(Xhat_centered_perm, mode='economic')
+                matrix_perm = Q_x_perm.T @ Q_z
+                evals_perm = np.linalg.svd(matrix_perm, compute_uv=False)
+                self.permutation_distribution.append(evals_perm[0])
+        else:
+            raise ValueError("Unknown permutation type.")
+
+        # for _ in range(self.npermutations):
+        #     perm = self.rng.permutation(n)
+        #     Zhat_centered_perm = Zhat_centered[perm]
+        #     Q_z_perm, _ = linalg.qr(Zhat_centered_perm, mode='economic')
+        #     matrix_perm = Q_x.T @ Q_z_perm
+        #     evals_perm = np.linalg.svd(matrix_perm, compute_uv=False)
+        #     self.permutation_distribution.append(evals_perm[0])
+
+        # compute pvalue
+        pvalue = np.mean(
+            [i >= self.test_stat_estimate for i in self.permutation_distribution]
+        )
+        self.pvalue = pvalue
+        self.reject_null = bool(self.pvalue < self.alpha)
+        
+        return
+
+    def get_estimated(self):
+        """Get fit results
+
+        Returns
+        -------
+        A dictionary with 'estimated_latent', 'true_latent', 'p-value', 'reject_null', and 'null' keys.
+        """
+        results = {
+            "estimated_latent": (self.Xhat, self.Zhat),
+            "true_latent": (self.X, self.Z),
+            "p-value": self.pvalue,
+            "reject_null": self.reject_null,
+            "null": self.null,
+        }
+        return results
+    
+    def get_name(self):
+        return "CCApermutation_" + self.permutation_type

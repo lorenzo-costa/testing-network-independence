@@ -101,7 +101,9 @@ def solve_logistic_scipy(X, y, mu=None):
 
 
 def MLE_logistic(A, k=2, rng=None, **kwargs):
-    """Maximum Likelihood Estimation for Logistic link adjacency matrix
+    """Maximum Likelihood Estimation for Logistic link adjacency matrix.
+
+    Note: this assumes the latent positions have mean zero.
 
     Parameters
     ----------
@@ -209,7 +211,9 @@ def ASE(A, k=2, rng=None, **kwargs):
 
 
 def MLE_gaussian(A, k=2, rng=None, shrink=0.5, **kwargs):
-    """Maximum Likelihood Estimation for Gaussian adjacency matrix
+    """Maximum Likelihood Estimation for Gaussian adjacency matrix.
+
+    Note: this assumes latent positions have mean zero.
 
     Parameters
     ----------

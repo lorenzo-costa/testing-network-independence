@@ -148,7 +148,7 @@ class GaussianNetwork(BaseDPG, CopulaDGP):
             ):
                 raise ValueError("Invalid marginal distributions")
         else:
-            if not isinstance(marginals, stats.rv_continuous):
+            if not isinstance(marginals, (stats.rv_continuous, stats._distn_infrastructure.rv_continuous_frozen)):
                 raise ValueError("Invalid marginal distribution")
 
     def __repr__(self):
@@ -253,5 +253,5 @@ class BernoulliNetwork(BaseDPG, CopulaDGP):
             ):
                 raise ValueError("Invalid marginal distributions")
         else:
-            if not isinstance(marginals, stats.rv_continuous):
+            if not isinstance(marginals, (stats.rv_continuous, stats._distn_infrastructure.rv_continuous_frozen)):
                 raise ValueError("Invalid marginal distribution")
