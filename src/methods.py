@@ -111,7 +111,7 @@ class RVPermutationTest(BaseMethod):
 
     Parameters
     ----------
-    sigma : float
+    rho: float
         Correlation between latent positions (zero under independence i.e. H0 is true)
     npermutations : int
         Number of permutations to perform for the test.
@@ -133,7 +133,7 @@ class RVPermutationTest(BaseMethod):
 
     def __init__(
         self,
-        sigma,
+        rho,
         npermutations=None,
         alpha=0.05,
         rng=None,
@@ -145,8 +145,8 @@ class RVPermutationTest(BaseMethod):
     ):
         super().__init__()
 
-        self.sigma = sigma
-        if sigma == 0:
+        self.rho= rho
+        if rho== 0:
             self.null = True
         else:
             self.null = False
@@ -272,7 +272,7 @@ class LLKRatioTest(BaseMethod):
 
     Parameters
     ----------
-    sigma : float
+    rho: float
         Correlation between latent positions (zero under independence i.e. H0 is true)
     alpha : float, optional
         The significance level (default 0.05)
@@ -293,7 +293,7 @@ class LLKRatioTest(BaseMethod):
 
     def __init__(
         self,
-        sigma,
+        rho,
         alpha=0.05,
         approximation="beta",
         k=None,
@@ -308,8 +308,8 @@ class LLKRatioTest(BaseMethod):
         else:
             self.rng = rng
 
-        self.sigma = sigma
-        if sigma == 0:
+        self.rho= rho
+        if rho== 0:
             self.null = True
         else:
             self.null = False
@@ -435,7 +435,7 @@ class QAP(BaseMethod):
 
     Parameters
     ----------
-    sigma : float
+    rho : float
         Correlation between latent positions (zero under independence i.e. H0 is true)
     alpha : float, optional
         The significance level (default 0.05)
@@ -447,7 +447,7 @@ class QAP(BaseMethod):
 
     def __init__(
         self,
-        sigma,
+        rho,
         alpha=0.05,
         npermutations=None,
         null_hypothesis="independence",
@@ -461,8 +461,8 @@ class QAP(BaseMethod):
         else:
             self.rng = rng
 
-        self.sigma = sigma
-        if sigma == 0:
+        self.rho = rho
+        if rho == 0:
             self.null = True
         else:
             self.null = False
@@ -563,7 +563,7 @@ class DiffusionCorrelation(BaseMethod):
 
     Parameters
     ----------
-    sigma : float
+    rho : float
         Correlation between latent positions (zero under independence i.e. H0 is true)
     k : int
         Dimensionality of the latent space.
@@ -579,7 +579,7 @@ class DiffusionCorrelation(BaseMethod):
 
     def __init__(
         self,
-        sigma,
+        rho,
         k=None,
         test_method="mgc",
         npermutations=1000,
@@ -592,11 +592,11 @@ class DiffusionCorrelation(BaseMethod):
         self.k = k
         self.test_method = test_method
 
-        if sigma == 0:
+        if rho == 0:
             self.null = True
         else:
             self.null = False
-        self.sigma = sigma
+        self.rho = rho
 
         self.alpha = alpha
 
@@ -733,7 +733,7 @@ class CanonicalCorrelationTest(BaseMethod):
 
     Parameters
     ----------
-    sigma : float
+    rho : float
         Correlation between latent positions (zero under independence i.e. H0 is true)
     k : int
         Dimensionality of the latent space.
@@ -749,7 +749,7 @@ class CanonicalCorrelationTest(BaseMethod):
 
     def __init__(
         self,
-        sigma,
+        rho,
         k=None,
         npermutations=1000,
         solver=None,
@@ -766,11 +766,11 @@ class CanonicalCorrelationTest(BaseMethod):
             raise ValueError("Solver must be provided")
         self.solver = solver
 
-        if sigma == 0:
+        if rho == 0:
             self.null = True
         else:
             self.null = False
-        self.sigma = sigma
+        self.rho = rho
 
         self.alpha = alpha
         self.permutation_distribution = []

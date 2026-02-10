@@ -10,6 +10,71 @@ import re
 # Suppress weird matplotlib category warning for boxplots
 logging.getLogger("matplotlib.category").setLevel(logging.ERROR)
 
+def visualise_latent(X_list, 
+                    Z_list, 
+                    titles='Latent Positions Scatterplot', 
+                    figsize=(18, 6),
+                    sharex=False, 
+                    sharey=False,
+                    kdplot=True,
+                    shape=None,
+                    k=0):
+    """Visualise correlaton structure of latent positions
+
+    Parameters
+    ----------
+    X_list : _type_
+        _description_
+    Z_list : _type_
+        _description_
+    title : str, optional
+        _description_, by default 'Latent Positions Scatterplot'
+    figsize : tuple, optional
+        _description_, by default (18, 6)
+    sharex : bool, optional
+        _description_, by default True
+    sharey : bool, optional
+        _description_, by default True
+    kdplot : bool, optional
+        _description_, by default True
+    k : int, optional
+        _description_, by default 1
+    """
+
+    if shape is None:
+        fig, axes = plt.subplots(1, len(X_list), figsize=figsize, sharex=sharex, sharey=sharey)
+    else:
+        fig, axes = plt.subplots(shape[0], shape[1], figsize=figsize, sharex=sharex, sharey=sharey)
+        axes = axes.flatten()
+
+    for ax, i in zip(axes, range(len(X_list))):
+        z, x = X_list[i][:, k], Z_list[i][:, k]
+
+        ax.scatter(z, x, alpha=0.4, s=10, color='royalblue', label='Samples')
+        
+        # countour density may make more clear
+        if kdplot:
+            sns.kdeplot(x=z, y=x, ax=ax, levels=5, color='black', linewidths=1.5)
+        
+        if isinstance(titles, list):
+            title = titles[i]
+        else:
+            title = titles
+        ax.set_title(title, fontsize=14, weight='bold')
+        # ax.set_xlim(-4, 4)
+        # ax.set_ylim(-4, 4)
+        ax.set_xlabel("Latent Z", fontsize=12)
+        ax.grid(True, linestyle='--', alpha=0.5)
+        
+        # diagonal perfect correlation line
+        #ax.plot([-4, 4], [-4, 4], 'r--', alpha=0.5, label='Perfect Correlation')
+        
+        ax.set_ylabel("Latent X", fontsize=12)
+
+    #axes[0].set_ylabel("Latent X", fontsize=12)
+    plt.tight_layout()
+    plt.show()
+
 
 def create_dashed_boxed_message(message):
     """Wraps the given message string in a box frame made of dashes and pipes.

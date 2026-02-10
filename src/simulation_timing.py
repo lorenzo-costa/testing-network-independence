@@ -39,7 +39,7 @@ if __name__ == "__main__":
     nsim = 10
     n = [50, 100, 150, 200]
     k = [3]
-    sigma = [0.1]
+    rho = [0.1]
     alpha = [0.05]
     marginals = [stats.norm]
     edge_var = [1]
@@ -69,7 +69,7 @@ if __name__ == "__main__":
         "method",
         "n",
         "k",
-        "sigma",
+        "rho",
         "alpha",
         "marginals",
         "edge_var",
@@ -78,7 +78,7 @@ if __name__ == "__main__":
     ]
 
     param_values = product(
-        setup, method, n, k, sigma, alpha, marginals, edge_var, approximation, npermutations
+        setup, method, n, k, rho, alpha, marginals, edge_var, approximation, npermutations
     )
 
     factorial_design = [dict(zip(param_names, v)) for v in param_values]
@@ -98,7 +98,7 @@ if __name__ == "__main__":
     out["approximation"] = out["args"].apply(lambda x: x.get("approximation", "NA"))
     out["dgp"] = out["args"].apply(lambda x: x["setup"][0].__name__)
     out["solver"] = out["args"].apply(lambda x: x["setup"][1].__name__)
-    out['sigma'] = out["args"].apply(lambda x: x.get("sigma", "NA"))
+    out['rho'] = out["args"].apply(lambda x: x.get("rho", "NA"))
 
     out["method"] = out["args"].apply(lambda x: x.get("method").__name__)
     

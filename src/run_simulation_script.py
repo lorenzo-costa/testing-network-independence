@@ -36,10 +36,10 @@ def get_dist_string(dist_obj):
 
 
 if __name__ == "__main__":
-    nsim = 100
+    nsim = 50
     n = [50, 100, 150, 200]
     k = [3]
-    sigma = [0, 0.1, 0.5]
+    rho = [0.5]
     alpha = [0.05]
     marginals = [stats.norm]
     edge_var = [1, 3]
@@ -58,8 +58,12 @@ if __name__ == "__main__":
     approximation = ["F-distr"]
 
     setup = [
-        (BernoulliNetwork, MLE_logistic),
-        (GaussianNetwork, MLE_gaussian),
+        #(partial(GaussianNetwork, copula_model='gaussian', rho=0), MLE_gaussian),
+        (partial(GaussianNetwork, copula_model='gaussian', rho=0.5), MLE_gaussian),
+        (partial(GaussianNetwork, copula_model='frank', rho=0.5), MLE_gaussian),
+        (partial(GaussianNetwork, copula_model='clayton', rho=0.5), MLE_gaussian),
+        (partial(GaussianNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.98, -0.98], rho=0.5), MLE_gaussian),
+        (partial(GaussianNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.95, 0.95], rho=0.5), MLE_gaussian),
     ]
     
     rng = np.random.default_rng(1)    
@@ -69,16 +73,16 @@ if __name__ == "__main__":
         "method",
         "n",
         "k",
-        "sigma",
         "alpha",
         "marginals",
+        "rho",
         "edge_var",
         "approximation",
         "npermutations"
     ]
 
     param_values = product(
-        setup, method, n, k, sigma, alpha, marginals, edge_var, approximation, npermutations
+        setup, method, n, k, alpha, marginals, rho, edge_var, approximation, npermutations
     )
 
     factorial_design = [dict(zip(param_names, v)) for v in param_values]
@@ -102,9 +106,9 @@ if __name__ == "__main__":
     out["k"] = out["args"].apply(lambda x: x["k"])
     out["edge_var"] = out["args"].apply(lambda x: x.get("edge_var", "NA"))
     out["approximation"] = out["args"].apply(lambda x: x.get("approximation", "NA"))
-    out["dgp"] = out["args"].apply(lambda x: x["setup"][0].__name__)
+    out["dgp"] = out["args"].apply(lambda x: x["setup"][0].get_name())
     out["solver"] = out["args"].apply(lambda x: x["setup"][1].__name__)
-    out['sigma'] = out["args"].apply(lambda x: x.get("sigma", "NA"))
+    out['rho'] = out["args"].apply(lambda x: x.get("rho", "NA"))
 
     out["method"] = out["args"].apply(lambda x: x.get("method_name", "NA"))
 
