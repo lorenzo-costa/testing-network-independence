@@ -1,6 +1,6 @@
 import numpy as np
 from scipy import stats
-from scipy.special import expit
+from scipy.special import expit, ndtr
 
 # TODO:
 # - extend gaussian network generation to more than two
@@ -44,8 +44,8 @@ class CopulaDGP:
                 x = self.rho * z + np.sqrt(1 - self.rho**2) * e
             
             # 2. Apply Gaussian CDF to get Uniforms
-            u_z = stats.norm.cdf(z)
-            u_x = stats.norm.cdf(x)
+            u_z = ndtr(z)
+            u_x = ndtr(x)
             
         elif self.copula_model == 'student_t':
             # 1. Generate Correlated Gaussians (Same as above)
@@ -178,8 +178,8 @@ class CopulaDGP:
                     bivariate = self.rng.multivariate_normal(mean, cov, size=count)
                     
                     # Transform to Uniform
-                    u_z_flat[mask] = stats.norm.cdf(bivariate[:, 0])
-                    u_x_flat[mask] = stats.norm.cdf(bivariate[:, 1])
+                    u_z_flat[mask] = ndtr(bivariate[:, 0])
+                    u_x_flat[mask] = ndtr(bivariate[:, 1])
 
             u_z = u_z_flat.reshape(self.n, self.k)
             u_x = u_x_flat.reshape(self.n, self.k)
@@ -213,7 +213,10 @@ class GaussianNetwork(BaseDPG, CopulaDGP):
         Random number generator.
     """
 
-    def __init__(self, n, k, rho, 
+    def __init__(self, 
+                 n, 
+                 k, 
+                 rho, 
                  marginals=stats.norm, 
                  edge_var=1, 
                  rng=None, 
@@ -246,9 +249,6 @@ class GaussianNetwork(BaseDPG, CopulaDGP):
         self.symmetric = symmetric
         self.weights = weights
         self.correlations = correlations
-
-    def name(self):
-        return "GaussianNetwork"
     
     def generate(self):
         # sample uniforms according to copula model
@@ -329,7 +329,19 @@ class BernoulliNetwork(BaseDPG, CopulaDGP):
         Random number generator.
     """
 
-    def __init__(self, n, k, rho, marginals=stats.norm, edge_var=1, rng=None, **args):
+    def __init__(self, 
+                 n, 
+                 k, 
+                 rho, 
+                 marginals=stats.norm, 
+                 edge_var=1, 
+                 rng=None, 
+                 symmetric=True, 
+                 copula_model='gaussian',
+                 df=5,
+                 weights=None,
+                 correlations=None,
+                 **args):
         # note here by multiple inheritance BaseDPG init will be called
         super().__init__(rng=rng)
 
@@ -338,7 +350,7 @@ class BernoulliNetwork(BaseDPG, CopulaDGP):
         self.rho = rho
         self.edge_var = edge_var
 
-        self._type_check(marginals)
+        # self._type_check(marginals)
         self.marginals = marginals
 
         if isinstance(marginals, dict):
@@ -347,34 +359,39 @@ class BernoulliNetwork(BaseDPG, CopulaDGP):
         else:
             self.marginal_z = marginals
             self.marginal_x = marginals
+        
+        self.copula_model = copula_model
+        self.df = df
+        self.symmetric = symmetric
+        self.weights = weights
+        self.correlations = correlations
 
-    def name(self):
-        return "BernoulliNetwork"
-
+    def get_name(self):
+        return f"BernoulliNetwork_" + str(self.copula_model) + f"_rho{self.rho}"
+    
     def generate(self):
-        # sample latent gaussian vectors
-        q_z, q_x = self._generate_correlated_gaussians()
+        # sample uniforms according to copula model
+        u_z, u_x = self._generate_copula_uniforms()
 
-        # convert to Uniform via CDF of standard normal (PIT)
-        u_z = stats.norm.cdf(q_z)
-        u_x = stats.norm.cdf(q_x)
-
-        # apply Inverse CDF (PPF) to get desired marginals
+        # inverse cdf to get marginals
         Z = self.marginal_z.ppf(u_z)
         X = self.marginal_x.ppf(u_x)
 
-        # generate adj matrix using logistic function
-        prob_A = expit(Z @ Z.T)
-        prob_B = expit(X @ X.T)
+        expected_A = expit(Z @ Z.T)
+        expected_B = expit(X @ X.T)
+        
+        if self.symmetric is True: # generate lower half and the sum to ensure symmetry
+            A = np.tril(self.rng.binomial(1, expected_A), k=-1)
+            B = np.tril(self.rng.binomial(1, expected_B), k=-1)
 
-        # generate lower half and the sum to ensure symmetry
-        A = np.tril(self.rng.binomial(1, prob_A), k=-1)
-        B = np.tril(self.rng.binomial(1, prob_B), k=-1)
-
-        A = A + A.T
-        B = B + B.T
+            A = A + A.T
+            B = B + B.T
+        else:
+            A = self.rng.binomial(1, expected_A)
+            B = self.rng.binomial(1, expected_B)
 
         out = {"A": A, "B": B, "Z": Z, "X": X}
+        
         return out
 
     def __repr__(self):

@@ -13,6 +13,7 @@ from src.solvers import MLE_gaussian, MLE_logistic
 # - this could be sped up by having dpg run once and then feed data to each arg combination
 # (it has a specific name i don't remember not)
 # - add intermediate save
+
 def run_scenario(metrics, args, method_params=None):
     """Run a single scenario of the simulation.
 
@@ -36,6 +37,7 @@ def run_scenario(metrics, args, method_params=None):
     method = method(solver=solver, **args)
     
     args['method_name'] = method.get_name()
+    args['dgp_name'] = dgp.get_name() 
 
     data = dgp.generate()
     method.fit(data, **(method_params if method_params else {}))

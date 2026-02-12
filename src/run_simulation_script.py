@@ -8,7 +8,7 @@ from src.metrics import (
     RelativeFrobeniusNorm,
 )
 from src.metrics import ComputeAll
-from src.methods import RVPermutationTest, LLKRatioTest, QAP, DiffusionCorrelation, CanonicalCorrelationTest
+from src.methods import RVPermutationTest, LLKRatioTest, QAP, DiffusionCorrelation, CanonicalCorrelationTest, FitIndependent
 from src.solvers import MLE_gaussian, MLE_logistic, ASE
 from src.simulation_functions import run_simulation
 from src.analyse_functions import aggregate_results
@@ -36,13 +36,13 @@ def get_dist_string(dist_obj):
 
 
 if __name__ == "__main__":
-    nsim = 50
-    n = [50, 100, 150, 200]
+    nsim = 100
+    n = [50, 100, 150, 200, 250]
     k = [3]
-    rho = [0.5]
+    rho = [0]
     alpha = [0.05]
     marginals = [stats.norm]
-    edge_var = [1, 3]
+    edge_var = [1]
     method = [
         partial(RVPermutationTest, permutation_type="latent"),
         partial(RVPermutationTest, permutation_type="observed"),
@@ -53,17 +53,20 @@ if __name__ == "__main__":
         partial(CanonicalCorrelationTest, permutation_type="observed")
     ]
     
-    npermutations = [500]
+    npermutations = [100]
     metrics = [ComputeAll()]
     approximation = ["F-distr"]
 
     setup = [
-        #(partial(GaussianNetwork, copula_model='gaussian', rho=0), MLE_gaussian),
-        (partial(GaussianNetwork, copula_model='gaussian', rho=0.5), MLE_gaussian),
-        (partial(GaussianNetwork, copula_model='frank', rho=0.5), MLE_gaussian),
-        (partial(GaussianNetwork, copula_model='clayton', rho=0.5), MLE_gaussian),
-        (partial(GaussianNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.98, -0.98], rho=0.5), MLE_gaussian),
-        (partial(GaussianNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.95, 0.95], rho=0.5), MLE_gaussian),
+        (partial(GaussianNetwork, copula_model='gaussian'), MLE_gaussian),
+        # (partial(GaussianNetwork, copula_model='frank'), MLE_gaussian),
+        # (partial(GaussianNetwork, copula_model='clayton'), MLE_gaussian),
+        # (partial(GaussianNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.98, -0.98]), MLE_gaussian),
+
+        (partial(BernoulliNetwork, copula_model='gaussian'), MLE_logistic),
+        # (partial(BernoulliNetwork, copula_model='frank'), MLE_logistic),
+        # (partial(BernoulliNetwork, copula_model='clayton'), MLE_logistic),
+        # (partial(BernoulliNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.98, -0.98]), MLE_logistic),
     ]
     
     rng = np.random.default_rng(1)    
@@ -106,7 +109,7 @@ if __name__ == "__main__":
     out["k"] = out["args"].apply(lambda x: x["k"])
     out["edge_var"] = out["args"].apply(lambda x: x.get("edge_var", "NA"))
     out["approximation"] = out["args"].apply(lambda x: x.get("approximation", "NA"))
-    out["dgp"] = out["args"].apply(lambda x: x["setup"][0].get_name())
+    out["dgp"] = out["args"].apply(lambda x: x.get("dgp_name", "NA"))
     out["solver"] = out["args"].apply(lambda x: x["setup"][1].__name__)
     out['rho'] = out["args"].apply(lambda x: x.get("rho", "NA"))
 

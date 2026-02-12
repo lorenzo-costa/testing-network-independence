@@ -67,12 +67,11 @@ class FitIndependent(BaseMethod):
 
         A = data.get("A")
         B = data.get("B")
+        self.A = A
+        self.B = B
         # true latent positions may not be provided
         X = data.get("X", None)
         Z = data.get("Z", None)
-
-        self.A = A
-        self.B = B
         self.X = X
         self.Z = Z
 
@@ -87,11 +86,11 @@ class FitIndependent(BaseMethod):
                 )
             self.k = self.k
 
-        Xhat, evalsX = self.solver(self.A, k=self.k, rng=self.rng)
-        Zhat, evalsZ = self.solver(self.B, k=self.k, rng=self.rng)
+        Zhat = self.solver(A, k=self.k, rng=self.rng)[0]  # 0 is the xhat, 1 are the evalues
+        Xhat = self.solver(B, k=self.k, rng=self.rng)[0]
 
-        self.Xhat = Xhat
         self.Zhat = Zhat
+        self.Xhat = Xhat
 
         return
 
@@ -204,9 +203,7 @@ class RVPermutationTest(BaseMethod):
                 )
             self.k = self.k
 
-        Zhat = self.solver(A, k=self.k, rng=self.rng)[
-            0
-        ]  # 0 is the xhat, 1 are the evalues
+        Zhat = self.solver(A, k=self.k, rng=self.rng)[0]  # 0 is the xhat, 1 are the evalues
         Xhat = self.solver(B, k=self.k, rng=self.rng)[0]
 
         self.Zhat = Zhat

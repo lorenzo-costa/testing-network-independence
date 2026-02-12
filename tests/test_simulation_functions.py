@@ -18,7 +18,7 @@ def test_simulation_run(parallel):
     nsim = 2
     n = [10, 20]
     k = [2, 3]
-    sigma = [0, 0.5]
+    rho = [0, 0.5]
     alpha = [0.05]
     marginals = [stats.norm]
     edge_var = [1, 2]
@@ -42,7 +42,7 @@ def test_simulation_run(parallel):
         "method",
         "n",
         "k",
-        "sigma",
+        "rho",
         "alpha",
         "marginals",
         "edge_var",
@@ -51,7 +51,7 @@ def test_simulation_run(parallel):
     ]
 
     param_values = product(
-        setup, method, n, k, sigma, alpha, marginals, edge_var, approximation, npermutations
+        setup, method, n, k, rho, alpha, marginals, edge_var, approximation, npermutations
     )
 
     factorial_design = [dict(zip(param_names, v)) for v in param_values]

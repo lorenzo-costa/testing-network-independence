@@ -54,7 +54,7 @@ def test_rv_permutation_basic(solver, npermutations, rng):
         return 0.5
 
     tester = RVPermutationTest(
-        sigma=0,
+        rho=0,
         solver=solver,
         test_function=dummy_stat,
         npermutations=npermutations,
@@ -85,10 +85,10 @@ def test_rv_permutation_correlated(solver, dgp, rng):
     """
     n = 50
 
-    data = dgp(n=n, k=3, sigma=1, rng=rng).generate()
+    data = dgp(n=n, k=3, rho=1, rng=rng).generate()
 
     tester = RVPermutationTest(
-        sigma=0, solver=solver, test_function=rv_coefficient, npermutations=100, rng=rng
+        rho=0, solver=solver, test_function=rv_coefficient, npermutations=100, rng=rng
     )
 
     tester.fit(data)
@@ -111,7 +111,7 @@ def test_rv_permutation_null(solver, rng):
         return 1.0
 
     tester = RVPermutationTest(
-        sigma=0, solver=solver, test_function=constant_rv, npermutations=10, rng=rng
+        rho=0, solver=solver, test_function=constant_rv, npermutations=10, rng=rng
     )
 
     tester.fit(data)
@@ -135,7 +135,7 @@ def test_qap_basic(rng):
     }
 
     # Initialize QAP
-    qap = QAP(sigma=0, npermutations=50, rng=rng)
+    qap = QAP(rho=0, npermutations=50, rng=rng)
 
     # Run fit
     qap.fit(data)
@@ -145,7 +145,7 @@ def test_qap_basic(rng):
     assert "reject_null" in results
     assert "null" in results
     assert 0.0 <= results["p-value"] <= 1.0
-    assert results["null"] is True  # passed sigma=0
+    assert results["null"] is True  # passed rho=0
 
 
 def test_qap_perfect_correlation(rng):
@@ -165,11 +165,11 @@ def test_qap_perfect_correlation(rng):
         "Z": np.zeros((n, 2)),
     }
 
-    qap = QAP(sigma=1, npermutations=100, alpha=0.05, rng=rng)
+    qap = QAP(rho=1, npermutations=100, alpha=0.05, rng=rng)
 
     qap.fit(data)
     results = qap.get_estimated()
 
     assert results["p-value"] < 0.05
     assert bool(results["reject_null"]) is True
-    assert results["null"] is False  # Since we passed sigma=1
+    assert results["null"] is False  # Since we passed rho=1

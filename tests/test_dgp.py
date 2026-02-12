@@ -13,7 +13,7 @@ sys.path.append(str(parent_dir))
 
 
 @pytest.mark.parametrize(
-    "n, k, sigma, edge_var, marginals",
+    "n, k, rho, edge_var, marginals",
     [
         (100, 5, 0.5, 1, {"z": stats.norm, "x": stats.norm}),
         (200, 10, 0.1, 0.5, {"z": stats.norm, "x": stats.norm}),
@@ -25,12 +25,12 @@ sys.path.append(str(parent_dir))
         (100, 10, 0.1, 0.5, {"z": stats.expon, "x": stats.norm}),
     ],
 )
-def test_GaussianNetwork(n, k, sigma, edge_var, marginals):
+def test_GaussianNetwork(n, k, rho, edge_var, marginals):
     rng = np.random.default_rng(42)
     md = GaussianNetwork(
         n=n,
         k=k,
-        sigma=sigma,
+        rho=rho,
         marginals=marginals,
         rng=rng,
         edge_var=edge_var,
@@ -51,7 +51,7 @@ def test_GaussianNetwork(n, k, sigma, edge_var, marginals):
 
 
 @pytest.mark.parametrize(
-    "n, k, sigma, edge_var, marginals",
+    "n, k, rho, edge_var, marginals",
     [
         (100, 5, 0.5, 1, {"z": stats.norm, "x": stats.norm}),
         (200, 10, 0.1, 0.5, {"z": stats.norm, "x": stats.norm}),
@@ -63,12 +63,12 @@ def test_GaussianNetwork(n, k, sigma, edge_var, marginals):
         (100, 10, 0.1, 0.5, {"z": stats.expon, "x": stats.norm}),
     ],
 )
-def test_BernoulliNetwork(n, k, sigma, edge_var, marginals):
+def test_BernoulliNetwork(n, k, rho, edge_var, marginals):
     rng = np.random.default_rng(42)
     md = BernoulliNetwork(
         n=n,
         k=k,
-        sigma=sigma,
+        rho=rho,
         marginals=marginals,
         rng=rng,
         edge_var=edge_var,

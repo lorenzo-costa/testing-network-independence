@@ -36,7 +36,7 @@ def get_dist_string(dist_obj):
 
 
 if __name__ == "__main__":
-    nsim = 10
+    nsim = 5
     n = [50, 100, 150, 200]
     k = [3]
     rho = [0.1]
@@ -45,12 +45,12 @@ if __name__ == "__main__":
     edge_var = [1]
     method = [
         partial(RVPermutationTest, permutation_type="latent"),
-        partial(RVPermutationTest, permutation_type="observed"),
+        # partial(RVPermutationTest, permutation_type="observed"),
         LLKRatioTest,
         QAP,
         DiffusionCorrelation,
         partial(CanonicalCorrelationTest, permutation_type="latent"),
-        partial(CanonicalCorrelationTest, permutation_type="observed")
+        # partial(CanonicalCorrelationTest, permutation_type="observed")
     ]
     
     npermutations = [200]
