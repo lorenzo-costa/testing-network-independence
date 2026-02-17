@@ -217,7 +217,7 @@ class GaussianNetwork(BaseDPG, CopulaDGP):
                  n, 
                  k, 
                  rho, 
-                 marginals=stats.norm, 
+                 marginals='gaussian', 
                  edge_var=1, 
                  rng=None, 
                  symmetric=True, 
@@ -235,14 +235,8 @@ class GaussianNetwork(BaseDPG, CopulaDGP):
         self.edge_var = edge_var
 
         # self._type_check(marginals)
-        self.marginals = marginals
-
-        if isinstance(marginals, dict):
-            self.marginal_z = marginals.get("z", stats.norm)
-            self.marginal_x = marginals.get("x", stats.norm)
-        else:
-            self.marginal_z = marginals
-            self.marginal_x = marginals
+        
+        self._convert_marginals(marginals)
         
         self.copula_model = copula_model
         self.df = df
@@ -250,6 +244,71 @@ class GaussianNetwork(BaseDPG, CopulaDGP):
         self.weights = weights
         self.correlations = correlations
     
+    def _convert_marginals(self, marginals):
+        if isinstance(marginals, dict):
+            marginal_z = marginals.get("z", 'gaussian')
+            marginal_x = marginals.get("x", 'gaussian')
+        else:
+            marginal_z = marginals
+            marginal_x = marginals
+
+        if marginal_x == 'gaussian':
+            self.marginal_x = stats.norm
+        elif marginal_x.split()[0] == 'uniform':
+            a, b = int(marginal_x.split()[1]), int(marginal_x.split()[2])
+            self.marginal_x = stats.uniform(a, b)
+        elif marginal_x == 'exponential':
+            self.marginal_x = stats.expon
+        elif marginal_x.split()[0] == 't':
+            df = int(marginal_x.split()[1])
+            self.marginal_x = stats.t(df=df)
+        elif marginal_x.split()[0] == 'chi':
+            df = int(marginal_x.split()[1])
+            self.marginal_x = stats.chi2(df=df)
+        elif marginal_x.split()[0] == 'beta':
+            a = int(marginal_x.split()[1])
+            b = int(marginal_x.split()[2])
+            self.marginal_x = stats.beta(a, b)
+        elif marginal_x.split()[0] == 'chi2':
+            df = int(marginal_x.split()[1])
+            self.marginal_x = stats.chi2(df=df)
+        elif marginal_x.split()[0] == 'gamma':
+            a = int(marginal_x.split()[1])
+            b = int(marginal_x.split()[2])
+            self.marginal_x = stats.gamma(a, scale=b)
+        elif marginal_x.split()[0] == 'lognormal':
+            s = float(marginal_x.split()[1])
+            self.marginal_x = stats.lognorm(s=s)
+        else:
+            raise ValueError(f"Unknown distribution: {marginal_x}")
+        
+        if marginal_z == 'gaussian':
+            self.marginal_z = stats.norm
+        elif marginal_z.split()[0] == 'uniform':
+            a, b = int(marginal_z.split()[1]), int(marginal_z.split()[2])
+            self.marginal_z = stats.uniform(a, b)
+        elif marginal_z == 'exponential':
+            self.marginal_z = stats.expon
+        elif marginal_z.split()[0] == 't':
+            df = int(marginal_z.split()[1])
+            self.marginal_z = stats.t(df=df)
+        elif marginal_z.split()[0] == 'beta':
+            a = int(marginal_z.split()[1])
+            b = int(marginal_z.split()[2])
+            self.marginal_z = stats.beta(a, b)
+        elif marginal_z.split()[0] == 'gamma':
+            a = int(marginal_z.split()[1])
+            b = int(marginal_z.split()[2])
+            self.marginal_z = stats.gamma(a, scale=b)
+        elif marginal_z.split()[0] == 'lognormal':
+            s = float(marginal_z.split()[1])
+            self.marginal_z = stats.lognorm(s=s)
+        elif marginal_z.split()[0] == 'chi2':
+            df = int(marginal_z.split()[1])
+            self.marginal_z = stats.chi2(df=df)
+        else:
+            raise ValueError(f"Unknown distribution: {marginal_z}")
+
     def generate(self):
         # sample uniforms according to copula model
         u_z, u_x = self._generate_copula_uniforms()
@@ -333,7 +392,7 @@ class BernoulliNetwork(BaseDPG, CopulaDGP):
                  n, 
                  k, 
                  rho, 
-                 marginals=stats.norm, 
+                 marginals='gaussian', 
                  edge_var=1, 
                  rng=None, 
                  symmetric=True, 
@@ -351,14 +410,7 @@ class BernoulliNetwork(BaseDPG, CopulaDGP):
         self.edge_var = edge_var
 
         # self._type_check(marginals)
-        self.marginals = marginals
-
-        if isinstance(marginals, dict):
-            self.marginal_z = marginals.get("z", stats.norm)
-            self.marginal_x = marginals.get("x", stats.norm)
-        else:
-            self.marginal_z = marginals
-            self.marginal_x = marginals
+        self._convert_marginals(marginals)
         
         self.copula_model = copula_model
         self.df = df
@@ -368,6 +420,68 @@ class BernoulliNetwork(BaseDPG, CopulaDGP):
 
     def get_name(self):
         return f"BernoulliNetwork_" + str(self.copula_model) + f"_rho{self.rho}"
+    
+    def _convert_marginals(self, marginals):
+        if isinstance(marginals, dict):
+            marginal_z = marginals.get("z", 'gaussian')
+            marginal_x = marginals.get("x", 'gaussian')
+        else:
+            marginal_z = marginals
+            marginal_x = marginals
+
+        if marginal_x == 'gaussian':
+            self.marginal_x = stats.norm
+        elif marginal_x.split()[0] == 'uniform':
+            a, b = int(marginal_x.split()[1]), int(marginal_x.split()[2])
+            self.marginal_x = stats.uniform(a, b)
+        elif marginal_x == 'exponential':
+            self.marginal_x = stats.expon
+        elif marginal_x.split()[0] == 't':
+            df = int(marginal_x.split()[1])
+            self.marginal_x = stats.t(df=df)
+        elif marginal_x.split()[0] == 'chi2':
+            df = int(marginal_x.split()[1])
+            self.marginal_x = stats.chi2(df=df)
+        elif marginal_x.split()[0] == 'beta':
+            a = int(marginal_x.split()[1])
+            b = int(marginal_x.split()[2])
+            self.marginal_x = stats.beta(a, b)
+        elif marginal_x.split()[0] == 'gamma':
+            a = int(marginal_x.split()[1])
+            b = int(marginal_x.split()[2])
+            self.marginal_x = stats.gamma(a, scale=b)
+        elif marginal_x.split()[0] == 'lognormal':
+            s = float(marginal_x.split()[1])
+            self.marginal_x = stats.lognorm(s=s)
+        else:
+            raise ValueError(f"Unknown distribution: {marginal_x}")
+        
+        if marginal_z == 'gaussian':
+            self.marginal_z = stats.norm
+        elif marginal_z.split()[0] == 'uniform':
+            a, b = int(marginal_z.split()[1]), int(marginal_z.split()[2])
+            self.marginal_z = stats.uniform(a, b)
+        elif marginal_z == 'exponential':
+            self.marginal_z = stats.expon
+        elif marginal_z.split()[0] == 't':
+            df = int(marginal_z.split()[1])
+            self.marginal_z = stats.t(df=df)
+        elif marginal_z.split()[0] == 'beta':
+            a = int(marginal_z.split()[1])
+            b = int(marginal_z.split()[2])
+            self.marginal_z = stats.beta(a, b)
+        elif marginal_z.split()[0] == 'gamma':
+            a = int(marginal_z.split()[1])
+            b = int(marginal_z.split()[2])
+            self.marginal_z = stats.gamma(a, scale=b)
+        elif marginal_z.split()[0] == 'chi2':
+            df = int(marginal_z.split()[1])
+            self.marginal_z = stats.chi2(df)
+        elif marginal_z.split()[0] == 'lognormal':
+            s = float(marginal_z.split()[1])
+            self.marginal_z = stats.lognorm(s=s)
+        else:
+            raise ValueError(f"Unknown distribution: {marginal_z}")
     
     def generate(self):
         # sample uniforms according to copula model

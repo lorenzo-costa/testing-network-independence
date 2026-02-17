@@ -147,8 +147,8 @@ def MLE_logistic(A, k=2, rng=None, **kwargs):
         evals, evectors = np.linalg.eigh(A_dense)
 
     idx = np.argsort(evals)[::-1]
-    evals = evals[idx]
-    evectors = evectors[:, idx]
+    evals = evals[idx][:k]
+    evectors = evectors[:, idx][:, :k]
 
     # build the matrix of features
     X_big = np.zeros((n * (n - 1) // 2, k))

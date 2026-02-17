@@ -36,36 +36,34 @@ def get_dist_string(dist_obj):
 
 
 if __name__ == "__main__":
-    nsim = 100
-    n = [50, 100, 150, 200, 250]
+    nsim = 50
+    n = [100, 150, 200, 250]
     k = [3]
     rho = [0]
     alpha = [0.05]
-    marginals = [stats.norm]
+    marginals = ['gaussian', 'uniform -1 1', 't 5']
     edge_var = [1]
     method = [
         partial(RVPermutationTest, permutation_type="latent"),
-        partial(RVPermutationTest, permutation_type="observed"),
         LLKRatioTest,
         QAP,
         DiffusionCorrelation,
         partial(CanonicalCorrelationTest, permutation_type="latent"),
-        partial(CanonicalCorrelationTest, permutation_type="observed")
     ]
-    
+
     npermutations = [100]
     metrics = [ComputeAll()]
     approximation = ["F-distr"]
 
     setup = [
         (partial(GaussianNetwork, copula_model='gaussian'), MLE_gaussian),
-        # (partial(GaussianNetwork, copula_model='frank'), MLE_gaussian),
         # (partial(GaussianNetwork, copula_model='clayton'), MLE_gaussian),
+        # (partial(GaussianNetwork, copula_model='gumbel'), MLE_gaussian),
         # (partial(GaussianNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.98, -0.98]), MLE_gaussian),
 
         (partial(BernoulliNetwork, copula_model='gaussian'), MLE_logistic),
-        # (partial(BernoulliNetwork, copula_model='frank'), MLE_logistic),
         # (partial(BernoulliNetwork, copula_model='clayton'), MLE_logistic),
+        # (partial(BernoulliNetwork, copula_model='gumbel'), MLE_logistic),
         # (partial(BernoulliNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.98, -0.98]), MLE_logistic),
     ]
     
@@ -115,7 +113,7 @@ if __name__ == "__main__":
 
     out["method"] = out["args"].apply(lambda x: x.get("method_name", "NA"))
 
-    out["marginals"] = out["args"].apply(lambda x: x.get("marginals", "NA"))
+    out["marginals"] = out["args"].apply(lambda x: x.get("marginals").name if hasattr(x.get("marginals"), "name") else "NA")
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
 
