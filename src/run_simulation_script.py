@@ -39,7 +39,7 @@ if __name__ == "__main__":
     nsim = 50
     n = [100, 150, 200, 250]
     k = [3]
-    rho = [0]
+    rho = [0.5, 0.2]
     alpha = [0.05]
     marginals = ['gaussian', 'uniform -1 1', 't 5']
     edge_var = [1]
@@ -57,17 +57,17 @@ if __name__ == "__main__":
 
     setup = [
         (partial(GaussianNetwork, copula_model='gaussian'), MLE_gaussian),
-        # (partial(GaussianNetwork, copula_model='clayton'), MLE_gaussian),
-        # (partial(GaussianNetwork, copula_model='gumbel'), MLE_gaussian),
-        # (partial(GaussianNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.98, -0.98]), MLE_gaussian),
+        (partial(GaussianNetwork, copula_model='clayton'), MLE_gaussian),
+        (partial(GaussianNetwork, copula_model='gumbel'), MLE_gaussian),
+        (partial(GaussianNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.98, -0.98]), MLE_gaussian),
 
         (partial(BernoulliNetwork, copula_model='gaussian'), MLE_logistic),
-        # (partial(BernoulliNetwork, copula_model='clayton'), MLE_logistic),
-        # (partial(BernoulliNetwork, copula_model='gumbel'), MLE_logistic),
-        # (partial(BernoulliNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.98, -0.98]), MLE_logistic),
+        (partial(BernoulliNetwork, copula_model='clayton'), MLE_logistic),
+        (partial(BernoulliNetwork, copula_model='gumbel'), MLE_logistic),
+        (partial(BernoulliNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.98, -0.98]), MLE_logistic),
     ]
     
-    rng = np.random.default_rng(1)    
+    rng = np.random.default_rng(2)    
 
     param_names = [
         "setup",

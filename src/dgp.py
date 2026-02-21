@@ -245,69 +245,50 @@ class GaussianNetwork(BaseDPG, CopulaDGP):
         self.correlations = correlations
     
     def _convert_marginals(self, marginals):
-        if isinstance(marginals, dict):
-            marginal_z = marginals.get("z", 'gaussian')
-            marginal_x = marginals.get("x", 'gaussian')
-        else:
-            marginal_z = marginals
-            marginal_x = marginals
-
-        if marginal_x == 'gaussian':
-            self.marginal_x = stats.norm
-        elif marginal_x.split()[0] == 'uniform':
-            a, b = int(marginal_x.split()[1]), int(marginal_x.split()[2])
-            self.marginal_x = stats.uniform(a, b)
-        elif marginal_x == 'exponential':
-            self.marginal_x = stats.expon
-        elif marginal_x.split()[0] == 't':
-            df = int(marginal_x.split()[1])
-            self.marginal_x = stats.t(df=df)
-        elif marginal_x.split()[0] == 'chi':
-            df = int(marginal_x.split()[1])
-            self.marginal_x = stats.chi2(df=df)
-        elif marginal_x.split()[0] == 'beta':
-            a = int(marginal_x.split()[1])
-            b = int(marginal_x.split()[2])
-            self.marginal_x = stats.beta(a, b)
-        elif marginal_x.split()[0] == 'chi2':
-            df = int(marginal_x.split()[1])
-            self.marginal_x = stats.chi2(df=df)
-        elif marginal_x.split()[0] == 'gamma':
-            a = int(marginal_x.split()[1])
-            b = int(marginal_x.split()[2])
-            self.marginal_x = stats.gamma(a, scale=b)
-        elif marginal_x.split()[0] == 'lognormal':
-            s = float(marginal_x.split()[1])
-            self.marginal_x = stats.lognorm(s=s)
-        else:
-            raise ValueError(f"Unknown distribution: {marginal_x}")
+        # 1. Normalize input into a standard format
+        if not isinstance(marginals, dict):
+            marginals = {"x": marginals, "z": marginals}
         
-        if marginal_z == 'gaussian':
-            self.marginal_z = stats.norm
-        elif marginal_z.split()[0] == 'uniform':
-            a, b = int(marginal_z.split()[1]), int(marginal_z.split()[2])
-            self.marginal_z = stats.uniform(a, b)
-        elif marginal_z == 'exponential':
-            self.marginal_z = stats.expon
-        elif marginal_z.split()[0] == 't':
-            df = int(marginal_z.split()[1])
-            self.marginal_z = stats.t(df=df)
-        elif marginal_z.split()[0] == 'beta':
-            a = int(marginal_z.split()[1])
-            b = int(marginal_z.split()[2])
-            self.marginal_z = stats.beta(a, b)
-        elif marginal_z.split()[0] == 'gamma':
-            a = int(marginal_z.split()[1])
-            b = int(marginal_z.split()[2])
-            self.marginal_z = stats.gamma(a, scale=b)
-        elif marginal_z.split()[0] == 'lognormal':
-            s = float(marginal_z.split()[1])
-            self.marginal_z = stats.lognorm(s=s)
-        elif marginal_z.split()[0] == 'chi2':
-            df = int(marginal_z.split()[1])
-            self.marginal_z = stats.chi2(df=df)
-        else:
-            raise ValueError(f"Unknown distribution: {marginal_z}")
+        # 2. Define a helper to parse a single string/distribution
+        def parse_dist(dist_str):
+            parts = dist_str.split()
+            name = parts[0]
+            args = [float(p) for p in parts[1:]] # Convert params to floats
+
+            # Dispatch table: maps name to (scipy_func, arg_names)
+            registry = {
+                'gaussian':  (stats.norm, []),
+                'exponential': (stats.expon, []),
+                'uniform':   (stats.uniform, []),
+                't':         (stats.t, ['df']),
+                'chi':       (stats.chi2, ['df']),
+                'chi2':      (stats.chi2, ['df']),
+                'beta':      (stats.beta, []),
+                'gamma':     (stats.gamma, ['a', 'scale']), # Special handling for scale
+                'lognormal': (stats.lognorm, ['s']),
+                'cauchy' :  (stats.cauchy, ['loc', 'scale']),
+            }
+
+            if name not in registry:
+                raise ValueError(f"Unknown distribution: {name}")
+
+            func, arg_keys = registry[name]
+            
+            # Handle simple positional distributions vs keyword ones
+            if not args:
+                return func
+            if name == 'gamma' and len(args) == 2:
+                return func(a=args[0], scale=args[1])
+            if name == 'cauchy' and len(args) == 2:
+                return func(loc=args[0], scale=args[1])
+
+            # Map args to keys if provided, otherwise pass as positional
+            kwargs = {k: v for k, v in zip(arg_keys, args) if k}
+            return func(**kwargs) if kwargs else func(*args)
+
+        # 3. Apply to both variables
+        self.marginal_x = parse_dist(marginals.get("x", "gaussian"))
+        self.marginal_z = parse_dist(marginals.get("z", "gaussian"))
 
     def generate(self):
         # sample uniforms according to copula model
@@ -422,66 +403,50 @@ class BernoulliNetwork(BaseDPG, CopulaDGP):
         return f"BernoulliNetwork_" + str(self.copula_model) + f"_rho{self.rho}"
     
     def _convert_marginals(self, marginals):
-        if isinstance(marginals, dict):
-            marginal_z = marginals.get("z", 'gaussian')
-            marginal_x = marginals.get("x", 'gaussian')
-        else:
-            marginal_z = marginals
-            marginal_x = marginals
-
-        if marginal_x == 'gaussian':
-            self.marginal_x = stats.norm
-        elif marginal_x.split()[0] == 'uniform':
-            a, b = int(marginal_x.split()[1]), int(marginal_x.split()[2])
-            self.marginal_x = stats.uniform(a, b)
-        elif marginal_x == 'exponential':
-            self.marginal_x = stats.expon
-        elif marginal_x.split()[0] == 't':
-            df = int(marginal_x.split()[1])
-            self.marginal_x = stats.t(df=df)
-        elif marginal_x.split()[0] == 'chi2':
-            df = int(marginal_x.split()[1])
-            self.marginal_x = stats.chi2(df=df)
-        elif marginal_x.split()[0] == 'beta':
-            a = int(marginal_x.split()[1])
-            b = int(marginal_x.split()[2])
-            self.marginal_x = stats.beta(a, b)
-        elif marginal_x.split()[0] == 'gamma':
-            a = int(marginal_x.split()[1])
-            b = int(marginal_x.split()[2])
-            self.marginal_x = stats.gamma(a, scale=b)
-        elif marginal_x.split()[0] == 'lognormal':
-            s = float(marginal_x.split()[1])
-            self.marginal_x = stats.lognorm(s=s)
-        else:
-            raise ValueError(f"Unknown distribution: {marginal_x}")
+        # 1. Normalize input into a standard format
+        if not isinstance(marginals, dict):
+            marginals = {"x": marginals, "z": marginals}
         
-        if marginal_z == 'gaussian':
-            self.marginal_z = stats.norm
-        elif marginal_z.split()[0] == 'uniform':
-            a, b = int(marginal_z.split()[1]), int(marginal_z.split()[2])
-            self.marginal_z = stats.uniform(a, b)
-        elif marginal_z == 'exponential':
-            self.marginal_z = stats.expon
-        elif marginal_z.split()[0] == 't':
-            df = int(marginal_z.split()[1])
-            self.marginal_z = stats.t(df=df)
-        elif marginal_z.split()[0] == 'beta':
-            a = int(marginal_z.split()[1])
-            b = int(marginal_z.split()[2])
-            self.marginal_z = stats.beta(a, b)
-        elif marginal_z.split()[0] == 'gamma':
-            a = int(marginal_z.split()[1])
-            b = int(marginal_z.split()[2])
-            self.marginal_z = stats.gamma(a, scale=b)
-        elif marginal_z.split()[0] == 'chi2':
-            df = int(marginal_z.split()[1])
-            self.marginal_z = stats.chi2(df)
-        elif marginal_z.split()[0] == 'lognormal':
-            s = float(marginal_z.split()[1])
-            self.marginal_z = stats.lognorm(s=s)
-        else:
-            raise ValueError(f"Unknown distribution: {marginal_z}")
+        # 2. Define a helper to parse a single string/distribution
+        def parse_dist(dist_str):
+            parts = dist_str.split()
+            name = parts[0]
+            args = [float(p) for p in parts[1:]] # Convert params to floats
+
+            # Dispatch table: maps name to (scipy_func, arg_names)
+            registry = {
+                'gaussian':  (stats.norm, []),
+                'exponential': (stats.expon, []),
+                'uniform':   (stats.uniform, []),
+                't':         (stats.t, ['df']),
+                'chi':       (stats.chi2, ['df']),
+                'chi2':      (stats.chi2, ['df']),
+                'beta':      (stats.beta, []),
+                'gamma':     (stats.gamma, ['a', 'scale']), # Special handling for scale
+                'lognormal': (stats.lognorm, ['s']),
+                'cauchy' :  (stats.cauchy, ['loc', 'scale']),
+            }
+
+            if name not in registry:
+                raise ValueError(f"Unknown distribution: {name}")
+
+            func, arg_keys = registry[name]
+            
+            # Handle simple positional distributions vs keyword ones
+            if not args:
+                return func
+            if name == 'gamma' and len(args) == 2:
+                return func(a=args[0], scale=args[1])
+            if name == 'cauchy' and len(args) == 2:
+                return func(loc=args[0], scale=args[1])
+
+            # Map args to keys if provided, otherwise pass as positional
+            kwargs = {k: v for k, v in zip(arg_keys, args) if k}
+            return func(**kwargs) if kwargs else func(*args)
+
+        # 3. Apply to both variables
+        self.marginal_x = parse_dist(marginals.get("x", "gaussian"))
+        self.marginal_z = parse_dist(marginals.get("z", "gaussian"))
     
     def generate(self):
         # sample uniforms according to copula model
