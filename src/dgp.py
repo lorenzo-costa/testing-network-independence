@@ -226,6 +226,7 @@ class GaussianNetwork(BaseDPG, CopulaDGP):
                  weights=None,
                  correlations=None,
                  **args):
+        
         # note here by multiple inheritance BaseDPG init will be called
         super().__init__(rng=rng)
 
@@ -298,6 +299,9 @@ class GaussianNetwork(BaseDPG, CopulaDGP):
         Z = self.marginal_z.ppf(u_z)
         X = self.marginal_x.ppf(u_x)
         
+        Z = Z - self.marginal_z.mean()  # Centering Z
+        X = X - self.marginal_x.mean()  # Centering X
+
         expected_A = Z @ Z.T
         expected_B = X @ X.T
         
@@ -315,24 +319,6 @@ class GaussianNetwork(BaseDPG, CopulaDGP):
         out = {"A": A, "B": B, "Z": Z, "X": X}
         
         return out
-
-    def _type_check(self, marginals):
-        # for now only continuous marginals allowed
-        if isinstance(marginals, dict):
-            # stats._distn_infrastructure.rv_continuous_frozen happens when feeding an instantiated obeject (e.g. stats.norm())
-            if not isinstance(
-                marginals.get("z", stats.norm),
-                (stats.rv_continuous, stats._distn_infrastructure.rv_continuous_frozen),
-            ):
-                raise ValueError("Invalid marginal distributions")
-            if not isinstance(
-                marginals.get("x", stats.norm),
-                (stats.rv_continuous, stats._distn_infrastructure.rv_continuous_frozen),
-            ):
-                raise ValueError("Invalid marginal distributions")
-        else:
-            if not isinstance(marginals, (stats.rv_continuous, stats._distn_infrastructure.rv_continuous_frozen)):
-                raise ValueError("Invalid marginal distribution")
 
     def __repr__(self):
         return (
@@ -381,6 +367,7 @@ class BernoulliNetwork(BaseDPG, CopulaDGP):
                  df=5,
                  weights=None,
                  correlations=None,
+                 center_latent=False,
                  **args):
         # note here by multiple inheritance BaseDPG init will be called
         super().__init__(rng=rng)
@@ -398,6 +385,8 @@ class BernoulliNetwork(BaseDPG, CopulaDGP):
         self.symmetric = symmetric
         self.weights = weights
         self.correlations = correlations
+        
+        self.center_latent = center_latent
 
     def get_name(self):
         return f"BernoulliNetwork_" + str(self.copula_model) + f"_rho{self.rho}"
@@ -456,6 +445,10 @@ class BernoulliNetwork(BaseDPG, CopulaDGP):
         Z = self.marginal_z.ppf(u_z)
         X = self.marginal_x.ppf(u_x)
 
+        if self.center_latent:
+            Z = Z - Z.mean(axis=0)  # Centering Z
+            X = X - X.mean(axis=0)  # Centering X
+
         expected_A = expit(Z @ Z.T)
         expected_B = expit(X @ X.T)
         
@@ -479,21 +472,3 @@ class BernoulliNetwork(BaseDPG, CopulaDGP):
             f"edge_var={self.edge_var}, "
             f"marginal_z={self.marginal_z}, marginal_x={self.marginal_x})"
         )
-
-    def _type_check(self, marginals):
-        # for now only continuous marginals allowed
-        if isinstance(marginals, dict):
-            # stats._distn_infrastructure.rv_continuous_frozen happens when feeding an instantiated obeject (e.g. stats.norm())
-            if not isinstance(
-                marginals.get("z", stats.norm),
-                (stats.rv_continuous, stats._distn_infrastructure.rv_continuous_frozen),
-            ):
-                raise ValueError("Invalid marginal distributions")
-            if not isinstance(
-                marginals.get("x", stats.norm),
-                (stats.rv_continuous, stats._distn_infrastructure.rv_continuous_frozen),
-            ):
-                raise ValueError("Invalid marginal distributions")
-        else:
-            if not isinstance(marginals, (stats.rv_continuous, stats._distn_infrastructure.rv_continuous_frozen)):
-                raise ValueError("Invalid marginal distribution")
