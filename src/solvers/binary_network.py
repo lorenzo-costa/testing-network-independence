@@ -5,6 +5,7 @@ from scipy.special import expit
 from scipy.sparse.linalg import eigsh
 from scipy.linalg import norm
 
+# MLE approximated using logistic regression as in O'connors something (FIX THIS)
 
 def logistic_grad(params, X, y, mu=None):
     """Utility function for scipy optimizer returning loss and gradient for logistic regression"""
@@ -122,7 +123,6 @@ def MLE_logistic(A, k=2, rng=None, **kwargs):
     if rng is None:
         rng = np.random.default_rng()
 
-    # useful quantities
     n = A.shape[0]
 
     # in the paper it seems to use the frob norm NOT squared, i get better results
@@ -165,89 +165,5 @@ def MLE_logistic(A, k=2, rng=None, **kwargs):
     coefs, mu = solve_logistic_scipy(X_big, target, mu=mu_hat)
 
     xhat = evectors * np.sqrt(coefs)
-
-    return xhat, evals
-
-
-def ASE(A, k=2, rng=None, **kwargs):
-    """Adjacency Spectral Embedding
-
-    Parameters
-    ----------
-    A : np.ndarray
-        Adjacency matrix
-    k : int, optional
-        Number of dimensions for the latent space, by default 2
-    rng : np.random.Generator, optional
-        Random number generator, by default None
-
-    Returns
-    -------
-    np.ndarray, np.ndarray
-        Estimated latent positions, estimated eigenvalues
-    """
-    if rng is None:
-        rng = np.random.default_rng()
-
-    # v0 for fixing randomness
-    v0 = rng.standard_normal(size=A.shape[0])
-
-    # don't remember why LA instead of LM
-    try:
-        evals, evectors = eigsh(A, k=k, which="LM", v0=v0)
-    except:
-        A_dense = A.toarray() if hasattr(A, "toarray") else A
-        evals, evectors = np.linalg.eigh(A_dense)
-
-    idx = np.argsort(evals)[::-1]
-    evals = evals[idx]
-    evectors = evectors[:, idx]
-
-    evals = np.maximum(evals, 0)
-
-    xhat = evectors * np.sqrt(evals)
-
-    return xhat, evals
-
-
-def MLE_gaussian(A, k=2, rng=None, shrink=0.5, **kwargs):
-    """Maximum Likelihood Estimation for Gaussian adjacency matrix.
-
-    Note: this assumes latent positions have mean zero.
-
-    Parameters
-    ----------
-    A : np.ndarray
-        Adjacency matrix
-    k : int, optional
-        Number of latent dimensions, by default 2
-    rng : np.random.Generator, optional
-        Random number generator, by default None
-    shrink : float, optional
-        Shrinkage parameter, by default 0.5 (coming from MLE computation)
-
-    Returns
-    -------
-    np.ndarray, np.ndarray
-        Estimated latent positions, estimated eigenvalues
-    """
-    if rng is None:
-        rng = np.random.default_rng()
-
-    v0 = rng.standard_normal(size=A.shape[0])
-    try:
-        evals, evectors = eigsh(A, k=k, which="LM", v0=v0)
-    except:
-        A_dense = A.toarray() if hasattr(A, "toarray") else A
-        evals, evectors = np.linalg.eigh(A_dense)
-
-    # manual sorting just to be sure
-    idx = np.argsort(evals)[::-1]
-    evals = evals[idx]
-    evectors = evectors[:, idx]
-
-    evals = np.clip(np.maximum(evals - 0.5, 0), 0, 1e10)  # clip for numerical stability
-
-    xhat = evectors * np.sqrt(evals)
 
     return xhat, evals
