@@ -1,12 +1,6 @@
 import numpy as np
-import pandas as pd
-import itertools
 from tqdm import tqdm
-import itertools
 from multiprocessing import Pool, cpu_count
-import os
-from functools import partial
-from src.solvers import MLE_gaussian, MLE_logistic
 
 
 # TODO:

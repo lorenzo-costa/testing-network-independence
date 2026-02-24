@@ -3,7 +3,7 @@ from .metrics import rv_coefficient_adjusted
 import sys
 import os
 from scipy import stats, linalg
-from .solvers import ASE
+from .solvers.weighted_network import ASE
 from scipy.spatial.distance import pdist, squareform
 import warnings
 sys.path.append(os.path.abspath(os.path.join(os.getcwd(), "..")))

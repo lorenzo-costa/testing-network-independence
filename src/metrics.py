@@ -1,6 +1,6 @@
 from scipy.linalg import norm
 from ._metrics_helper import rv_coefficient, rv_coefficient_adjusted
-
+import numpy as np
 
 class BaseMetric:
     def __init__(self):
@@ -101,6 +101,44 @@ class RelativeFrobeniusNorm(BaseMetric):
 
     def get_name(self):
         return "RelativeFrobeniusNorm"
+    
+
+class ProcrustesDistance(BaseMetric):
+    """Procrustes Distance between two sets of latent positions.
+
+    Takes as input a results dictionary containing 'estimated_latent' and 'true_latent' keys.
+    """
+
+    def __call__(self, results):
+        estimated = results["estimated_latent"]
+        truth = results["true_latent"]
+        
+        if not isinstance(estimated, tuple):
+            estimated = (estimated,)
+            truth = (truth,)
+        
+        out = []
+        for i in range(len(estimated)):
+            est = estimated[i]
+            true = truth[i]
+            
+            U, s, Vt = np.linalg.svd(true.T @ est)   # Z1^T Z2 = U S V^T
+
+            # Optimal rotation: R* = V U^T
+            R_opt = Vt.T @ U.T
+
+            # Align Z2
+            est_aligned = est @ R_opt
+
+            # Frobenius distance after alignment
+            dist = np.linalg.norm(true - est_aligned, 'fro')
+
+            out.append(dist)
+        # returns a list
+        return out
+
+    def get_name(self):
+        return "ProcrustesDistance"
 
 
 class Rejection(BaseMetric):
