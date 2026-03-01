@@ -1,5 +1,5 @@
 import numpy as np
-from .metrics import rv_coefficient_adjusted
+from ._metrics_helper import rv_coefficient_adjusted
 import sys
 import os
 from scipy import stats, linalg
@@ -501,7 +501,12 @@ class QAP(BaseMethod):
         pvalue = np.mean(
             [i >= self.test_stat_estimate for i in self.permutation_distribution]
         )
-        self.pvalue = pvalue
+
+        l_pos = np.mean(self.permutation_distribution <= np.abs(self.test_stat_estimate))
+        l_neg = np.mean(self.permutation_distribution <= -np.abs(self.test_stat_estimate))
+
+        self.pvalue = 1 - l_pos + l_neg
+        
         self.reject_null = bool(self.pvalue < self.alpha)
 
         return

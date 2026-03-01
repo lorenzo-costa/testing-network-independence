@@ -1,6 +1,7 @@
 # function to put together the results of simulations.
 # quick and dirty approach, these were simply copied from BHreplication code
-
+import numpy as np
+import pandas as pd
 
 def _ratio_helper(df, factors, ratio_variable, y_axis, num, den):
     df_ratio = df.pivot_table(

@@ -288,6 +288,7 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
     y_axis_title = kwargs.get("y_axis_title", None)
     share_x = kwargs.get("share_x", True)
     share_y = kwargs.get("share_y", True)
+    flip_x_axis = kwargs.get("flip_x_axis", False)
 
     if save_path is not None:
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
@@ -409,6 +410,11 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
                 y=1.02,
                 x=plot_center_x,
             )
+    
+    # flip x axis
+    for ax in g.axes.flat:
+        left, right = ax.get_xlim()
+        ax.set_xlim(right, left)
 
     if save_path is not None:
         plt.savefig(save_path + ".png", dpi=300, bbox_inches="tight")

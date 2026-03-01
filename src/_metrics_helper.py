@@ -2,7 +2,7 @@ import numpy as np
 from scipy.sparse.linalg import eigsh
 from scipy.linalg import norm
 from scipy.linalg import blas
-
+import copent
 
 def rv_coefficient(A, B):
     AtB = A.T @ B
@@ -43,6 +43,33 @@ def rv_coefficient_adjusted(A, B):
     den = np.sum((sx[:m] ** 2) * (sy[:m] ** 2))
 
     return num / den if den != 0 else 0
+
+def copula_mutual_information(X, Y, k=3):
+    """
+    Computes the Mutual Information I(X; Y) between two data matrices X and Y 
+    using Copula Entropy via the KSG estimator.
+    """
+    # Convert to numpy arrays and ensure they are 2D (column vectors if 1D)
+    X = np.reshape(X, (len(X), -1))
+    Y = np.reshape(Y, (len(Y), -1))
+    
+    # Combine X and Y into a single joint matrix [X, Y]
+    XY = np.hstack([X, Y])
+    
+    # Calculate Total Correlation of the joint matrix
+    tc_xy = copent.copent(XY, k=k)
+    
+    # Calculate internal Total Correlation of X and Y
+    # If 1D, internal TC is theoretically 0. We force it to 0.0 to avoid 
+    # passing 1D arrays to KSG, which can produce noisy estimates.
+    tc_x = copent.copent(X, k=k) if X.shape[1] > 1 else 0.0
+    tc_y = copent.copent(Y, k=k) if Y.shape[1] > 1 else 0.0
+    
+    # Calculate bipartite Mutual Information
+    mi = tc_xy - tc_x - tc_y
+    
+    # KSG estimates can occasionally be slightly negative due to finite sample variance
+    return max(0.0, float(mi))
 
 
 def mse(X, Xhat):

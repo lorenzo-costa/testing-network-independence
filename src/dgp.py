@@ -225,6 +225,7 @@ class GaussianNetwork(BaseDPG, CopulaDGP):
                  df=5,
                  weights=None,
                  correlations=None,
+                 center_latent=True,
                  **args):
         
         # note here by multiple inheritance BaseDPG init will be called
@@ -244,6 +245,8 @@ class GaussianNetwork(BaseDPG, CopulaDGP):
         self.symmetric = symmetric
         self.weights = weights
         self.correlations = correlations
+        
+        self.center_latent = center_latent
     
     def _convert_marginals(self, marginals):
         # 1. Normalize input into a standard format
@@ -299,8 +302,9 @@ class GaussianNetwork(BaseDPG, CopulaDGP):
         Z = self.marginal_z.ppf(u_z)
         X = self.marginal_x.ppf(u_x)
         
-        Z = Z - self.marginal_z.mean()  # Centering Z
-        X = X - self.marginal_x.mean()  # Centering X
+        if self.center_latent:
+            Z = Z - Z.mean(axis=0)  # Centering Z
+            X = X - X.mean(axis=0)  # Centering X
 
         expected_A = Z @ Z.T
         expected_B = X @ X.T
