@@ -10,8 +10,8 @@ from src.metrics import (
 from src.metrics import ComputeAll
 from src.methods import RVPermutationTest, LLKRatioTest, QAP, DiffusionCorrelation, CanonicalCorrelationTest, FitIndependent
 from src.solvers import MLE_gaussian, MLE_logistic, ASE
-from src.simulation_functions import run_simulation
-from src.analyse_functions import aggregate_results
+from src.helper_functions.simulation_functions import run_simulation
+from src.helper_functions.analyse_functions import aggregate_results
 from src.metrics import rv_coefficient_adjusted
 
 import numpy as np
@@ -20,6 +20,8 @@ from scipy import stats
 from itertools import product
 from datetime import datetime
 from functools import partial
+import yaml
+import argparse
 
 
 def get_dist_string(dist_obj):
@@ -36,6 +38,20 @@ def get_dist_string(dist_obj):
 
 
 if __name__ == "__main__":
+    with open("config.yaml", "r") as f:
+        cfg = yaml.safe_load(f)
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--nsim", type=int, default=None)
+    parser.add_argument("--parallel", default=None)
+    parser.add_argument("--save_checkpoint", default=None)
+    parser.add_argument("--save", type=int, default=1)
+    parser.add_argument("--results_dir", type=str, default=None)
+    parser.add_argument("--data_dir", type=str, default=None)
+    parser.add_argument("--m", type=int, default=None)
+    parser.add_argument("--verbose", type=str, default=None)
+    args = parser.parse_args()
+    
     nsim = 50
     n = [100, 150, 200, 250]
     k = [3]

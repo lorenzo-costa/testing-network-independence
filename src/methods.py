@@ -1,5 +1,5 @@
 import numpy as np
-from ._metrics_helper import rv_coefficient_adjusted
+from .helper_functions._metrics_helper import rv_coefficient_adjusted
 import sys
 import os
 from scipy import stats, linalg
@@ -587,6 +587,7 @@ class DiffusionCorrelation(BaseMethod):
         npermutations=1000,
         alpha=0.05,
         rng=None,
+        solver=None,
         **kwargs,
     ):
         self.rng = np.random.default_rng() if rng is None else rng
@@ -599,6 +600,12 @@ class DiffusionCorrelation(BaseMethod):
         else:
             self.null = False
         self.rho = rho
+        
+        if solver is None:
+            solver = ASE
+            raise Warning("No solver provided, using ASE by default. Consider providing a custom solver for better performance.")
+
+        self.solver = solver
 
         self.alpha = alpha
 
@@ -674,8 +681,8 @@ class DiffusionCorrelation(BaseMethod):
         B_laplacian = self.compute_normalized_laplacian(B)
 
         # diffusion map for t=1 (i.e. ASE)
-        Xhat, _ = ASE(A_laplacian, k=self.k)
-        Zhat, _ = ASE(B_laplacian, k=self.k)
+        Xhat, _ = self.solver(A_laplacian, k=self.k)
+        Zhat, _ = self.solver(B_laplacian, k=self.k)
         self.Xhat = Xhat
         self.Zhat = Zhat
 

@@ -1,5 +1,5 @@
 from scipy.linalg import norm
-from ._metrics_helper import rv_coefficient, rv_coefficient_adjusted
+from .helper_functions._metrics_helper import rv_coefficient, rv_coefficient_adjusted
 import numpy as np
 
 class BaseMetric:

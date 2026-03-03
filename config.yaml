@@ -1,0 +1,22 @@
+# simulation config file
+
+
+# --- general ---
+results_dir: "results/"
+figures_dir: "results/figures/"
+
+
+# --- sim params ---
+nsim: 50
+n : [100, 150, 200, 250] 
+k : [3]
+rho : [0.5, 0.2]
+alpha : [0.05]
+marginals : [gaussian, uniform -1 1, t 5]
+edge_var : [1]
+method : [RVPermutationTest, LLKRatioTest, QAP, DiffusionCorrelation, CanonicalCorrelationTest]
+rng_seed: 42
+parallel: true
+npermutations: 100
+metric : [ComputeAll]
+approximation : [F-distr]
