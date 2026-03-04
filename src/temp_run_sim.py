@@ -8,12 +8,15 @@ from src.metrics import (
     RelativeFrobeniusNorm,
 )
 from src.metrics import ComputeAll
-from src.methods import RVPermutationTest, LLKRatioTest, QAP, DiffusionCorrelation, CanonicalCorrelationTest, FitIndependent
+from src.methods import RVPermutationTest, PermutationTest, QAP, DiffusionCorrelation, CanonicalCorrelationTest, FitIndependent
 from src.solvers.binary_network import MLE_logistic
 from src.solvers.weighted_network import MLE_gaussian, ASE
 from src.helper_functions.simulation_functions import run_simulation
 from src.helper_functions.analyse_functions import aggregate_results
 from src.metrics import rv_coefficient_adjusted
+from src.solvers.MaMa_uuuuu import pgd_fit_wrapper
+from src.helper_functions._metrics_helper import cvm_stat_multivariate
+
 
 import numpy as np
 import pandas as pd
@@ -40,17 +43,16 @@ def get_dist_string(dist_obj):
 if __name__ == "__main__":
     
     nsim = 50
-    n = [100, 150, 200, 250]
+    n = [100, 200]
     k = [3]
     alpha = [0.05]
-    marginals = ['gaussian', 'uniform -1 1', 't 5']
+    marginals = ['gaussian', 'uniform 0 10', 'cauchy']
     edge_var = [1]
     method = [
         partial(RVPermutationTest, permutation_type="latent"),
-        LLKRatioTest,
         QAP,
         DiffusionCorrelation,
-        partial(CanonicalCorrelationTest, permutation_type="latent"),
+        partial(PermutationTest, permutation_type="latent", test_function=cvm_stat_multivariate),
     ]
 
     npermutations = [100]
@@ -65,14 +67,16 @@ if __name__ == "__main__":
         
         if d == 'gaussian':
             d = GaussianNetwork
+            solver = ASE
         elif d == 'bernoulli':
             d = BernoulliNetwork
+            solver = pgd_fit_wrapper
         
         setup = [
-            (partial(d, copula_model='gaussian'), ASE),
-            (partial(d, copula_model='clayton'), ASE),
-            (partial(d, copula_model='gumbel'), ASE),
-            (partial(d, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[r, -r]), ASE)
+            (partial(d, copula_model='gaussian'), solver),
+            (partial(d, copula_model='clayton'), solver),
+            (partial(d, copula_model='gumbel'), solver),
+            (partial(d, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[r, -r]), solver)
             ]
     
         rng = np.random.default_rng(2)    

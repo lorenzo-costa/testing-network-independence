@@ -42,9 +42,9 @@ def get_dist_string(dist_obj):
 if __name__ == "__main__":
     
     nsim = 50
-    n = [100, 200, 500]
+    n = [100, 200, 300]
     k = [3]
-    rho = [0.5, 0.2]
+    rho = [0.2]
     alpha = [0.05]
     marginals = ['gaussian', 'uniform 0 10', 'cauchy']
     edge_var = [1]
