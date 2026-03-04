@@ -3,6 +3,7 @@ from scipy.sparse.linalg import eigsh
 from scipy.linalg import norm
 from scipy.linalg import blas
 import copent
+from scipy.stats import rankdata
 
 def rv_coefficient(A, B):
     AtB = A.T @ B
@@ -107,3 +108,23 @@ def relative_frobenius_norm(X, Xhat, inplace=True):
         num = blas.dnrm2(diff)
 
         return num / den
+
+def pseudo_obs(X):
+    n = X.shape[0]
+    U = np.zeros_like(X, dtype=float)
+    for j in range(X.shape[1]):
+        U[:, j] = rankdata(X[:, j]) / (n + 1.0)
+    return U
+
+def cvm_stat_multivariate(X, Z):
+    Ux = pseudo_obs(X)
+    Uz = pseudo_obs(Z)
+    W = np.hstack([Ux, Uz])
+    n, d = W.shape
+
+    diff = 1 - np.maximum(W[:, None, :], W[None, :, :])
+    term1 = np.sum(np.prod(diff, axis=2)) / n**2
+    term2 = np.mean(np.prod(0.5 * (1 - W**2), axis=1))
+    term3 = (1/3)**d
+
+    return n * (term1 - 2*term2 + term3)

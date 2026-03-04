@@ -1,5 +1,5 @@
 from scipy.linalg import norm
-from .helper_functions._metrics_helper import rv_coefficient, rv_coefficient_adjusted
+from .helper_functions._metrics_helper import rv_coefficient, rv_coefficient_adjusted, cvm_stat_multivariate
 import numpy as np
 
 class BaseMetric:
@@ -18,6 +18,16 @@ class RVCoefficient(BaseMetric):
         estimated = results["estimated_latent"]
         truth = results["true_latent"]
         return rv_coefficient(estimated, truth)
+
+    def get_name(self):
+        return "RV Coefficient"
+    
+
+class CvMStatMultivariate(BaseMetric):
+    def __call__(self, results):
+        estimated = results["estimated_latent"]
+        truth = results["true_latent"]
+        return cvm_stat_multivariate(estimated, truth)
 
     def get_name(self):
         return "RV Coefficient"
@@ -266,6 +276,12 @@ class ComputeAll(BaseMetric):
                 "RelativeFrobeniusNorm_x": est[0],
                 "RelativeFrobeniusNorm_z": est[1],
             }
+            
+            est_procrustes = ProcrustesDistance()(results)
+            latent_metrics.update({
+                "ProcrustesDistance_x": est_procrustes[0],
+                "ProcrustesDistance_z": est_procrustes[1],
+            })
             out.update(latent_metrics)
 
         return out

@@ -57,10 +57,12 @@ if __name__ == "__main__":
     metrics = [ComputeAll()]
     approximation = ["F-distr"]
     
-    dgp = ['gaussian', 'bernoulli']
-    rho = [.5, .2]
+    dgp = ['bernoulli', 'gaussian']
+    rho = [.2, .5]
     
     for d, r in zip(dgp, rho):
+        file_name = f"results/{d}_{r}.csv"
+        
         if d == 'gaussian':
             d = GaussianNetwork
         elif d == 'bernoulli':
@@ -105,9 +107,6 @@ if __name__ == "__main__":
         out = pd.DataFrame(out)
         
         timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-        file_name = f"results/{d}_{r}.csv"
-
-        out.to_csv(file_name, index=False)
 
         out["n"] = out["args"].apply(lambda x: x["n"])
         out["k"] = out["args"].apply(lambda x: x["k"])

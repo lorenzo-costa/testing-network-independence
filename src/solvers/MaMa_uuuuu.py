@@ -4,6 +4,7 @@ from scipy.optimize import minimize
 from scipy.special import expit
 from scipy.sparse.linalg import eigsh
 from scipy.linalg import norm
+from scipy.special import expit, logit
 
 # algorithms from Ma & Ma (2020)
 
@@ -106,7 +107,7 @@ def pgd_fit(A, k,
     
     for t in range(num_iters):
         Theta   = compute_theta(Z, alpha, beta, X)
-        residual = A - sigmoid(Theta)          # (A - σ(Θ))
+        residual = A - expit(Theta)          # (A - σ(Θ))
 
         # --- gradient steps (ascending on log-likelihood) ---
         Z_tilde     = Z     + 2 * eta_Z    * (residual @ Z)
@@ -133,14 +134,14 @@ def pgd_fit_wrapper(A, k,
             eta_Z=1e-3, 
             eta_alpha=1e-3, 
             eta_beta=1e-3, 
-            num_iters=100,
+            num_iters=500,
             Z0=None, 
             alpha0=None, 
             beta0=None, 
             rng=None, 
             init='svt',
             tau_init=1e-2,
-            M_init=1e-2,
+            M_init=4,
             return_history=False):
     """Wrapper for pgd_fit returning Z+alpha"""
 
@@ -206,7 +207,9 @@ def svt_init(A, k, tau, M1, X=None, fit_intercept=True):
 
     # Symmetrize and apply logit to get Θ̂
     P_sym = (P_hat + P_hat.T) / 2.0
-    Theta_hat = np.log(P_sym / (1.0 - P_sym))   # logit
+    eps = 1e-6
+    P_sym = np.clip(P_sym, eps, 1 - eps)
+    Theta_hat = logit(P_sym)   # logit
 
     # ------------------------------------------------------------------
     # Step 3: Least-squares fit for alpha^0, beta^0

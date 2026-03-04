@@ -8,11 +8,14 @@ from src.metrics import (
     RelativeFrobeniusNorm,
 )
 from src.metrics import ComputeAll
-from src.methods import RVPermutationTest, LLKRatioTest, QAP, DiffusionCorrelation, CanonicalCorrelationTest, FitIndependent
-from src.solvers import MLE_gaussian, MLE_logistic, ASE
+from src.methods import RVPermutationTest, LLKRatioTest, QAP, DiffusionCorrelation, PermutationTest
+from src.solvers.binary_network import MLE_logistic
+from src.solvers.weighted_network import MLE_gaussian, ASE
+from src.solvers.MaMa_uuuuu import pgd_fit, pgd_fit_wrapper
 from src.helper_functions.simulation_functions import run_simulation
 from src.helper_functions.analyse_functions import aggregate_results
 from src.metrics import rv_coefficient_adjusted
+from src.helper_functions._metrics_helper import cvm_stat_multivariate
 
 import numpy as np
 import pandas as pd
@@ -20,7 +23,6 @@ from scipy import stats
 from itertools import product
 from datetime import datetime
 from functools import partial
-import yaml
 import argparse
 
 
@@ -38,33 +40,19 @@ def get_dist_string(dist_obj):
 
 
 if __name__ == "__main__":
-    with open("config.yaml", "r") as f:
-        cfg = yaml.safe_load(f)
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--nsim", type=int, default=None)
-    parser.add_argument("--parallel", default=None)
-    parser.add_argument("--save_checkpoint", default=None)
-    parser.add_argument("--save", type=int, default=1)
-    parser.add_argument("--results_dir", type=str, default=None)
-    parser.add_argument("--data_dir", type=str, default=None)
-    parser.add_argument("--m", type=int, default=None)
-    parser.add_argument("--verbose", type=str, default=None)
-    args = parser.parse_args()
     
     nsim = 50
-    n = [100, 150, 200, 250]
+    n = [100, 200, 500]
     k = [3]
     rho = [0.5, 0.2]
     alpha = [0.05]
-    marginals = ['gaussian', 'uniform -1 1', 't 5']
+    marginals = ['gaussian', 'uniform 0 10', 'cauchy']
     edge_var = [1]
     method = [
         partial(RVPermutationTest, permutation_type="latent"),
-        LLKRatioTest,
         QAP,
         DiffusionCorrelation,
-        partial(CanonicalCorrelationTest, permutation_type="latent"),
+        partial(PermutationTest, permutation_type="latent", test_function=cvm_stat_multivariate),
     ]
 
     npermutations = [100]
@@ -72,15 +60,15 @@ if __name__ == "__main__":
     approximation = ["F-distr"]
 
     setup = [
-        (partial(GaussianNetwork, copula_model='gaussian'), MLE_gaussian),
-        (partial(GaussianNetwork, copula_model='clayton'), MLE_gaussian),
-        (partial(GaussianNetwork, copula_model='gumbel'), MLE_gaussian),
-        (partial(GaussianNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.98, -0.98]), MLE_gaussian),
-
-        (partial(BernoulliNetwork, copula_model='gaussian'), MLE_logistic),
-        (partial(BernoulliNetwork, copula_model='clayton'), MLE_logistic),
-        (partial(BernoulliNetwork, copula_model='gumbel'), MLE_logistic),
-        (partial(BernoulliNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.98, -0.98]), MLE_logistic),
+        (partial(GaussianNetwork, copula_model='gaussian'), ASE),
+        (partial(GaussianNetwork, copula_model='clayton'), ASE),
+        (partial(GaussianNetwork, copula_model='gumbel'), ASE),
+        (partial(GaussianNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.98, -0.98]), ASE),
+        
+        (partial(BernoulliNetwork, copula_model='gaussian'), pgd_fit_wrapper),
+        (partial(BernoulliNetwork, copula_model='clayton'), pgd_fit_wrapper),
+        (partial(BernoulliNetwork, copula_model='gumbel'), pgd_fit_wrapper),
+        (partial(BernoulliNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.98, -0.98]), pgd_fit_wrapper),
     ]
     
     rng = np.random.default_rng(2)    
@@ -117,6 +105,7 @@ if __name__ == "__main__":
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
     file_name = f"results/simulation_results_{timestamp}.csv"
 
+    # save first here so if the pandas columns crashes i still have results
     out.to_csv(file_name, index=False)
 
     out["n"] = out["args"].apply(lambda x: x["n"])

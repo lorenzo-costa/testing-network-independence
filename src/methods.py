@@ -8,9 +8,6 @@ from scipy.spatial.distance import pdist, squareform
 import warnings
 sys.path.append(os.path.abspath(os.path.join(os.getcwd(), "..")))
 
-# TODO:
-# - implement OMNI method
-
 
 class BaseMethod:
     def __init__(self):
@@ -104,8 +101,7 @@ class FitIndependent(BaseMethod):
         }
         return results
 
-
-class RVPermutationTest(BaseMethod):
+class PermutationTest(BaseMethod):
     """Perform RV permutation test for network independence.
 
     Parameters
@@ -252,6 +248,13 @@ class RVPermutationTest(BaseMethod):
         }
         return results
 
+    def get_name(self):
+        return "PermutationTest_" + self.permutation_type
+
+class RVPermutationTest(PermutationTest):
+    def __init__(self, **kwargs):
+        super().__init__(test_function=rv_coefficient_adjusted, **kwargs)
+        
     def get_name(self):
         return "RVPermutationTest_" + self.permutation_type
 
