@@ -604,13 +604,11 @@ class DiffusionCorrelation(BaseMethod):
             self.null = False
         self.rho = rho
         
-        if solver is None:
-            solver = ASE
-            raise Warning("No solver provided, using ASE by default. Consider providing a custom solver for better performance.")
-
-        self.solver = solver
+        self.solver = ASE
 
         self.alpha = alpha
+        
+        self.eps = 1e-10
 
     def compute_normalized_laplacian(self, K):
         """
@@ -693,19 +691,22 @@ class DiffusionCorrelation(BaseMethod):
         distances_B = self.compute_distance_matrix(Zhat)
 
         if self.test_method == "mgc":
-            # random_state = self.rng.integers(100)
-            
             # get rid of warning for number of permutations too small
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", category=RuntimeWarning)
-                out_mgc = stats.multiscale_graphcorr(
-                    distances_A,
-                    distances_B,
-                    compute_distance=None,
-                    random_state=self.rng,
-                    reps=self.npermutations
-                )
-            pvalue = out_mgc.pvalue
+                try:
+                    out_mgc = stats.multiscale_graphcorr(
+                        distances_A,
+                        distances_B,
+                        random_state=self.rng,
+                        reps=self.npermutations
+                    )
+                    pvalue = out_mgc.pvalue
+                except IndexError:
+                    pvalue=1.0
+                    print("Error in computing MGC. Check the distance matrices.")
+                    print(distances_A.sum(), distances_B.sum())
+
         # elif self.test_method == "dcorr":
         #     dcorr = self.compute_dcorr(distances_A, distances_B)
         #     p_value, null_dist = self.permutation_test(A, X, dcorr)

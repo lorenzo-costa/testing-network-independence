@@ -308,7 +308,7 @@ class GaussianNetwork(BaseDPG, CopulaDGP):
 
         expected_A = Z @ Z.T
         expected_B = X @ X.T
-        
+    
         A = self.rng.normal(loc=expected_A, scale=self.edge_var)
         B = self.rng.normal(loc=expected_B, scale=self.edge_var)
         
@@ -371,7 +371,7 @@ class BernoulliNetwork(BaseDPG, CopulaDGP):
                  df=5,
                  weights=None,
                  correlations=None,
-                 center_latent=False,
+                 center_latent=True,
                  **args):
         # note here by multiple inheritance BaseDPG init will be called
         super().__init__(rng=rng)
@@ -428,6 +428,9 @@ class BernoulliNetwork(BaseDPG, CopulaDGP):
             # Handle simple positional distributions vs keyword ones
             if not args:
                 return func
+            if name == 'uniform' and len(args) == 2:
+                a, b = args
+                return func(loc=a, scale=b - a) # scale is the width (max - min)
             if name == 'gamma' and len(args) == 2:
                 return func(a=args[0], scale=args[1])
             if name == 'cauchy' and len(args) == 2:
@@ -444,6 +447,9 @@ class BernoulliNetwork(BaseDPG, CopulaDGP):
     def generate(self):
         # sample uniforms according to copula model
         u_z, u_x = self._generate_copula_uniforms()
+        
+        u_z = np.clip(u_z, 1e-7, 1 - 1e-7)
+        u_x = np.clip(u_x, 1e-7, 1 - 1e-7)
 
         # inverse cdf to get marginals
         Z = self.marginal_z.ppf(u_z)
@@ -453,19 +459,24 @@ class BernoulliNetwork(BaseDPG, CopulaDGP):
             Z = Z - Z.mean(axis=0)  # Centering Z
             X = X - X.mean(axis=0)  # Centering X
 
-        expected_A = expit(Z @ Z.T)
-        expected_B = expit(X @ X.T)
+        expected_A = np.clip(expit(Z @ Z.T), 0, 1)
+        expected_B = np.clip(expit(X @ X.T), 0, 1)
+        try:
+            if self.symmetric is True: # generate lower half and the sum to ensure symmetry
+                A = np.tril(self.rng.binomial(1, expected_A), k=-1)
+                B = np.tril(self.rng.binomial(1, expected_B), k=-1)
+
+                A = A + A.T
+                B = B + B.T
+            else:
+                A = self.rng.binomial(1, expected_A)
+                B = self.rng.binomial(1, expected_B)
+        except ValueError as e:
+            print(f"Error generating samples: {e}")
+            print(f"Expected probabilities (A): {expected_A}")
+            print(f"Expected probabilities (B): {expected_B}")
+            raise ValueError
         
-        if self.symmetric is True: # generate lower half and the sum to ensure symmetry
-            A = np.tril(self.rng.binomial(1, expected_A), k=-1)
-            B = np.tril(self.rng.binomial(1, expected_B), k=-1)
-
-            A = A + A.T
-            B = B + B.T
-        else:
-            A = self.rng.binomial(1, expected_A)
-            B = self.rng.binomial(1, expected_B)
-
         out = {"A": A, "B": B, "Z": Z, "X": X}
         
         return out

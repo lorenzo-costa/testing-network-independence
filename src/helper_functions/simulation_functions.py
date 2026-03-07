@@ -69,7 +69,7 @@ def run_simulation_parallel(
     total_scenarios = len(all_scenarios)
 
     # Better chunk size: balance between overhead and load distribution
-    chunk_size = max(1, total_scenarios // (n_jobs * 64))
+    chunk_size = max(1, total_scenarios // (n_jobs * 32))
 
     results = []
     with Pool(processes=n_jobs) as pool:
