@@ -40,7 +40,7 @@ if __name__ == "__main__":
     k = [3]
     rho = [0.2]
     alpha = [0.05]
-    marginals = ['gaussian', 'uniform -5 5', 'cauchy', 't 5']
+    marginals = ['gaussian', 'uniform -5 5', 't 5', 'chi 5']
     edge_var = [1]
     method = [FitIndependent]
 

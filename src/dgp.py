@@ -22,8 +22,36 @@ class BaseDPG:
 class CopulaDGP:
     """Base class for Copula Data Generating Processes."""
 
-    def __init__(self, rng):
+    def __init__(self,
+                 n, 
+                 k, 
+                 rho, 
+                 marginals='gaussian', 
+                 rng=None, 
+                 copula_model='gaussian',
+                 df=5,
+                 weights=None,
+                 correlations=None,
+                 center_latent=True,
+                 **kwargs
+                 ):
+        
+        if rng is None:
+            rng = np.random.default_rng()
+        
         self.rng = rng
+        self.n = n
+        self.k = k
+        self.rho = rho
+        self.marginals = marginals
+        self.copula_model = copula_model
+        self.df = df
+        self.weights = weights
+        self.correlations = correlations
+        self.center_latent = center_latent
+        
+        
+        self._convert_marginals(marginals)
 
     def _generate_copula_uniforms(self):
         """
@@ -188,212 +216,6 @@ class CopulaDGP:
             raise NotImplementedError(f"Copula {self.copula_model} not implemented")
 
         return u_z, u_x
-        
-
-class GaussianNetwork(BaseDPG, CopulaDGP):
-    """
-    Weighted network DGP with Gaussian weights on edges.
-
-    Allows for arbitrary marginal distributions for the latent positions Z and X,
-    while maintaining a gaussian copula correlation structure.
-
-    Parameters
-    ----------
-    n : int
-        Number of nodes.
-    k : int
-        Dimensionality of the latent space.
-    rho : float
-        Correlation parameter for the Gaussian copula (-1 to 1).
-    marginals : dict, scipy.stats.rv_continuous
-        Marginal distributions for the latent variables. If dict it should have 'z' and 'x' keys.
-    edge_var : float, optional
-        Variance of the edges (default is 1).
-    rng : np.random.Generator, optional
-        Random number generator.
-    """
-
-    def __init__(self, 
-                 n, 
-                 k, 
-                 rho, 
-                 marginals='gaussian', 
-                 edge_var=1, 
-                 rng=None, 
-                 symmetric=True, 
-                 copula_model='gaussian',
-                 df=5,
-                 weights=None,
-                 correlations=None,
-                 center_latent=True,
-                 **args):
-        
-        # note here by multiple inheritance BaseDPG init will be called
-        super().__init__(rng=rng)
-
-        self.n = n
-        self.k = k
-        self.rho = rho
-        self.edge_var = edge_var
-
-        # self._type_check(marginals)
-        
-        self._convert_marginals(marginals)
-        
-        self.copula_model = copula_model
-        self.df = df
-        self.symmetric = symmetric
-        self.weights = weights
-        self.correlations = correlations
-        
-        self.center_latent = center_latent
-    
-    def _convert_marginals(self, marginals):
-        # 1. Normalize input into a standard format
-        if not isinstance(marginals, dict):
-            marginals = {"x": marginals, "z": marginals}
-        
-        # 2. Define a helper to parse a single string/distribution
-        def parse_dist(dist_str):
-            parts = dist_str.split()
-            name = parts[0]
-            args = [float(p) for p in parts[1:]] # Convert params to floats
-
-            # Dispatch table: maps name to (scipy_func, arg_names)
-            registry = {
-                'gaussian':  (stats.norm, []),
-                'exponential': (stats.expon, []),
-                'uniform':   (stats.uniform, []),
-                't':         (stats.t, ['df']),
-                'chi':       (stats.chi2, ['df']),
-                'chi2':      (stats.chi2, ['df']),
-                'beta':      (stats.beta, []),
-                'gamma':     (stats.gamma, ['a', 'scale']), # Special handling for scale
-                'lognormal': (stats.lognorm, ['s']),
-                'cauchy' :  (stats.cauchy, ['loc', 'scale']),
-            }
-
-            if name not in registry:
-                raise ValueError(f"Unknown distribution: {name}")
-
-            func, arg_keys = registry[name]
-            
-            # Handle simple positional distributions vs keyword ones
-            if not args:
-                return func
-            if name == 'gamma' and len(args) == 2:
-                return func(a=args[0], scale=args[1])
-            if name == 'cauchy' and len(args) == 2:
-                return func(loc=args[0], scale=args[1])
-
-            # Map args to keys if provided, otherwise pass as positional
-            kwargs = {k: v for k, v in zip(arg_keys, args) if k}
-            return func(**kwargs) if kwargs else func(*args)
-
-        # 3. Apply to both variables
-        self.marginal_x = parse_dist(marginals.get("x", "gaussian"))
-        self.marginal_z = parse_dist(marginals.get("z", "gaussian"))
-
-    def generate(self):
-        # sample uniforms according to copula model
-        u_z, u_x = self._generate_copula_uniforms()
-
-        # inverse cdf to get marginals
-        Z = self.marginal_z.ppf(u_z)
-        X = self.marginal_x.ppf(u_x)
-        
-        if self.center_latent:
-            Z = Z - Z.mean(axis=0)  # Centering Z
-            X = X - X.mean(axis=0)  # Centering X
-
-        expected_A = Z @ Z.T
-        expected_B = X @ X.T
-    
-        A = self.rng.normal(loc=expected_A, scale=self.edge_var)
-        B = self.rng.normal(loc=expected_B, scale=self.edge_var)
-        
-        A[np.diag_indices_from(A)] = 0
-        B[np.diag_indices_from(B)] = 0
-
-        # Symmetrise
-        if self.symmetric is True:
-            A = (A + A.T) / 2
-            B = (B + B.T) / 2
-
-        out = {"A": A, "B": B, "Z": Z, "X": X}
-        
-        return out
-
-    def __repr__(self):
-        return (
-            f"GaussianNetwork(n={self.n}, k={self.k}, rho={self.rho}, "
-            f"edge_var={self.edge_var}, "
-            f"marginal_z={self.marginal_z}, marginal_x={self.marginal_x})"
-        )
-
-    def get_name(self):
-        return f"GaussianNetwork_" + str(self.copula_model) + f"_rho{self.rho}"
-
-
-class BernoulliNetwork(BaseDPG, CopulaDGP):
-    """
-    Network Data Generating Process using Bernoulli likelihood.
-
-    Allows for arbitrary marginal distributions for the latent positions Z and X,
-    while maintaining a gaussian copula correlation structure. Dot product of latent
-    positions models the log-odds of entries of the adjacency matrix.
-
-    Parameters
-    ----------
-    n : int
-        Number of nodes.
-    k : int
-        Dimensionality of the latent space.
-    rho : float
-        Correlation parameter for the Gaussian copula (-1 to 1).
-    marginals : dict, scipy.stats.rv_continuous
-        Marginal distributions for the latent variables. If dict it should have 'z' and 'x' keys.
-    edge_var : float, optional
-        Variance of the edges (default is 1).
-    rng : np.random.Generator, optional
-        Random number generator.
-    """
-
-    def __init__(self, 
-                 n, 
-                 k, 
-                 rho, 
-                 marginals='gaussian', 
-                 edge_var=1, 
-                 rng=None, 
-                 symmetric=True, 
-                 copula_model='gaussian',
-                 df=5,
-                 weights=None,
-                 correlations=None,
-                 center_latent=True,
-                 **args):
-        # note here by multiple inheritance BaseDPG init will be called
-        super().__init__(rng=rng)
-
-        self.n = n
-        self.k = k
-        self.rho = rho
-        self.edge_var = edge_var
-
-        # self._type_check(marginals)
-        self._convert_marginals(marginals)
-        
-        self.copula_model = copula_model
-        self.df = df
-        self.symmetric = symmetric
-        self.weights = weights
-        self.correlations = correlations
-        
-        self.center_latent = center_latent
-
-    def get_name(self):
-        return f"BernoulliNetwork_" + str(self.copula_model) + f"_rho{self.rho}"
     
     def _convert_marginals(self, marginals):
         # 1. Normalize input into a standard format
@@ -444,23 +266,180 @@ class BernoulliNetwork(BaseDPG, CopulaDGP):
         self.marginal_x = parse_dist(marginals.get("x", "gaussian"))
         self.marginal_z = parse_dist(marginals.get("z", "gaussian"))
     
-    def generate(self):
+    def _sample_latent(self):
         # sample uniforms according to copula model
         u_z, u_x = self._generate_copula_uniforms()
-        
-        u_z = np.clip(u_z, 1e-7, 1 - 1e-7)
-        u_x = np.clip(u_x, 1e-7, 1 - 1e-7)
 
         # inverse cdf to get marginals
         Z = self.marginal_z.ppf(u_z)
         X = self.marginal_x.ppf(u_x)
-
+        
         if self.center_latent:
             Z = Z - Z.mean(axis=0)  # Centering Z
             X = X - X.mean(axis=0)  # Centering X
+        
+        return X, Z
+        
 
-        expected_A = np.clip(expit(Z @ Z.T), 0, 1)
-        expected_B = np.clip(expit(X @ X.T), 0, 1)
+class GaussianNetwork(CopulaDGP, BaseDPG):
+    """
+    Weighted network DGP with Gaussian weights on edges.
+
+    Allows for arbitrary marginal distributions for the latent positions Z and X,
+    while maintaining a gaussian copula correlation structure.
+
+    Parameters
+    ----------
+    n : int
+        Number of nodes.
+    k : int
+        Dimensionality of the latent space.
+    rho : float
+        Correlation parameter for the Gaussian copula (-1 to 1).
+    marginals : dict, scipy.stats.rv_continuous
+        Marginal distributions for the latent variables. If dict it should have 'z' and 'x' keys.
+    edge_var : float, optional
+        Variance of the edges (default is 1).
+    rng : np.random.Generator, optional
+        Random number generator.
+    """
+
+    def __init__(self, 
+                 n, 
+                 k, 
+                 rho, 
+                 marginals='gaussian', 
+                 edge_var=1, 
+                 rng=None, 
+                 symmetric=True, 
+                 copula_model='gaussian',
+                 df=5,
+                 weights=None,
+                 correlations=None,
+                 center_latent=True,
+                 self_loops=False,
+                 **args):
+        
+        # note here by multiple inheritance CopulaDGP init will be called
+        super().__init__(n=n,
+                         k=k, 
+                         rho=rho, 
+                         marginals=marginals, 
+                         rng=rng, 
+                         copula_model=copula_model, 
+                         df=df, 
+                         weights=weights, 
+                         correlations=correlations, 
+                         center_latent=center_latent, 
+                          **args)
+
+        
+        self.edge_var = edge_var
+        self.symmetric = symmetric
+        self.self_loops = self_loops
+        
+
+    def generate(self):
+
+        X, Z = self._sample_latent()
+
+        expected_A = X @ X.T
+        expected_B = Z @ Z.T
+
+        A = self.rng.normal(loc=expected_A, scale=self.edge_var)
+        B = self.rng.normal(loc=expected_B, scale=self.edge_var)
+
+        if self.self_loops is False:
+            A[np.diag_indices_from(A)] = 0
+            B[np.diag_indices_from(B)] = 0
+
+        # Symmetrise
+        if self.symmetric is True:
+            A = (A + A.T) / 2
+            B = (B + B.T) / 2
+
+        out = {"A": A, "B": B, "Z": Z, "X": X}
+        
+        return out
+
+    def __repr__(self):
+        return (
+            f"GaussianNetwork(n={self.n}, k={self.k}, rho={self.rho}, "
+            f"edge_var={self.edge_var}, "
+            f"marginal_z={self.marginal_z}, marginal_x={self.marginal_x})"
+        )
+
+    def get_name(self):
+        return f"GaussianNetwork_" + str(self.copula_model) + f"_rho{self.rho}"
+
+
+class BernoulliNetwork(CopulaDGP, BaseDPG):
+    """
+    Network Data Generating Process using Bernoulli likelihood.
+
+    Allows for arbitrary marginal distributions for the latent positions Z and X,
+    while maintaining a gaussian copula correlation structure. Dot product of latent
+    positions models the log-odds of entries of the adjacency matrix.
+
+    Parameters
+    ----------
+    n : int
+        Number of nodes.
+    k : int
+        Dimensionality of the latent space.
+    rho : float
+        Correlation parameter for the Gaussian copula (-1 to 1).
+    marginals : dict, scipy.stats.rv_continuous
+        Marginal distributions for the latent variables. If dict it should have 'z' and 'x' keys.
+    edge_var : float, optional
+        Variance of the edges (default is 1).
+    rng : np.random.Generator, optional
+        Random number generator.
+    """
+    
+    def __init__(self, 
+                 n, 
+                 k, 
+                 rho, 
+                 marginals='gaussian', 
+                 edge_var=1, 
+                 rng=None, 
+                 symmetric=True, 
+                 copula_model='gaussian',
+                 df=5,
+                 weights=None,
+                 correlations=None,
+                 center_latent=True,
+                 self_loops=False,
+                 **args):
+        
+        # note here by multiple inheritance CopulaDGP init will be called
+        super().__init__(n=n,
+                         k=k, 
+                         rho=rho, 
+                         marginals=marginals, 
+                         rng=rng, 
+                         copula_model=copula_model, 
+                         df=df, 
+                         weights=weights, 
+                         correlations=correlations, 
+                         center_latent=center_latent, 
+                          **args)
+
+        
+        self.edge_var = edge_var
+        self.symmetric = symmetric
+        self.self_loops = self_loops
+
+    def get_name(self):
+        return f"BernoulliNetwork_" + str(self.copula_model) + f"_rho{self.rho}"
+    
+    def generate(self):
+        
+        X, Z = self._sample_latent()
+
+        expected_A = np.clip(expit(X @ X.T), 0, 1)
+        expected_B = np.clip(expit(Z @ Z.T), 0, 1)
         try:
             if self.symmetric is True: # generate lower half and the sum to ensure symmetry
                 A = np.tril(self.rng.binomial(1, expected_A), k=-1)
@@ -476,6 +455,10 @@ class BernoulliNetwork(BaseDPG, CopulaDGP):
             print(f"Expected probabilities (A): {expected_A}")
             print(f"Expected probabilities (B): {expected_B}")
             raise ValueError
+        
+        if self.self_loops is False:
+            A[np.diag_indices_from(A)] = 0
+            B[np.diag_indices_from(B)] = 0
         
         out = {"A": A, "B": B, "Z": Z, "X": X}
         
