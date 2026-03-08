@@ -45,6 +45,7 @@ if __name__ == "__main__":
     method = [FitIndependent]
 
     npermutations = [100]
+    df = [3]
     metrics = [ReturnMetric()]
     
     approximation = ["F-distr"]
@@ -53,11 +54,13 @@ if __name__ == "__main__":
         (partial(GaussianNetwork, copula_model='gaussian'), ASE),
         (partial(GaussianNetwork, copula_model='clayton'), ASE),
         (partial(GaussianNetwork, copula_model='gumbel'), ASE),
+        (partial(GaussianNetwork, copula_model='student_t', df=3), ASE),
         (partial(GaussianNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.98, -0.98]), ASE),
         
         (partial(BernoulliNetwork, copula_model='gaussian'), pgd_fit_wrapper),
         (partial(BernoulliNetwork, copula_model='clayton'), pgd_fit_wrapper),
         (partial(BernoulliNetwork, copula_model='gumbel'), pgd_fit_wrapper),
+        (partial(GaussianNetwork, copula_model='student_t', df=3), ASE),
         (partial(BernoulliNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.98, -0.98]), pgd_fit_wrapper),
     ]
     
@@ -71,13 +74,14 @@ if __name__ == "__main__":
         "alpha",
         "marginals",
         "rho",
+        "df"
         "edge_var",
         "approximation",
         "npermutations"
     ]
 
     param_values = product(
-        setup, method, n, k, alpha, marginals, rho, edge_var, approximation, npermutations
+        setup, method, n, k, alpha, marginals, rho, df, edge_var, approximation, npermutations
     )
 
     factorial_design = [dict(zip(param_names, v)) for v in param_values]
@@ -89,10 +93,11 @@ if __name__ == "__main__":
         rng=rng,
         parallel=True,
     )
+    print(len(out))
 
     out = pd.DataFrame(out)
     
-    
+    rho = [0]
     setup = [
         (partial(GaussianNetwork, copula_model='gaussian'), ASE),
         (partial(BernoulliNetwork, copula_model='gaussian'), pgd_fit_wrapper),
@@ -115,7 +120,7 @@ if __name__ == "__main__":
     )
 
     out2 = pd.DataFrame(out2)
-
+    print(len(out2))
     out = pd.concat([out, out2], ignore_index=True)
 
     filename = 'results/data.h5'

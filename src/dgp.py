@@ -343,8 +343,8 @@ class GaussianNetwork(CopulaDGP, BaseDPG):
 
         X, Z = self._sample_latent()
 
-        expected_A = X @ X.T
-        expected_B = Z @ Z.T
+        expected_A = Z @ Z.T
+        expected_B = X @ X.T
 
         A = self.rng.normal(loc=expected_A, scale=self.edge_var)
         B = self.rng.normal(loc=expected_B, scale=self.edge_var)
@@ -438,8 +438,8 @@ class BernoulliNetwork(CopulaDGP, BaseDPG):
         
         X, Z = self._sample_latent()
 
-        expected_A = np.clip(expit(X @ X.T), 0, 1)
-        expected_B = np.clip(expit(Z @ Z.T), 0, 1)
+        expected_A = np.clip(expit(Z @ Z.T), 0, 1)
+        expected_B = np.clip(expit(X @ X.T), 0, 1)
         try:
             if self.symmetric is True: # generate lower half and the sum to ensure symmetry
                 A = np.tril(self.rng.binomial(1, expected_A), k=-1)

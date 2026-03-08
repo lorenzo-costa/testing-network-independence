@@ -8,7 +8,7 @@ from multiprocessing import Pool, cpu_count
 # (it has a specific name i don't remember not)
 # - add intermediate save
 
-def run_scenario(metrics, args, method_params=None):
+def run_scenario(metrics, args, seed, method_params=None):
     """Run a single scenario of the simulation.
 
     Parameters
@@ -24,6 +24,8 @@ def run_scenario(metrics, args, method_params=None):
     dict
         Dictionary containing the computed metrics.
     """
+    rng = np.random.default_rng(seed)
+    args['rng'] = rng
     dgp, solver = args["setup"]
     method = args["method"]
 
@@ -45,8 +47,8 @@ def run_scenario(metrics, args, method_params=None):
 
 def run_scenario_wrapper(args):
     """Wrapper to unpack args for pool.map"""
-    args, metrics, method_params = args
-    return run_scenario(metrics, args, method_params=method_params)
+    args, metrics, method_params, seed = args
+    return run_scenario(metrics, args, seed=seed, method_params=method_params)
 
 
 def run_simulation_parallel(
@@ -61,12 +63,24 @@ def run_simulation_parallel(
     if n_jobs is None:
         n_jobs = cpu_count()
 
+
+        
     # Create all scenario arguments upfront (flattened structure)
     all_scenarios = [
-        (args, metrics, method_params) for _ in range(nsim) for args in factorial_design
+        (args, metrics, method_params) for i in range(nsim) for args in factorial_design
     ]
 
+    
     total_scenarios = len(all_scenarios)
+    
+    child_seeds = rng.spawn(total_scenarios)
+    
+    all_scenarios_seed = [
+        (*scenario, seed) for scenario, seed in zip(all_scenarios, child_seeds)
+    ]
+    
+    # Shuffle scenarios for better parallelisation
+    rng.shuffle(all_scenarios_seed)
 
     # Better chunk size: balance between overhead and load distribution
     chunk_size = max(1, total_scenarios // (n_jobs * 32))
@@ -76,7 +90,7 @@ def run_simulation_parallel(
         with tqdm(total=total_scenarios, desc="Running scenarios") as pbar:
             # Use imap_unordered for better performance (order doesn't matter)
             for result in pool.imap_unordered(
-                run_scenario_wrapper, all_scenarios, chunksize=chunk_size
+                run_scenario_wrapper, all_scenarios_seed, chunksize=chunk_size
             ):
                 results.append(result)
                 pbar.update(1)
