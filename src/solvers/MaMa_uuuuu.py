@@ -1,27 +1,3 @@
-"""
-Ma & Ma (2020) projected gradient descent for binary latent space model.
-Optimised variant — see CHANGES below.
-
-CHANGES vs original
--------------------
-[opt-1]  svt_init: O(n²) closed-form alpha/beta solve (was O(n⁴) lstsq).
-[opt-2]  pgd_fit inner loop: in-place NumPy ops + pre-allocated Theta buffer.
-[opt-3]  Optional Numba JIT for the inner loop.
-[opt-4]  ** NEW ** Fused BLAS matmul: replaces
-             Z @ Z.T  +  alpha[:,None]  +  alpha[None,:]
-         with a single dgemm call on extended matrices [Z|α|1] @ [Z|1|α]^T.
-         This saves two full O(n²) passes over the Theta buffer and yields
-         ~1.4–1.5× wall-clock speedup for n = 300.
-[opt-5]  ** NEW ** JAX/XLA backend: when JAX is installed the entire loop is
-         compiled by XLA (op fusion, no Python overhead, optional GPU).
-         Typical additional speedup over opt-4: 2–4× on CPU, 10–30× on GPU.
-
-Performance summary (n=300, k=2, 500 iters, single CPU core)
-  baseline numpy loop   : ~520 µs / iter
-  + fused matmul [opt-4]: ~350 µs / iter   (1.47×)
-  + JAX / lax.scan      : ~120 µs / iter   (4.3×, CPU, measured on M2)
-"""
-
 import numpy as np
 from scipy.special import expit, logit
 
@@ -136,7 +112,7 @@ def _pgd_loop_numpy(A, Z, alpha, beta_val, eta_Z, eta_alpha, eta_beta,
 
 
 # ---------------------------------------------------------------------------
-# Optional Numba JIT loop (unchanged from original — already fast)
+# Optional Numba JIT loop
 # ---------------------------------------------------------------------------
 
 if _HAS_NUMBA:
