@@ -43,10 +43,10 @@ def get_dist_string(dist_obj):
 if __name__ == "__main__":
     
     nsim = 50
-    n = [100, 200]
+    n = [100, 200, 300]
     k = [3]
     alpha = [0.05]
-    marginals = ['gaussian', 'uniform 0 10', 'cauchy']
+    marginals = ['gaussian', 'uniform -2 2', 'cauchy']
     edge_var = [1]
     method = [
         partial(RVPermutationTest, permutation_type="latent"),
@@ -59,11 +59,14 @@ if __name__ == "__main__":
     metrics = [ComputeAll()]
     approximation = ["F-distr"]
     
-    dgp = ['bernoulli', 'gaussian']
+    dgp = ['bernoulli']
     rho = [.2, .5]
-    
-    for d, r in zip(dgp, rho):
-        file_name = f"results/{d}_{r}.csv"
+    scenarios = list(product(dgp, rho))
+    scenarios = [('bernoulli', 0.5), ('bernoulli', 0.2)]
+    for d, r in scenarios:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+        file_name = f"results/{d}_{r}_{timestamp}.csv"
+        print(file_name)
         
         if d == 'gaussian':
             d = GaussianNetwork

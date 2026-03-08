@@ -18,6 +18,7 @@ def visualise_latent(X_list,
                     sharey=False,
                     kdplot=True,
                     shape=None,
+                    save_path=None,
                     k=0):
     """Visualise correlaton structure of latent positions
 
@@ -73,7 +74,12 @@ def visualise_latent(X_list,
 
     #axes[0].set_ylabel("Latent X", fontsize=12)
     plt.tight_layout()
-    plt.show()
+    if save_path is not None:
+        plt.savefig(save_path + ".png", dpi=300, bbox_inches="tight")
+        plt.savefig(save_path + ".pdf", dpi=300, bbox_inches="tight")
+    else:
+        plt.show()
+    plt.close() 
 
 
 def create_dashed_boxed_message(message):

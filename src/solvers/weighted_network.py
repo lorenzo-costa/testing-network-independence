@@ -30,20 +30,23 @@ def ASE(A, k=2, rng=None, **kwargs):
     # v0 for fixing randomness
     v0 = rng.standard_normal(size=A.shape[0])
 
-    # don't remember why LA instead of LM
     try:
+        # "LM" (Largest Magnitude) is correct here to mimic SVD
         evals, evectors = eigsh(A, k=k, which="LM", v0=v0)
     except:
         A_dense = A.toarray() if hasattr(A, "toarray") else A
         evals, evectors = np.linalg.eigh(A_dense)
 
-    idx = np.argsort(evals)[::-1]
+    # FIX: Sort by absolute magnitude to match "LM" behavior, 
+    # and explicitly slice to keep only the top k dimensions.
+    idx = np.argsort(np.abs(evals))[::-1][:k]
     evals = evals[idx]
     evectors = evectors[:, idx]
 
-    evals = np.maximum(evals, 0)
+    # Convert to absolute values (mimicking singular values)
+    evals = np.abs(evals)
 
-    xhat = evectors * np.sqrt(evals)
+    xhat = evectors @ np.diag(np.sqrt(evals))
 
     return xhat, evals
 

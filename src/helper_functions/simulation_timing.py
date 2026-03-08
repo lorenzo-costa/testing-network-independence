@@ -8,11 +8,15 @@ from src.metrics import (
     RelativeFrobeniusNorm,
 )
 from src.metrics import ComputeAll
-from src.methods import RVPermutationTest, LLKRatioTest, QAP, DiffusionCorrelation, CanonicalCorrelationTest
-from src.solvers import MLE_gaussian, MLE_logistic, ASE
+from src.methods import RVPermutationTest, PermutationTest, QAP, DiffusionCorrelation, CanonicalCorrelationTest, FitIndependent
+from src.solvers.binary_network import MLE_logistic
+from src.solvers.weighted_network import MLE_gaussian, ASE
 from src.helper_functions.simulation_functions import run_simulation
 from src.helper_functions.analyse_functions import aggregate_results
 from src.metrics import rv_coefficient_adjusted
+from src.solvers.MaMa_uuuuu import pgd_fit_wrapper
+from src.helper_functions._metrics_helper import cvm_stat_multivariate
+
 
 import numpy as np
 import pandas as pd
@@ -20,6 +24,7 @@ from scipy import stats
 from itertools import product
 from datetime import datetime
 from functools import partial
+
 
 
 def get_dist_string(dist_obj):
@@ -36,49 +41,51 @@ def get_dist_string(dist_obj):
 
 
 if __name__ == "__main__":
-    nsim = 5
-    n = [50, 100, 150, 200]
+    
+    nsim = 2
+    n = [100, 200]
     k = [3]
-    rho = [0.1]
     alpha = [0.05]
-    marginals = [stats.norm]
+    marginals = ['gaussian', 'uniform 0 10', 'cauchy']
     edge_var = [1]
     method = [
         partial(RVPermutationTest, permutation_type="latent"),
-        # partial(RVPermutationTest, permutation_type="observed"),
-        LLKRatioTest,
-        QAP,
-        DiffusionCorrelation,
-        partial(CanonicalCorrelationTest, permutation_type="latent"),
-        # partial(CanonicalCorrelationTest, permutation_type="observed")
+        # QAP,
+        # DiffusionCorrelation,
+        partial(PermutationTest, permutation_type="latent", test_function=cvm_stat_multivariate),
     ]
-    
-    npermutations = [200]
+
+    npermutations = [100]
     metrics = [ComputeAll()]
     approximation = ["F-distr"]
-
-    setup = [
-        (BernoulliNetwork, MLE_logistic),
-        (GaussianNetwork, MLE_gaussian),
-    ]
     
-    rng = np.random.default_rng(1)    
+    dgp = ['bernoulli', 'gaussian']
+    rho = [.2]
+    
+    setup = [
+        (partial(BernoulliNetwork, copula_model='gaussian', center_latent=True), pgd_fit_wrapper),
+        (partial(BernoulliNetwork, copula_model='clayton', center_latent=True), pgd_fit_wrapper),
+        (partial(BernoulliNetwork, copula_model='gumbel', center_latent=True), pgd_fit_wrapper),
+        (partial(BernoulliNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[98, -98], center_latent=True), pgd_fit_wrapper)
+    ]
+
+    rng = np.random.default_rng(2)    
 
     param_names = [
         "setup",
         "method",
         "n",
         "k",
-        "rho",
         "alpha",
         "marginals",
+        "rho",
         "edge_var",
         "approximation",
         "npermutations"
     ]
 
     param_values = product(
-        setup, method, n, k, rho, alpha, marginals, edge_var, approximation, npermutations
+        setup, method, n, k, alpha, marginals, rho, edge_var, approximation, npermutations
     )
 
     factorial_design = [dict(zip(param_names, v)) for v in param_values]
@@ -90,20 +97,3 @@ if __name__ == "__main__":
         rng=rng,
         parallel=False,
     )
-
-    out = pd.DataFrame(out)
-    out["n"] = out["args"].apply(lambda x: x["n"])
-    out["k"] = out["args"].apply(lambda x: x["k"])
-    out["edge_var"] = out["args"].apply(lambda x: x.get("edge_var", "NA"))
-    out["approximation"] = out["args"].apply(lambda x: x.get("approximation", "NA"))
-    out["dgp"] = out["args"].apply(lambda x: x["setup"][0].__name__)
-    out["solver"] = out["args"].apply(lambda x: x["setup"][1].__name__)
-    out['rho'] = out["args"].apply(lambda x: x.get("rho", "NA"))
-
-    out["method"] = out["args"].apply(lambda x: x.get("method").__name__)
-    
-    out["marginals"] = out["args"].apply(lambda x: x.get("marginals", "NA"))
-    
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-
-    out.to_csv(f"results/simulation_results_{timestamp}.csv", index=False)
