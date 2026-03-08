@@ -3,3 +3,7 @@ __pycache__/
 .pytest_cache/ 
 *profile.stats
 *.csv
+*.pdf
+*.png
+*.jpg
+*.jpeg
