@@ -1,25 +1,199 @@
 import numpy as np
 from scipy import stats
-from scipy.special import expit
+from scipy.special import expit, ndtr
 
 # TODO:
-# - extend gaussian network generation to more than two 
+# - extend gaussian network generation to more than two
+
 
 class BaseDPG:
     def __init__(self, rng=None):
         if rng is None:
             rng = np.random.default_rng()
         self.rng = rng
+
     def generate(self):
         raise NotImplementedError("Subclasses should implement this!")
+
     def name(self):
         raise NotImplementedError("Subclasses should implement this!")
 
 
-class GaussianNetwork(BaseDPG):
+class CopulaDGP:
+    """Base class for Copula Data Generating Processes."""
+
+    def __init__(self, rng):
+        self.rng = rng
+
+    def _generate_copula_uniforms(self):
+        """
+        Generates Uniform(0,1) random variables (u_z, u_x) 
+        with the specified dependence structure.
+        Returns: u_z, u_x of shape (n, k)
+        """
+        if self.copula_model == 'gaussian':
+            # 1. Generate Correlated Gaussians
+            z = self.rng.normal(size=(self.n, self.k))
+            e = self.rng.normal(size=(self.n, self.k))
+            
+            if self.rho == 1:
+                x = z
+            elif self.rho == -1:
+                x = -z
+            else:
+                x = self.rho * z + np.sqrt(1 - self.rho**2) * e
+            
+            # 2. Apply Gaussian CDF to get Uniforms
+            u_z = ndtr(z)
+            u_x = ndtr(x)
+            
+        elif self.copula_model == 'student_t':
+            # 1. Generate Correlated Gaussians (Same as above)
+            g_z = self.rng.normal(size=(self.n, self.k))
+            g_e = self.rng.normal(size=(self.n, self.k))
+            g_x = self.rho * g_z + np.sqrt(1 - self.rho**2) * g_e
+            
+            # 2. Generate Chi-Square variable for scaling
+            # Shape (n, k) or (n, 1) depending if you want shared chi-sq per row or per element
+            # Usually t-copula uses one chi-sq scalar per vector realization (n, 1)
+            w = self.rng.chisquare(df=self.df, size=(self.n, 1)) 
+            
+            # 3. Scale to create Multivariate t variables
+            scale = np.sqrt(self.df / w)
+            t_z = g_z * scale
+            t_x = g_x * scale
+            
+            # 4. Apply t-distribution CDF to get Uniforms
+            u_z = stats.t.cdf(t_z, df=self.df)
+            u_x = stats.t.cdf(t_x, df=self.df)
+
+        elif self.copula_model == 'clayton':
+            # Cook & Johnson (1981) generator for Clayton
+            # param is theta > 0. Larger theta = higher correlation.
+            # covert rho to theta for consistency
+            
+            t_kendall = 2/np.pi * np.arctan(self.rho)  
+            theta = 2 * t_kendall / (1 - t_kendall)
+
+            # Generate Exponentials
+            e_z = self.rng.exponential(scale=1.0, size=(self.n, self.k))
+            e_x = self.rng.exponential(scale=1.0, size=(self.n, self.k))
+            
+            # Generate Gamma
+            # Shape (n, 1) so dependence is tied within the pair generation
+            gamma_sample = self.rng.gamma(shape=1/theta, scale=1.0, size=(self.n, self.k))
+            
+            # 3. Transform
+            u_z = (1 + e_z / gamma_sample) ** (-1/theta)
+            u_x = (1 + e_x / gamma_sample) ** (-1/theta)
+        elif self.copula_model == 'rotated_clayton':
+            # Generate standard Clayton
+            t_kendall = 2/np.pi * np.arctan(self.rho)  
+            theta = 2 * t_kendall / (1 - t_kendall)
+            
+            e_z = self.rng.exponential(scale=1.0, size=(self.n, self.k))
+            e_x = self.rng.exponential(scale=1.0, size=(self.n, self.k))
+            gamma_sample = self.rng.gamma(shape=1/theta, scale=1.0, size=(self.n, self.k))
+            
+            u_z_raw = (1 + e_z / gamma_sample) ** (-1/theta)
+            u_x_raw = (1 + e_x / gamma_sample) ** (-1/theta)
+            
+            # 180 degree flip
+            u_z = 1.0 - u_z_raw
+            u_x = 1.0 - u_x_raw
+        
+        elif self.copula_model == 'gumbel':
+            t_kendall = 2/np.pi * np.arctan(self.rho)  
+            theta = 1/(1-t_kendall)
+            
+            alpha = 1.0 / theta
+        
+            # 1. Simulate Positive Stable Random Variables S ~ St(alpha, 1, ...)
+            # Using Chambers-Mallows-Stuck method
+            U_stab = self.rng.uniform(low=-np.pi/2, high=np.pi/2, size=(self.n, self.k))
+            W_stab = self.rng.exponential(scale=1.0, size=(self.n, self.k))
+            
+            # Intermediate terms for stable generator
+            a = np.sin(alpha * (U_stab + np.pi/2))
+            b = np.cos(U_stab) ** (1/alpha)
+            c = np.cos(U_stab - alpha * (U_stab + np.pi/2))
+            
+            S = (a / b) * (c / W_stab) ** ((1 - alpha) / alpha)
+            
+            # 2. Generate Exponentials
+            E1 = self.rng.exponential(scale=1.0, size=(self.n, self.k))
+            E2 = self.rng.exponential(scale=1.0, size=(self.n, self.k))
+            
+            # 3. Transform to Uniforms
+            # Formula: u = exp( - (E / S)^alpha )
+            u_z = np.exp( - (E1 / S)**alpha )
+            u_x = np.exp( - (E2 / S)**alpha )
+        
+        elif self.copula_model == 'frank':
+            t_kendall = 2/np.pi * np.arctan(self.rho)  
+            theta = 2 * t_kendall / (1 - t_kendall)
+            
+            # 1. Sample independent uniforms
+            u_z = self.rng.uniform(size=(self.n, self.k)) # This is u
+            v_raw = self.rng.uniform(size=(self.n, self.k)) # This is w (conditional probability)
+            
+            # 2. Apply inverse conditional CDF to find u_x
+            # Formula: u_x = -1/theta * log(1 + (v_raw * (1 - exp(-theta))) / (v_raw * (exp(-theta*u_z) - 1) - exp(-theta*u_z)))
+            
+            exp_theta = np.exp(-theta)
+            exp_theta_uz = np.exp(-theta * u_z)
+            
+            numerator = v_raw * (1 - exp_theta)
+            denominator = v_raw * (exp_theta_uz - 1) - exp_theta_uz
+            # Usually written as: v = -1/theta * log( 1 + ... )
+            
+            # To avoid numerical instability with log, we can use log1p if needed, 
+            # but the standard formula is usually robust enough for moderate theta.
+            arg = 1 + numerator / denominator
+            
+            # Clip arg to avoid log(negative) due to float precision issues
+            arg = np.maximum(arg, 1e-10)
+            
+            u_x = -1.0 / theta * np.log(arg)
+        
+        elif self.copula_model == 'mixture_uniform':
+            n_samples = self.n * self.k
+
+            # 1. Assign each sample to a specific component based on weights
+            component_indices = self.rng.choice(len(self.weights), size=n_samples, p=self.weights)
+
+            u_z_flat = np.zeros(n_samples)
+            u_x_flat = np.zeros(n_samples)
+
+            for i, rho in enumerate(self.correlations):
+                # Find indices belonging to this component
+                mask = (component_indices == i)
+                count = np.sum(mask)
+                
+                if count > 0:
+                    # Generate Gaussian copula for this subset
+                    mean = [0, 0]
+                    cov = [[1, rho], [rho, 1]]
+                    # Sample (z, x) from bivariate normal
+                    bivariate = self.rng.multivariate_normal(mean, cov, size=count)
+                    
+                    # Transform to Uniform
+                    u_z_flat[mask] = ndtr(bivariate[:, 0])
+                    u_x_flat[mask] = ndtr(bivariate[:, 1])
+
+            u_z = u_z_flat.reshape(self.n, self.k)
+            u_x = u_x_flat.reshape(self.n, self.k)
+
+        else:
+            raise NotImplementedError(f"Copula {self.copula_model} not implemented")
+
+        return u_z, u_x
+        
+
+class GaussianNetwork(BaseDPG, CopulaDGP):
     """
-    Network Data Generating Process using Gaussian Copulas.
-    
+    Weighted network DGP with Gaussian weights on edges.
+
     Allows for arbitrary marginal distributions for the latent positions Z and X,
     while maintaining a gaussian copula correlation structure.
 
@@ -29,135 +203,142 @@ class GaussianNetwork(BaseDPG):
         Number of nodes.
     k : int
         Dimensionality of the latent space.
-    sigma : float
+    rho : float
         Correlation parameter for the Gaussian copula (-1 to 1).
-    marginal_z : scipy.stats.rv_continuous, optional
-        Distribution for latent Z (default: standard normal).
-    marginal_x : scipy.stats.rv_continuous, optional
-        Distribution for latent X (default: standard normal).
-    marginal_z_params : dict, optional
-        Parameters for marginal_z (e.g., {'loc': 0, 'scale': 1}).
-    marginal_x_params : dict, optional
-        Parameters for marginal_x (e.g., {'df': 5} for t-distribution).
+    marginals : dict, scipy.stats.rv_continuous
+        Marginal distributions for the latent variables. If dict it should have 'z' and 'x' keys.
     edge_var : float, optional
         Variance of the edges (default is 1).
     rng : np.random.Generator, optional
         Random number generator.
     """
-    def __init__(self, n, k, sigma, 
-                 marginal_z=stats.norm, 
-                 marginal_x=None,
-                 marginal_z_params=None, 
-                 marginal_x_params=None,
-                 edge_var=1, rng=None,
-                 **args):
 
+    def __init__(self, 
+                 n, 
+                 k, 
+                 rho, 
+                 marginals='gaussian', 
+                 edge_var=1, 
+                 rng=None, 
+                 symmetric=True, 
+                 copula_model='gaussian',
+                 df=5,
+                 weights=None,
+                 correlations=None,
+                 center_latent=True,
+                 **args):
+        
+        # note here by multiple inheritance BaseDPG init will be called
         super().__init__(rng=rng)
 
         self.n = n
         self.k = k
-        self.sigma = sigma
+        self.rho = rho
         self.edge_var = edge_var
-        
-        # Marginals
-        self.marginal_z = marginal_z
-        if marginal_x is None:
-            self.marginal_x = marginal_z
-        else:
-            self.marginal_x = marginal_x
-            
-        self.marginal_z_params = marginal_z_params if marginal_z_params else {}
-        self.marginal_x_params = marginal_x_params if marginal_x_params else {}
-            
-    def __repr__(self):
-        return (f"GaussianNetwork(n={self.n}, k={self.k}, sigma={self.sigma}, "
-                f"edge_var={self.edge_var}, "
-                f"marginal_z={self.marginal_z}, marginal_x={self.marginal_x})")
 
-    def name(self):
-        return "GaussianNetwork"
+        # self._type_check(marginals)
+        
+        self._convert_marginals(marginals)
+        
+        self.copula_model = copula_model
+        self.df = df
+        self.symmetric = symmetric
+        self.weights = weights
+        self.correlations = correlations
+        
+        self.center_latent = center_latent
+    
+    def _convert_marginals(self, marginals):
+        # 1. Normalize input into a standard format
+        if not isinstance(marginals, dict):
+            marginals = {"x": marginals, "z": marginals}
+        
+        # 2. Define a helper to parse a single string/distribution
+        def parse_dist(dist_str):
+            parts = dist_str.split()
+            name = parts[0]
+            args = [float(p) for p in parts[1:]] # Convert params to floats
 
-    def _generate_correlated_gaussians(self):
-        """
-        Sample the latent vector for Gaussian Copula model (i.e. q in the notes)
-        using a Gaussian Copula with correlation matrix R.
-        R has block structure [[I, sI], [sI, I]]. 
-        
-        We simulate this by generating z ~ N(0, I) and x = sz + sqrt(1-s^2)e.
-        """
-        
-        # # shape: (n, k)
-        # cov_matrix = np.block([
-        #     [self.sigma * np.eye(self.k),  np.eye(self.k)],
-        #     [np.eye(self.k), self.sigma * np.eye(self.k)]
-        # ])
-        # q = self.rng.multivariate_normal(np.zeros(2*self.k), cov_matrix, size=self.n)
-        # qz, qx = q[:, :self.k], q[:, self.k:]
-        
-        # more efficient version uses the formula 
-        # z \sim N(0, I), x = s * z + sqrt(1-s^2) * e
-        z = self.rng.normal(size=(self.n, self.k))
-        e = self.rng.normal(size=(self.n, self.k))
-        if self.sigma == 1:
-            x = z
-        elif self.sigma == -1:
-            x = -z
-        else:
-            x = self.sigma * z + np.sqrt(1 - self.sigma**2) * e
+            # Dispatch table: maps name to (scipy_func, arg_names)
+            registry = {
+                'gaussian':  (stats.norm, []),
+                'exponential': (stats.expon, []),
+                'uniform':   (stats.uniform, []),
+                't':         (stats.t, ['df']),
+                'chi':       (stats.chi2, ['df']),
+                'chi2':      (stats.chi2, ['df']),
+                'beta':      (stats.beta, []),
+                'gamma':     (stats.gamma, ['a', 'scale']), # Special handling for scale
+                'lognormal': (stats.lognorm, ['s']),
+                'cauchy' :  (stats.cauchy, ['loc', 'scale']),
+            }
+
+            if name not in registry:
+                raise ValueError(f"Unknown distribution: {name}")
+
+            func, arg_keys = registry[name]
             
-        return z, x
+            # Handle simple positional distributions vs keyword ones
+            if not args:
+                return func
+            if name == 'gamma' and len(args) == 2:
+                return func(a=args[0], scale=args[1])
+            if name == 'cauchy' and len(args) == 2:
+                return func(loc=args[0], scale=args[1])
+
+            # Map args to keys if provided, otherwise pass as positional
+            kwargs = {k: v for k, v in zip(arg_keys, args) if k}
+            return func(**kwargs) if kwargs else func(*args)
+
+        # 3. Apply to both variables
+        self.marginal_x = parse_dist(marginals.get("x", "gaussian"))
+        self.marginal_z = parse_dist(marginals.get("z", "gaussian"))
 
     def generate(self):
-        # sample latent gaussian vectors
-        q_z, q_x = self._generate_correlated_gaussians()
-        
-        # convert to uniform via CDF of standard normal
-        u_z = stats.norm.cdf(q_z)
-        u_x = stats.norm.cdf(q_x)
+        # sample uniforms according to copula model
+        u_z, u_x = self._generate_copula_uniforms()
 
-        # apply inverse CDF of desired marginals
-        Z = self.marginal_z.ppf(u_z, **self.marginal_z_params)
-        X = self.marginal_x.ppf(u_x, **self.marginal_x_params)
+        # inverse cdf to get marginals
+        Z = self.marginal_z.ppf(u_z)
+        X = self.marginal_x.ppf(u_x)
         
-        # generate adj matrices
-        # note, for some marginals (eg heavy tails) the dot product can be very large, 
-        # maybe it is worth looking into ways of somehow normalising this
+        if self.center_latent:
+            Z = Z - Z.mean(axis=0)  # Centering Z
+            X = X - X.mean(axis=0)  # Centering X
+
         expected_A = Z @ Z.T
         expected_B = X @ X.T
-
+        
         A = self.rng.normal(loc=expected_A, scale=self.edge_var)
         B = self.rng.normal(loc=expected_B, scale=self.edge_var)
         
+        A[np.diag_indices_from(A)] = 0
+        B[np.diag_indices_from(B)] = 0
+
         # Symmetrise
-        A = (A + A.T) / 2
-        B = (B + B.T) / 2
+        if self.symmetric is True:
+            A = (A + A.T) / 2
+            B = (B + B.T) / 2
+
+        out = {"A": A, "B": B, "Z": Z, "X": X}
         
-        return A, B, Z, X
+        return out
 
-    # def generate_gaussian_data(self):
-    #     I_k = np.eye(self.k)
-    #     R = np.block([
-    #             [I_k,          self.sigma * I_k],
-    #             [self.sigma * I_k,  I_k        ]
-    #         ])
+    def __repr__(self):
+        return (
+            f"GaussianNetwork(n={self.n}, k={self.k}, rho={self.rho}, "
+            f"edge_var={self.edge_var}, "
+            f"marginal_z={self.marginal_z}, marginal_x={self.marginal_x})"
+        )
 
-    #     q = self.rng.multivariate_normal(np.zeros(2*self.k), R, size=self.n)
-    #     Z = q[:, :self.k]
-    #     X = q[:, self.k:]
+    def get_name(self):
+        return f"GaussianNetwork_" + str(self.copula_model) + f"_rho{self.rho}"
 
-    #     A = self.rng.normal(loc=Z @ Z.T, scale=self.edge_var)
-    #     B = self.rng.normal(loc=X @ X.T, scale=self.edge_var)
-    #     # symmetrise
-    #     A = (A + A.T) / 2 
-    #     B = (B + B.T) / 2
-        
-    #     return A, B, Z, X
-    
 
-class BernoulliNetwork(BaseDPG):
+class BernoulliNetwork(BaseDPG, CopulaDGP):
     """
     Network Data Generating Process using Bernoulli likelihood.
-    
+
     Allows for arbitrary marginal distributions for the latent positions Z and X,
     while maintaining a gaussian copula correlation structure. Dot product of latent
     positions models the log-odds of entries of the adjacency matrix.
@@ -168,107 +349,130 @@ class BernoulliNetwork(BaseDPG):
         Number of nodes.
     k : int
         Dimensionality of the latent space.
-    sigma : float
+    rho : float
         Correlation parameter for the Gaussian copula (-1 to 1).
-    marginal_z : scipy.stats.rv_continuous, optional
-        Distribution for latent Z (default: standard normal).
-    marginal_x : scipy.stats.rv_continuous, optional
-        Distribution for latent X (default: standard normal).
-    marginal_z_params : dict, optional
-        Parameters for marginal_z (e.g., {'loc': 0, 'scale': 1}).
-    marginal_x_params : dict, optional
-        Parameters for marginal_x (e.g., {'df': 5} for t-distribution).
+    marginals : dict, scipy.stats.rv_continuous
+        Marginal distributions for the latent variables. If dict it should have 'z' and 'x' keys.
     edge_var : float, optional
         Variance of the edges (default is 1).
     rng : np.random.Generator, optional
         Random number generator.
     """
-    def __init__(self, n, k, sigma, 
-                 marginal_z=stats.norm, 
-                 marginal_x=None,
-                 marginal_z_params=None, 
-                 marginal_x_params=None,
-                 edge_var=1, rng=None,
-                 **args):
 
+    def __init__(self, 
+                 n, 
+                 k, 
+                 rho, 
+                 marginals='gaussian', 
+                 edge_var=1, 
+                 rng=None, 
+                 symmetric=True, 
+                 copula_model='gaussian',
+                 df=5,
+                 weights=None,
+                 correlations=None,
+                 center_latent=False,
+                 **args):
+        # note here by multiple inheritance BaseDPG init will be called
         super().__init__(rng=rng)
 
         self.n = n
         self.k = k
-        self.sigma = sigma
+        self.rho = rho
         self.edge_var = edge_var
+
+        # self._type_check(marginals)
+        self._convert_marginals(marginals)
         
-        # Marginals
-        self.marginal_z = marginal_z
-        if marginal_x is None:
-            self.marginal_x = marginal_z
-        else:
-            self.marginal_x = marginal_x
-        self.marginal_z_params = marginal_z_params if marginal_z_params else {}
-        self.marginal_x_params = marginal_x_params if marginal_x_params else {}
+        self.copula_model = copula_model
+        self.df = df
+        self.symmetric = symmetric
+        self.weights = weights
+        self.correlations = correlations
+        
+        self.center_latent = center_latent
+
+    def get_name(self):
+        return f"BernoulliNetwork_" + str(self.copula_model) + f"_rho{self.rho}"
+    
+    def _convert_marginals(self, marginals):
+        # 1. Normalize input into a standard format
+        if not isinstance(marginals, dict):
+            marginals = {"x": marginals, "z": marginals}
+        
+        # 2. Define a helper to parse a single string/distribution
+        def parse_dist(dist_str):
+            parts = dist_str.split()
+            name = parts[0]
+            args = [float(p) for p in parts[1:]] # Convert params to floats
+
+            # Dispatch table: maps name to (scipy_func, arg_names)
+            registry = {
+                'gaussian':  (stats.norm, []),
+                'exponential': (stats.expon, []),
+                'uniform':   (stats.uniform, []),
+                't':         (stats.t, ['df']),
+                'chi':       (stats.chi2, ['df']),
+                'chi2':      (stats.chi2, ['df']),
+                'beta':      (stats.beta, []),
+                'gamma':     (stats.gamma, ['a', 'scale']), # Special handling for scale
+                'lognormal': (stats.lognorm, ['s']),
+                'cauchy' :  (stats.cauchy, ['loc', 'scale']),
+            }
+
+            if name not in registry:
+                raise ValueError(f"Unknown distribution: {name}")
+
+            func, arg_keys = registry[name]
             
-    def __repr__(self):
-        return (f"GaussianNetwork(n={self.n}, k={self.k}, sigma={self.sigma}, "
-                f"edge_var={self.edge_var}, "
-                f"marginal_z={self.marginal_z}, marginal_x={self.marginal_x})")
+            # Handle simple positional distributions vs keyword ones
+            if not args:
+                return func
+            if name == 'gamma' and len(args) == 2:
+                return func(a=args[0], scale=args[1])
+            if name == 'cauchy' and len(args) == 2:
+                return func(loc=args[0], scale=args[1])
 
-    def name(self):
-        return "BernoulliNetwork"
+            # Map args to keys if provided, otherwise pass as positional
+            kwargs = {k: v for k, v in zip(arg_keys, args) if k}
+            return func(**kwargs) if kwargs else func(*args)
 
-    def _generate_correlated_gaussians(self):
-        """
-        Sample the latent vector for Gaussian Copula model (i.e. q in the notes)
-        using a Gaussian Copula with correlation matrix R.
-        R has block structure [[I, sI], [sI, I]]. 
-        
-        We simulate this by generating z ~ N(0, I) and x = sz + sqrt(1-s^2)e.
-        """
-        
-        # # shape: (n, k)
-        # cov_matrix = np.block([
-        #     [self.sigma * np.eye(self.k),  np.eye(self.k)],
-        #     [np.eye(self.k), self.sigma * np.eye(self.k)]
-        # ])
-        # q = self.rng.multivariate_normal(np.zeros(2*self.k), cov_matrix, size=self.n)
-        # qz, qx = q[:, :self.k], q[:, self.k:]
-        
-        # more efficient version uses the formula 
-        # z \sim N(0, I), x = s * z + sqrt(1-s^2) * e
-        z = self.rng.normal(size=(self.n, self.k))
-        e = self.rng.normal(size=(self.n, self.k))
-        if self.sigma == 1:
-            x = z
-        elif self.sigma == -1:
-            x = -z
-        else:
-            x = self.sigma * z + np.sqrt(1 - self.sigma**2) * e
-            
-        return z, x
-
+        # 3. Apply to both variables
+        self.marginal_x = parse_dist(marginals.get("x", "gaussian"))
+        self.marginal_z = parse_dist(marginals.get("z", "gaussian"))
+    
     def generate(self):
-        # sample latent gaussian vectors
-        q_z, q_x = self._generate_correlated_gaussians()
+        # sample uniforms according to copula model
+        u_z, u_x = self._generate_copula_uniforms()
+
+        # inverse cdf to get marginals
+        Z = self.marginal_z.ppf(u_z)
+        X = self.marginal_x.ppf(u_x)
+
+        if self.center_latent:
+            Z = Z - Z.mean(axis=0)  # Centering Z
+            X = X - X.mean(axis=0)  # Centering X
+
+        expected_A = expit(Z @ Z.T)
+        expected_B = expit(X @ X.T)
         
-        # convert to Uniform via CDF of standard normal (PIT)
-        u_z = stats.norm.cdf(q_z)
-        u_x = stats.norm.cdf(q_x)
+        if self.symmetric is True: # generate lower half and the sum to ensure symmetry
+            A = np.tril(self.rng.binomial(1, expected_A), k=-1)
+            B = np.tril(self.rng.binomial(1, expected_B), k=-1)
 
-        # apply Inverse CDF (PPF) to get desired marginals
-        Z = self.marginal_z.ppf(u_z, **self.marginal_z_params)
-        X = self.marginal_x.ppf(u_x, **self.marginal_x_params)
+            A = A + A.T
+            B = B + B.T
+        else:
+            A = self.rng.binomial(1, expected_A)
+            B = self.rng.binomial(1, expected_B)
+
+        out = {"A": A, "B": B, "Z": Z, "X": X}
         
-        # generate adj matrix using logistic function
-        logit_A = Z @ Z.T
-        logit_B = X @ X.T
+        return out
 
-        prob_A = expit(logit_A)
-        prob_B = expit(logit_B)
-
-        # generate lower half and the sum to ensure symmetry
-        A = np.tril(self.rng.binomial(1, prob_A), k=-1)
-        B = np.tril(self.rng.binomial(1, prob_B), k=-1)
-
-        A = A + A.T
-        B = B + B.T
-
-        return A, B, Z, X
+    def __repr__(self):
+        return (
+            f"BernoulliNetwork(n={self.n}, k={self.k}, rho={self.rho}, "
+            f"edge_var={self.edge_var}, "
+            f"marginal_z={self.marginal_z}, marginal_x={self.marginal_x})"
+        )

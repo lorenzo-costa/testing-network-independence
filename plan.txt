@@ -3,6 +3,7 @@ Methods to implement:
 - rv permutation:
     - permuting laten positions
     - permuting network itself
+- different measure of correlation
 - QAP
 - llk ratio 
     -> relies on assumption of gaussian latent positions
@@ -17,8 +18,17 @@ Data generating processes:
 -> use alwasy gaussian latent positions
 
 For the code i will have:
-- DPG: these will have a generate_data() method which returns two adjacency matrices A, B and the true latent positiosn X, Z
+- DPG: these will have a generate() method which returns two adjacency matrices A, B and the true latent positiosn X, Z
     methods: these will have a fit() method which performs the test and a get_result() method which returns a dictionary with the
     true and computed quantities
-
-- Metrics: will take a result object and return
+- Metrics: will take a result object and extract from that what they need. Columsn that need to be included are:
+    estimated_latent, true_latent for frobenius norm
+    null and reject_null for test metrics
+- Methods: these should be end-to-end pipeline to estimate and perform the test. Need to have two methods:
+    - fit() run the procedure (may be both estimate the thing or run the test
+    - get_estimated() returns a dictionary with 
+        - 'estimated_ and true (if provided) latent positions
+        - null hypothesis, pvalue and decision (for tests)
+    - get_name()
+- Simulation function should take a dgp:solver dictionary as input
+- solvers which estimate latent positions. need to return estimated_latent and eigenvalues (or a placeholder for that)
