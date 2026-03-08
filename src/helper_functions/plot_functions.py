@@ -418,7 +418,6 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
             )
     
     # flip x axis
-    print(flip_x_axis)
     if flip_x_axis is True:
         print('flipping')
         for ax in g.axes.flat:
