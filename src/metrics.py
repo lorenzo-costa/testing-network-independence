@@ -12,6 +12,15 @@ class BaseMetric:
     def get_name(self):
         raise NotImplementedError("Subclasses should implement this!")
 
+class ReturnMetric(BaseMetric):
+    def __call__(self, results):
+        estimated = results["estimated_latent"]
+        truth = results["true_latent"]
+        return {'estimated': estimated, 'truth': truth}
+
+    def get_name(self):
+        return "ReturnMetric"
+
 
 class RVCoefficient(BaseMetric):
     def __call__(self, results):
