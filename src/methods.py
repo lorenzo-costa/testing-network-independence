@@ -1,5 +1,5 @@
 import numpy as np
-from .helper_functions._metrics_helper import rv_coefficient_adjusted
+from .helper_functions._metrics_helper import rv_coefficient_adjusted, cvm_stat_multivariate
 import sys
 import os
 from scipy import stats, linalg
@@ -177,33 +177,41 @@ class PermutationTest(BaseMethod):
             raise ValueError(
                 "Invalid data format. Expected a dictionary with keys 'A', 'B'."
             )
+        
+        if 'estimated_X' not in data.keys():
+            # need to estimate latent positions
+            A = data.get("A")
+            B = data.get("B")
+            self.A = A
+            self.B = B
+            # true latent positions may not be provided
+            X = data.get("X", None)
+            Z = data.get("Z", None)
 
-        A = data.get("A")
-        B = data.get("B")
-        self.A = A
-        self.B = B
-        # true latent positions may not be provided
-        X = data.get("X", None)
-        Z = data.get("Z", None)
+            # get the number of dimensions (k). If X or Z is provided, use its
+            # shape (i.e. the "true" value of k)
+            if X is not None or Z is not None:
+                self.k = X.shape[1] if X is not None else Z.shape[1]
+            else:
+                if self.k is None:
+                    raise ValueError(
+                        "Number of dimensions (k) must be specified if X and Z are not provided."
+                    )
+                self.k = self.k
+
+            Zhat = self.solver(A, k=self.k, rng=self.rng)[0]  # 0 is the xhat, 1 are the evalues
+            Xhat = self.solver(B, k=self.k, rng=self.rng)[0]
+
+        else:
+            Zhat = data.get("estimated_Z")
+            Xhat = data.get("estimated_X")
+            Z = data.get("true_Z", None)
+            X = data.get("true_X", None)
+            
         self.X = X
         self.Z = Z
-
-        # get the number of dimensions (k). If X or Z is provided, use its
-        # shape (i.e. the "true" value of k)
-        if X is not None or Z is not None:
-            self.k = X.shape[1] if X is not None else Z.shape[1]
-        else:
-            if self.k is None:
-                raise ValueError(
-                    "Number of dimensions (k) must be specified if X and Z are not provided."
-                )
-            self.k = self.k
-
-        Zhat = self.solver(A, k=self.k, rng=self.rng)[0]  # 0 is the xhat, 1 are the evalues
-        Xhat = self.solver(B, k=self.k, rng=self.rng)[0]
-
-        self.Zhat = Zhat
         self.Xhat = Xhat
+        self.Zhat = Zhat
 
         test_stat_estimate = self.test_function(Zhat, Xhat)
         self.test_stat_estimate = test_stat_estimate
@@ -258,6 +266,12 @@ class RVPermutationTest(PermutationTest):
     def get_name(self):
         return "RVPermutationTest_" + self.permutation_type
 
+class CVMPermutationTest(PermutationTest):
+    def __init__(self, **kwargs):
+        super().__init__(test_function=cvm_stat_multivariate, **kwargs)
+
+    def get_name(self):
+        return "CVMPermutationTest_" + self.permutation_type
 
 class LLKRatioTest(BaseMethod):
     """Asymptotic Likelihood Ratio Test
@@ -336,35 +350,42 @@ class LLKRatioTest(BaseMethod):
                 "Invalid data format. Expected a dictionary with keys 'A', 'B'."
             )
 
-        A = data.get("A")
-        B = data.get("B")
-        self.A = A
-        self.B = B
-        # true latent positions may not be provided
-        X = data.get("X", None)
-        Z = data.get("Z", None)
-        self.X = X
-        self.Z = Z
+        if 'estimated_Z' not in data.keys() or 'estimated_X' not in data.keys():
+            A = data.get("A")
+            B = data.get("B")
+            self.A = A
+            self.B = B
+            # true latent positions may not be provided
+            X = data.get("X", None)
+            Z = data.get("Z", None)
+            
 
-        # get the number of dimensions (k). If X or Z is provided, use its
-        # shape (i.e. the "true" value of k)
-        if X is not None or Z is not None:
-            self.k = X.shape[1] if X is not None else Z.shape[1]
+            # get the number of dimensions (k). If X or Z is provided, use its
+            # shape (i.e. the "true" value of k)
+            if X is not None or Z is not None:
+                self.k = X.shape[1] if X is not None else Z.shape[1]
+            else:
+                if self.k is None:
+                    raise ValueError(
+                        "Number of dimensions (k) must be specified if X and Z are not provided."
+                    )
+                self.k = self.k
+
+            k = self.k
+
+            Zhat = self.solver(A, k=self.k, rng=self.rng)[0]  # 0 is the xhat, 1 are the evalues
+            Xhat = self.solver(B, k=self.k, rng=self.rng)[0]
         else:
-            if self.k is None:
-                raise ValueError(
-                    "Number of dimensions (k) must be specified if X and Z are not provided."
-                )
-            self.k = self.k
+            Xhat = data.get("estimated_X")
+            Zhat = data.get("estimated_Z")
+            X = data.get("true_X", None)
+            Z = data.get("true_Z", None)
 
-        n = A.shape[0]
-        k = self.k
-
-        Zhat = self.solver(A, k=self.k, rng=self.rng)[0]  # 0 is the xhat, 1 are the evalues
-        Xhat = self.solver(B, k=self.k, rng=self.rng)[0]
-
+        n, k = Zhat.shape
         self.Zhat = Zhat
         self.Xhat = Xhat
+        self.X = X
+        self.Z = Z
 
         # # compute llk_score
         # cca_matrix = np.linalg.inv(Xhat.T @ Xhat) @ (Xhat.T @ Zhat) @ np.linalg.inv(Zhat.T @ Zhat) @ (Zhat.T @ Xhat)
@@ -656,34 +677,43 @@ class DiffusionCorrelation(BaseMethod):
                 "Invalid data format. Expected a dictionary with keys 'A', 'B'."
             )
 
-        A = data.get("A")
-        B = data.get("B")
-        self.A = A
-        self.B = B
-        # true latent positions may not be provided
-        X = data.get("X", None)
-        Z = data.get("Z", None)
+        if 'estimated_X' not in data.keys() or 'estimated_Z' not in data.keys():
+            
+            A = data.get("A")
+            B = data.get("B")
+            self.A = A
+            self.B = B
+            # true latent positions may not be provided
+            X = data.get("X", None)
+            Z = data.get("Z", None)
+
+            # get the number of dimensions (k). If X or Z is provided, use its
+            # shape (i.e. the "true" value of k)
+            if X is not None or Z is not None:
+                self.k = X.shape[1] if X is not None else Z.shape[1]
+            else:
+                if self.k is None:
+                    raise ValueError(
+                        "Number of dimensions (k) must be specified if X and Z are not provided."
+                    )
+                self.k = self.k
+
+            # compute normalized Laplacian
+            A_laplacian = self.compute_normalized_laplacian(A)
+            B_laplacian = self.compute_normalized_laplacian(B)
+
+            # diffusion map for t=1 (i.e. ASE)
+            Xhat, _ = self.solver(A_laplacian, k=self.k)
+            Zhat, _ = self.solver(B_laplacian, k=self.k)
+
+        else:
+            Xhat = data.get("estimated_X")
+            Zhat = data.get("estimated_Z")
+            X = data.get("true_X", None)
+            Z = data.get("true_Z", None)
+
         self.X = X
         self.Z = Z
-
-        # get the number of dimensions (k). If X or Z is provided, use its
-        # shape (i.e. the "true" value of k)
-        if X is not None or Z is not None:
-            self.k = X.shape[1] if X is not None else Z.shape[1]
-        else:
-            if self.k is None:
-                raise ValueError(
-                    "Number of dimensions (k) must be specified if X and Z are not provided."
-                )
-            self.k = self.k
-
-        # compute normalized Laplacian
-        A_laplacian = self.compute_normalized_laplacian(A)
-        B_laplacian = self.compute_normalized_laplacian(B)
-
-        # diffusion map for t=1 (i.e. ASE)
-        Xhat, _ = self.solver(A_laplacian, k=self.k)
-        Zhat, _ = self.solver(B_laplacian, k=self.k)
         self.Xhat = Xhat
         self.Zhat = Zhat
 
@@ -802,7 +832,7 @@ class CanonicalCorrelationTest(BaseMethod):
             raise ValueError(
                 "Invalid data format. Expected a dictionary with keys 'A', 'B'."
             )
-
+        #TODO implement the non-estimation thing
         A = data.get("A")
         B = data.get("B")
         self.A = A

@@ -129,7 +129,8 @@ else:
 # ---------------------------------------------------------------------------
 # CvM statistic — public interface
 # ---------------------------------------------------------------------------
-
+#TODO this tests against full independence (i.e. full product copula) but i
+# i don't really care about independence within Z or X (i.e. columns may be dependent)
 def cvm_stat_multivariate(X, Z):
     """
     Multivariate Cramér–von Mises statistic between latent positions X and Z.

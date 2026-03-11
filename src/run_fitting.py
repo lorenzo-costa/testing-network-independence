@@ -74,7 +74,7 @@ if __name__ == "__main__":
         "alpha",
         "marginals",
         "rho",
-        "df"
+        "df",
         "edge_var",
         "approximation",
         "npermutations"
@@ -96,17 +96,16 @@ if __name__ == "__main__":
     print(len(out))
 
     out = pd.DataFrame(out)
-    
+
     rho = [0]
     setup = [
         (partial(GaussianNetwork, copula_model='gaussian'), ASE),
         (partial(BernoulliNetwork, copula_model='gaussian'), pgd_fit_wrapper),
     ]
-    
-    rng = np.random.default_rng(2)    
 
+    rng = np.random.default_rng(2)    
     param_values = product(
-        setup, method, n, k, alpha, marginals, rho, edge_var, approximation, npermutations
+        setup, method, n, k, alpha, marginals, rho, df, edge_var, approximation, npermutations
     )
 
     factorial_design = [dict(zip(param_names, v)) for v in param_values]
@@ -124,7 +123,7 @@ if __name__ == "__main__":
     out = pd.concat([out, out2], ignore_index=True)
 
     filename = 'results/data.h5'
-    
+
     metadata = pd.DataFrame()
 
     metadata["n"] = out["args"].apply(lambda x: x["n"])
@@ -138,7 +137,8 @@ if __name__ == "__main__":
 
     metadata["solver"] = out["args"].apply(lambda x: x["setup"][1].__name__)
     metadata['rho'] = out["args"].apply(lambda x: x.get("rho", "NA"))
-    metadata["marginals"] = out["args"].apply(lambda x: x.get("marginals").name if hasattr(x.get("marginals"), "name") else "NA")
+    metadata["marginals"] = out["args"].apply(lambda x: x.get("marginals", "NA"))
+    metadata['df'] = out["args"].apply(lambda x: x.get("df", "NA"))
 
 
     with h5py.File(filename, 'w') as hf:
