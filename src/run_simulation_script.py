@@ -24,6 +24,7 @@ from itertools import product
 from datetime import datetime
 from functools import partial
 import argparse
+import h5py
 
 
 def get_dist_string(dist_obj):
@@ -37,20 +38,35 @@ def get_dist_string(dist_obj):
     params_join = ", ".join(args_str + kwds_str)
 
     return f"{name}({params_join})"
+ 
+def load_hdf5(path):
+    def read_obj(obj):
 
+        # dataset
+        if isinstance(obj, h5py.Dataset):
+            return obj[()]
+
+        # group
+        if isinstance(obj, h5py.Group):
+            out = {}
+
+            # put attributes directly as keys
+            out.update({k: v for k, v in obj.attrs.items()})
+
+            for key, item in obj.items():
+                out[key] = read_obj(item)
+
+            return out
+
+    with h5py.File(path, "r") as f:
+        return {k: read_obj(v) for k, v in f.items()}
 
 if __name__ == "__main__":
-    
-    nsim = 50
-    n = [100, 200, 300]
-    k = [3]
-    rho = [0.2]
+    nsim = 1
     alpha = [0.05]
-    marginals = ['gaussian', 'uniform 0 10', 'cauchy']
-    edge_var = [1]
     method = [
         partial(RVPermutationTest, permutation_type="latent"),
-        QAP,
+        #QAP,
         DiffusionCorrelation,
         partial(PermutationTest, permutation_type="latent", test_function=cvm_stat_multivariate),
     ]
@@ -58,39 +74,36 @@ if __name__ == "__main__":
     npermutations = [100]
     metrics = [ComputeAll()]
     approximation = ["F-distr"]
-
-    setup = [
-        (partial(GaussianNetwork, copula_model='gaussian'), ASE),
-        (partial(GaussianNetwork, copula_model='clayton'), ASE),
-        (partial(GaussianNetwork, copula_model='gumbel'), ASE),
-        (partial(GaussianNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.98, -0.98]), ASE),
-        
-        (partial(BernoulliNetwork, copula_model='gaussian'), pgd_fit_wrapper),
-        (partial(BernoulliNetwork, copula_model='clayton'), pgd_fit_wrapper),
-        (partial(BernoulliNetwork, copula_model='gumbel'), pgd_fit_wrapper),
-        (partial(BernoulliNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.98, -0.98]), pgd_fit_wrapper),
-    ]
     
     rng = np.random.default_rng(2)    
 
     param_names = [
-        "setup",
         "method",
-        "n",
-        "k",
         "alpha",
-        "marginals",
-        "rho",
-        "edge_var",
         "approximation",
         "npermutations"
     ]
 
-    param_values = product(
-        setup, method, n, k, alpha, marginals, rho, edge_var, approximation, npermutations
-    )
+    param_values = product(method, alpha, approximation, npermutations)
 
-    factorial_design = [dict(zip(param_names, v)) for v in param_values]
+    temp = [dict(zip(param_names, v)) for v in param_values]
+
+    factorial_design = []
+    
+    # load data with pre-estimated X and Z
+    data = load_hdf5('results/data.h5')
+    print('Loaded data')
+
+    for x in data:
+        for d in temp:
+            attrs = {k: v for k, v in data[x].items() if not isinstance(v, np.ndarray)}
+            datasets = {k: v for k, v in data[x].items() if isinstance(v, np.ndarray)}
+
+            factorial_design.append({
+                **attrs,
+                **d,
+                "data": datasets
+            })
 
     out = run_simulation(
         nsim=nsim,
@@ -113,7 +126,7 @@ if __name__ == "__main__":
     out["edge_var"] = out["args"].apply(lambda x: x.get("edge_var", "NA"))
     out["approximation"] = out["args"].apply(lambda x: x.get("approximation", "NA"))
     out["dgp"] = out["args"].apply(lambda x: x.get("dgp_name", "NA"))
-    out["solver"] = out["args"].apply(lambda x: x["setup"][1].__name__)
+    out["solver"] = out["args"].apply(lambda x: x.get('solver', "NA"))
     out['rho'] = out["args"].apply(lambda x: x.get("rho", "NA"))
 
     out["method"] = out["args"].apply(lambda x: x.get("method_name", "NA"))
