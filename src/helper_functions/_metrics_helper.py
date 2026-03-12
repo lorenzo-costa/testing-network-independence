@@ -62,6 +62,13 @@ def rv_coefficient_adjusted(A, B):
 
     return num / den if den != 0 else 0
 
+import numpy as np
+
+try:
+    import numba as nb
+    _HAS_NUMBA = True
+except ImportError:
+    _HAS_NUMBA = False
 
 # ---------------------------------------------------------------------------
 # Pseudo-observations
@@ -81,86 +88,132 @@ def pseudo_obs(X):
 
 
 # ---------------------------------------------------------------------------
-# CvM statistic — inner kernel
+# Block CvM statistic — inner kernels
 # ---------------------------------------------------------------------------
 
-def _cvm_term1_numpy(V):
+def _build_M_numpy(V):
     """
-    Compute  Σ_{i,j} Π_d min(V[i,d], V[j,d])  without a (n,n,d) tensor.
-
-    V has shape (n, d).  We iterate over d, accumulating a running (n, n)
-    float32 product matrix.  Memory footprint: O(n²) instead of O(n²d).
+    Helper for NumPy: Builds the (n, n) kernel matrix where 
+    M_ij = Π_d min(V[i,d], V[j,d]). Memory footprint: O(n²).
     """
     n, d = V.shape
-    V32  = V.astype(np.float32, copy=False)
+    V32 = V.astype(np.float32, copy=False)
     prod = np.ones((n, n), dtype=np.float32)
     for dd in range(d):
         vd = V32[:, dd]
         np.multiply(prod, np.minimum(vd[:, None], vd[None, :]), out=prod)
-    return float(prod.sum())
+    return prod
 
+def _cvm_block_terms_numpy(Vx, Vz):
+    """
+    NumPy fallback for block independence terms.
+    Builds the Mx and Mz matrices and calculates the row sums.
+    """
+    Mx = _build_M_numpy(Vx)
+    Mz = _build_M_numpy(Vz)
+    
+    term1_sum = np.sum(Mx * Mz)
+    sum_Mx = Mx.sum(axis=1).astype(np.float64)
+    sum_Mz = Mz.sum(axis=1).astype(np.float64)
+    
+    return float(term1_sum), sum_Mx, sum_Mz
 
 if _HAS_NUMBA:
     @nb.njit(parallel=True, cache=True, fastmath=True)
-    def _cvm_term1_numba(V):
+    def _cvm_block_terms_numba(Vx, Vz):
         """
-        Numba parallel kernel: uses all CPU cores, avoids (n,n,d) tensor,
-        and keeps the inner loop scalar for maximum SIMD throughput.
+        Numba parallel kernel for block independence.
+        Calculates all required integrals in a single pass without 
+        storing the full (n, n) kernel matrices. Memory footprint: O(n).
         """
-        n, d = V.shape
-        total = 0.0
-        for i in nb.prange(n):          # parallel over rows
-            row_sum = 0.0
-            for j in range(n):
-                prod = 1.0
-                for dd in range(d):
-                    vi = V[i, dd]
-                    vj = V[j, dd]
-                    prod *= vi if vi < vj else vj
-                row_sum += prod
-            total += row_sum
-        return total
+        n, dx = Vx.shape
+        _, dz = Vz.shape
 
-    _cvm_term1 = _cvm_term1_numba
+        term1_sum = 0.0
+        sum_Mx = np.zeros(n, dtype=nb.float64)
+        sum_Mz = np.zeros(n, dtype=nb.float64)
+
+        for i in nb.prange(n):          # parallel over rows
+            row_term1 = 0.0
+            row_Mx = 0.0
+            row_Mz = 0.0
+            
+            for j in range(n):
+                # Compute kernel for X: Π min(Vx[i], Vx[j])
+                mx_ij = 1.0
+                for d in range(dx):
+                    vxi = Vx[i, d]
+                    vxj = Vx[j, d]
+                    mx_ij *= vxi if vxi < vxj else vxj
+                    
+                # Compute kernel for Z: Π min(Vz[i], Vz[j])
+                mz_ij = 1.0
+                for d in range(dz):
+                    vzi = Vz[i, d]
+                    vzj = Vz[j, d]
+                    mz_ij *= vzi if vzi < vzj else vzj
+                
+                row_term1 += mx_ij * mz_ij
+                row_Mx += mx_ij
+                row_Mz += mz_ij
+                
+            # Store row sums
+            sum_Mx[i] = row_Mx
+            sum_Mz[i] = row_Mz
+            term1_sum += row_term1
+            
+        return term1_sum, sum_Mx, sum_Mz
+
+    _cvm_block_terms = _cvm_block_terms_numba
 else:
-    _cvm_term1 = _cvm_term1_numpy
+    _cvm_block_terms = _cvm_block_terms_numpy
 
 
 # ---------------------------------------------------------------------------
 # CvM statistic — public interface
 # ---------------------------------------------------------------------------
-#TODO this tests against full independence (i.e. full product copula) but i
-# i don't really care about independence within Z or X (i.e. columns may be dependent)
-def cvm_stat_multivariate(X, Z):
-    """
-    Multivariate Cramér–von Mises statistic between latent positions X and Z.
 
-    Copula-based: converts both matrices to pseudo-observations, stacks them,
-    then computes the d-dimensional CvM statistic.
+def cvm_stat_block_independence(X, Z):
+    """
+    Cramér–von Mises statistic for block independence between vectors X and Z.
+    
+    Tests H_0: C_XZ(u, v) = C_X(u) C_Z(v). 
+    This allows internal dimensions of X to be dependent on each other, and 
+    internal dimensions of Z to be dependent on each other.
 
     Parameters
     ----------
-    X, Z : (n, k) arrays of latent positions
+    X : (n, d_x) array of latent positions
+    Z : (n, d_z) array of latent positions
 
     Returns
     -------
     float
     """
+    n = X.shape[0]
+    
+    # 1. Transform to empirical pseudo-observations
     Ux = pseudo_obs(X)
     Uz = pseudo_obs(Z)
-    W  = np.hstack([Ux, Uz])            # (n, 2k)
-    n, d = W.shape
 
-    # V = 1 - W  (used in term1 min-product formula)
-    V = (1.0 - W).astype(np.float64)
+    # 2. V = 1 - U (used in the min-product integral identity)
+    Vx = (1.0 - Ux).astype(np.float64)
+    Vz = (1.0 - Uz).astype(np.float64)
 
-    # term1 = Σ_{i,j} Π_d min(V[i,d], V[j,d]) / n²
-    term1 = _cvm_term1(V) / n ** 2
+    # 3. Compute kernel sums efficiently
+    term1_sum, sum_Mx, sum_Mz = _cvm_block_terms(Vx, Vz)
 
-    # term2 and term3 use float64 throughout for accuracy
-    term2 = float(np.mean(np.prod(0.5 * (1.0 - W ** 2), axis=1)))
-    term3 = (1.0 / 3.0) ** d
+    # 4. Reconstruct the three integral terms
+    # Term 1: ∫ (C_nXZ)²
+    term1 = term1_sum / (n ** 2)
+    
+    # Term 2: ∫ C_nXZ * C_nX * C_nZ
+    term2 = np.sum(sum_Mx * sum_Mz) / (n ** 3)
+    
+    # Term 3: ∫ (C_nX)² * (C_nZ)²
+    term3 = (np.sum(sum_Mx) * np.sum(sum_Mz)) / (n ** 4)
 
+    # 5. Final CvM statistic
     return n * (term1 - 2.0 * term2 + term3)
 
 
