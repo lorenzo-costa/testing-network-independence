@@ -62,49 +62,43 @@ def load_hdf5(path):
         return {k: read_obj(v) for k, v in f.items()}
 
 if __name__ == "__main__":
-    nsim = 1
+    
+    nsim = 50
+    n = [100, 200, 300]
+    k = [3]
+    rho = [0.2]
     alpha = [0.05]
-    method = [
-        partial(RVPermutationTest, permutation_type="latent"),
-        # QAP,
-        DiffusionCorrelation,
-        partial(PermutationTest, permutation_type="latent", test_function=cvm_stat_block_independence),
-        partial(PermutationTest, permutation_type="latent", test_function=cvm_stat_multivariate),
-    ]
+    marginals = ['cauchy']
+    edge_var = [1]
 
     npermutations = [100]
+    df = [3]
+    
+    method = [
+        QAP,
+    ]
+
     metrics = [ComputeAll()]
     approximation = ["F-distr"]
     
     rng = np.random.default_rng(2)    
 
     param_names = [
-        "method",
+        "n",
+        "k",
+        "rho",
         "alpha",
+        "marginals",
+        "edge_var",
         "approximation",
-        "npermutations"
+        "npermutations",
+        "df",
+        "method",
     ]
 
-    param_values = product(method, alpha, approximation, npermutations)
-
-    temp = [dict(zip(param_names, v)) for v in param_values]
-
-    factorial_design = []
+    param_values = product(n, k, rho, alpha, marginals, edge_var, approximation, npermutations, df, method)
     
-    # load data with pre-estimated X and Z
-    data = load_hdf5('results/data_cauchy.h5')
-    print('Loaded data')
-
-    for x in data:
-        for d in temp:
-            attrs = {k: v for k, v in data[x].items() if not isinstance(v, np.ndarray)}
-            datasets = {k: v for k, v in data[x].items() if isinstance(v, np.ndarray)}
-
-            factorial_design.append({
-                **attrs,
-                **d,
-                "data": datasets
-            })
+    factorial_design = [dict(zip(param_names, v)) for v in param_values]
 
     out = run_simulation(
         nsim=nsim,

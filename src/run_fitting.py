@@ -40,7 +40,7 @@ if __name__ == "__main__":
     k = [3]
     rho = [0.2]
     alpha = [0.05]
-    marginals = ['gaussian', 'uniform -5 5', 't 5', 'chi 5']
+    marginals = ['cauchy']
     edge_var = [1]
     method = [FitIndependent]
 
@@ -122,7 +122,7 @@ if __name__ == "__main__":
     print(len(out2))
     out = pd.concat([out, out2], ignore_index=True)
 
-    filename = 'results/data.h5'
+    filename = 'results/data_cauchy.h5'
 
     metadata = pd.DataFrame()
 

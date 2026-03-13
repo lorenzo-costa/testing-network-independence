@@ -120,19 +120,83 @@ class RelativeFrobeniusNorm(BaseMetric):
 
     def get_name(self):
         return "RelativeFrobeniusNorm"
+
+
+class RelativeFrobeniusNorm(BaseMetric):
+    """Relative Frobenius Norm, computed as ||Xhat - X||_F / ||X||_F
+
+    Parameters
+    ----------
+    gram_matrix : bool
+        Whether to compute the Gram matrix of the latent positions.
+    results : dict
+        The results dictionary containing 'estimated_latent' and 'true_latent' keys.
+        If 'estimated_latent' is a list, relative frobenus norm will be applied to all
+        elements of the list
+
+    Output
+    ------
+    A float representing the relative Frobenius norm if 'estimated_latent' is a single array
+    A list of floats representing the relative Frobenius norm for each element if 'estimated_latent' is a list
+    """
+
+    def __init__(self, gram_matrix=False):
+        super().__init__()
+        # when feeding the estimate latent positions we compute the gram matrix to
+        # get rid of orthogonal invariance
+        self.gram_matrix = gram_matrix
+
+    def __call__(self, results):
+        estimated = results["estimated_latent"]
+        truth = results["true_latent"]
+
+        # handles the case where more than one network's latent pos are returned
+        if isinstance(estimated, tuple):
+            out = []
+            for i in range(len(estimated)):
+                if self.gram_matrix:
+                    # Compute the Gram matrix for both estimated and truth
+                    est = estimated[i] @ estimated[i].T
+                    true = truth[i] @ truth[i].T
+                else:
+                    est = estimated[i]
+                    true = truth[i]
+
+                num = norm(est - true, "fro")
+                den = norm(true, "fro")
+                out.append(num / den if den != 0 else 0)
+            # returns a list
+            return out
+
+        # single output computation
+        if self.gram_matrix:
+            # Compute the Gram matrix for both estimated and truth
+            estimated = estimated @ estimated.T
+            truth = truth @ truth.T
+
+        num = norm(estimated - truth, "fro")
+        den = norm(truth, "fro")
+        return num / den if den != 0 else 0
+
+    def get_name(self):
+        return "RelativeNuclearError"
     
 
-class ProcrustesDistance(BaseMetric):
-    """Procrustes Distance between two sets of latent positions.
-
-    Takes as input a results dictionary containing 'estimated_latent' and 'true_latent' keys.
+class RobustRelativeProcrustesDistance(BaseMetric):
+    """
+    Robust Relative Procrustes Distance for heavy-tailed (Cauchy) data.
+    
+    1. Robust to outliers via Median-centering and L1-scaling.
+    2. Rotation invariant via SVD-based alignment.
+    3. Scale invariant (Relative) to handle large matrix entries.
     """
 
     def __call__(self, results):
         estimated = results["estimated_latent"]
         truth = results["true_latent"]
         
-        if not isinstance(estimated, tuple):
+        # Handle single matrix vs tuple of matrices
+        if not isinstance(estimated, (tuple, list)):
             estimated = (estimated,)
             truth = (truth,)
         
@@ -141,23 +205,36 @@ class ProcrustesDistance(BaseMetric):
             est = estimated[i]
             true = truth[i]
             
-            U, s, Vt = np.linalg.svd(true.T @ est)   # Z1^T Z2 = U S V^T
-
-            # Optimal rotation: R* = V U^T
+            # --- 1. Robust Centering ---
+            # Using median instead of mean prevents Cauchy outliers 
+            # from shifting the coordinate system.
+            true_c = true - np.median(true, axis=0)
+            est_c = est - np.median(est, axis=0)
+            
+            # --- 2. Alignment (Rotation Invariance) ---
+            # We still use SVD (Kabsch) for the rotation matrix. 
+            # SVD is generally stable enough for alignment even with heavy tails.
+            U, _, Vt = np.linalg.svd(true_c.T @ est_c)
             R_opt = Vt.T @ U.T
+            est_aligned = est_c @ R_opt
 
-            # Align Z2
-            est_aligned = est @ R_opt
-
-            # Frobenius distance after alignment
-            dist = np.linalg.norm(true - est_aligned, 'fro')
-
-            out.append(dist)
-        # returns a list
+            # --- 3. Robust Relative Distance ---
+            # Numerator: L1 norm of the error (sum of absolute differences)
+            abs_error = np.sum(np.abs(true_c - est_aligned))
+            
+            # Denominator: L1 norm of the truth (for the "Relative" part)
+            # This ensures that larger/heavier matrices have comparable error scales.
+            abs_truth = np.sum(np.abs(true_c))
+            
+            # Avoid division by zero
+            rel_dist = abs_error / abs_truth if abs_truth > 0 else abs_error
+            
+            out.append(rel_dist)
+            
         return out
 
     def get_name(self):
-        return "ProcrustesDistance"
+        return "RobustRelativeProcrustes"
 
 
 class Rejection(BaseMetric):
@@ -286,7 +363,7 @@ class ComputeAll(BaseMetric):
                 "RelativeFrobeniusNorm_z": est[1],
             }
             
-            est_procrustes = ProcrustesDistance()(results)
+            est_procrustes = RobustRelativeProcrustesDistance()(results)
             latent_metrics.update({
                 "ProcrustesDistance_x": est_procrustes[0],
                 "ProcrustesDistance_z": est_procrustes[1],

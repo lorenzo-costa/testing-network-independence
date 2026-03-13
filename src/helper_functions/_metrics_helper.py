@@ -62,14 +62,6 @@ def rv_coefficient_adjusted(A, B):
 
     return num / den if den != 0 else 0
 
-import numpy as np
-
-try:
-    import numba as nb
-    _HAS_NUMBA = True
-except ImportError:
-    _HAS_NUMBA = False
-
 # ---------------------------------------------------------------------------
 # Pseudo-observations
 # ---------------------------------------------------------------------------
@@ -85,6 +77,90 @@ def pseudo_obs(X):
     n = X.shape[0]
     # double argsort along axis=0 gives 0-based ranks; +1 for 1-based
     return (np.argsort(np.argsort(X, axis=0), axis=0) + 1) / (n + 1.0)
+
+
+# ---------------------------------------------------------------------------
+# CvM statistic — inner kernel
+# ---------------------------------------------------------------------------
+
+def _cvm_term1_numpy(V):
+    """
+    Compute  Σ_{i,j} Π_d min(V[i,d], V[j,d])  without a (n,n,d) tensor.
+
+    V has shape (n, d).  We iterate over d, accumulating a running (n, n)
+    float32 product matrix.  Memory footprint: O(n²) instead of O(n²d).
+    """
+    n, d = V.shape
+    V32  = V.astype(np.float32, copy=False)
+    prod = np.ones((n, n), dtype=np.float32)
+    for dd in range(d):
+        vd = V32[:, dd]
+        np.multiply(prod, np.minimum(vd[:, None], vd[None, :]), out=prod)
+    return float(prod.sum())
+
+
+if _HAS_NUMBA:
+    @nb.njit(parallel=True, cache=True, fastmath=True)
+    def _cvm_term1_numba(V):
+        """
+        Numba parallel kernel: uses all CPU cores, avoids (n,n,d) tensor,
+        and keeps the inner loop scalar for maximum SIMD throughput.
+        """
+        n, d = V.shape
+        total = 0.0
+        for i in nb.prange(n):          # parallel over rows
+            row_sum = 0.0
+            for j in range(n):
+                prod = 1.0
+                for dd in range(d):
+                    vi = V[i, dd]
+                    vj = V[j, dd]
+                    prod *= vi if vi < vj else vj
+                row_sum += prod
+            total += row_sum
+        return total
+
+    _cvm_term1 = _cvm_term1_numba
+else:
+    _cvm_term1 = _cvm_term1_numpy
+
+
+# ---------------------------------------------------------------------------
+# CvM statistic — public interface
+# ---------------------------------------------------------------------------
+#TODO this tests against full independence (i.e. full product copula) but i
+# i don't really care about independence within Z or X (i.e. columns may be dependent)
+def cvm_stat_multivariate(X, Z):
+    """
+    Multivariate Cramér–von Mises statistic between latent positions X and Z.
+
+    Copula-based: converts both matrices to pseudo-observations, stacks them,
+    then computes the d-dimensional CvM statistic.
+
+    Parameters
+    ----------
+    X, Z : (n, k) arrays of latent positions
+
+    Returns
+    -------
+    float
+    """
+    Ux = pseudo_obs(X)
+    Uz = pseudo_obs(Z)
+    W  = np.hstack([Ux, Uz])            # (n, 2k)
+    n, d = W.shape
+
+    # V = 1 - W  (used in term1 min-product formula)
+    V = (1.0 - W).astype(np.float64)
+
+    # term1 = Σ_{i,j} Π_d min(V[i,d], V[j,d]) / n²
+    term1 = _cvm_term1(V) / n ** 2
+
+    # term2 and term3 use float64 throughout for accuracy
+    term2 = float(np.mean(np.prod(0.5 * (1.0 - W ** 2), axis=1)))
+    term3 = (1.0 / 3.0) ** d
+
+    return n * (term1 - 2.0 * term2 + term3)
 
 
 # ---------------------------------------------------------------------------
@@ -258,3 +334,16 @@ def relative_frobenius_norm(X, Xhat, inplace=True):
     diff = np.copy(Xhat_flat)
     blas.daxpy(X_flat, diff, a=-1.0)
     return blas.dnrm2(diff) / den
+
+def relative_nuclear_error(X, Xhat):
+    """
+    Rotation-invariant and more robust than Frobenius.
+    Uses the sum of singular values (Nuclear Norm).
+    """
+    error_matrix = X - Xhat
+    
+    # Compute singular values
+    s_error = np.linalg.svd(error_matrix, compute_uv=False)
+    s_true = np.linalg.svd(X, compute_uv=False)
+    
+    return np.sum(s_error) / np.sum(s_true)
