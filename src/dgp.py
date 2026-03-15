@@ -2,8 +2,53 @@ import numpy as np
 from scipy import stats
 from scipy.special import expit, ndtr
 
+from hyppo.tools.indep_sim import (
+    linear, 
+    exponential,
+    cubic,
+    quadratic,
+    w_shaped,
+    spiral,
+    step,
+    fourth_root,
+    joint_normal,
+    logarithmic,
+    sin_four_pi,
+    sin_sixteen_pi,
+    square,
+    diamond,
+    circle,
+    ellipse,
+    two_parabolas,
+    uncorrelated_bernoulli,
+    multiplicative_noise,
+)
+
 # TODO:
 # - extend gaussian network generation to more than two
+
+SIM_REGISTRY = {
+    "linear":               linear,
+    "exponential":          exponential,
+    "cubic":                cubic,
+    "quadratic":            quadratic,
+    "w_shaped":             w_shaped,
+    "spiral":               spiral,
+    "step":                 step,
+    "fourth_root":          fourth_root,
+    "joint_normal":         joint_normal,
+    "logarithmic":          logarithmic,
+    "sin_four_pi":          sin_four_pi,
+    "sin_sixteen_pi":       sin_sixteen_pi,
+    "square":               square,
+    "diamond":              diamond,
+    "circle":               circle,
+    "ellipse":              ellipse,
+    "two_parabolas":        two_parabolas,
+    "uncorrelated_bernoulli": uncorrelated_bernoulli,
+    "multiplicative_noise": multiplicative_noise,
+}
+
 
 
 class BaseDPG:
@@ -22,23 +67,25 @@ class BaseDPG:
 class CopulaDGP:
     """Base class for Copula Data Generating Processes."""
 
-    def __init__(self,
-                 n, 
-                 k, 
-                 rho, 
-                 marginals='gaussian', 
-                 rng=None, 
-                 copula_model='gaussian',
-                 df=5,
-                 weights=None,
-                 correlations=None,
-                 center_latent=True,
-                 **kwargs
-                 ):
-        
+    def __init__(
+        self,
+        n,
+        k,
+        rho,
+        marginals="gaussian",
+        rng=None,
+        copula_model="gaussian",
+        df=5,
+        weights=None,
+        correlations=None,
+        center_latent=True,
+        latent_sim=None,       # NEW: name of a sim function, e.g. "quadratic"
+        sim_kwargs=None,       # NEW: extra kwargs forwarded to that function
+        **kwargs,
+    ):
         if rng is None:
             rng = np.random.default_rng()
-        
+
         self.rng = rng
         self.n = n
         self.k = k
@@ -49,8 +96,16 @@ class CopulaDGP:
         self.weights = weights
         self.correlations = correlations
         self.center_latent = center_latent
-        
-        
+
+        # ── sim path ──────────────────────────────────────────────────────────
+        if latent_sim is not None and latent_sim not in SIM_REGISTRY:
+            raise ValueError(
+                f"Unknown latent_sim '{latent_sim}'. "
+                f"Available: {sorted(SIM_REGISTRY)}"
+            )
+        self.latent_sim = latent_sim
+        self.sim_kwargs = sim_kwargs or {}
+
         self._convert_marginals(marginals)
 
     def _generate_copula_uniforms(self):
@@ -265,20 +320,65 @@ class CopulaDGP:
         # 3. Apply to both variables
         self.marginal_x = parse_dist(marginals.get("x", "gaussian"))
         self.marginal_z = parse_dist(marginals.get("z", "gaussian"))
-    
+        
     def _sample_latent(self):
-        # sample uniforms according to copula model
-        u_z, u_x = self._generate_copula_uniforms()
+        """Return X, Z each of shape (n, k)."""
 
-        # inverse cdf to get marginals
+        if self.latent_sim is not None:
+            return self._sample_latent_sim()
+
+        # ── original copula path ──────────────────────────────────────────────
+        u_z, u_x = self._generate_copula_uniforms()
         Z = self.marginal_z.ppf(u_z)
         X = self.marginal_x.ppf(u_x)
-        
+
         if self.center_latent:
-            Z = Z - Z.mean(axis=0)  # Centering Z
-            X = X - X.mean(axis=0)  # Centering X
-        
+            Z = Z - Z.mean(axis=0)
+            X = X - X.mean(axis=0)
+
         return X, Z
+
+    def _sample_latent_sim(self):
+        """
+        Use one of the simulation functions to produce (X, Z).
+
+        The sim function is called as  sim(n, k, **sim_kwargs).
+        Its two return values are treated as (X, Z):
+          - first return  → X  (the 'input' latent positions)
+          - second return → Z  (the 'output' latent positions)
+
+        Shape alignment
+        ---------------
+        Some sims return y with shape (n, 1) instead of (n, k).
+        We tile those to (n, k) so downstream code always sees (n, k).
+        If the sim returns something wider than k we trim to the first k columns.
+        """
+        sim_fn = SIM_REGISTRY[self.latent_sim]
+        raw_x, raw_z = sim_fn(self.n, self.k, **self.sim_kwargs)
+
+        X = self._align_shape(np.asarray(raw_x, dtype=float))
+        Z = self._align_shape(np.asarray(raw_z, dtype=float))
+
+        if self.center_latent:
+            X = X - X.mean(axis=0)
+            Z = Z - Z.mean(axis=0)
+
+        return X, Z
+
+    def _align_shape(self, arr):
+        """Ensure arr has shape (n, k), tiling or trimming the column axis."""
+        if arr.ndim == 1:
+            arr = arr.reshape(-1, 1)
+
+        _, cols = arr.shape
+
+        if cols == self.k:
+            return arr
+        if cols < self.k:
+            # tile: repeat columns until we reach k, then trim
+            repeats = -(-self.k // cols)          # ceiling division
+            arr = np.tile(arr, (1, repeats))
+        return arr[:, : self.k]
         
 
 class GaussianNetwork(CopulaDGP, BaseDPG):

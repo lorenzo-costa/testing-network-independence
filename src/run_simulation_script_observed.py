@@ -62,42 +62,58 @@ def load_hdf5(path):
         return {k: read_obj(v) for k, v in f.items()}
 
 if __name__ == "__main__":
+
     
     nsim = 50
     n = [100, 200, 300]
     k = [3]
     rho = [0.2]
     alpha = [0.05]
-    marginals = ['cauchy']
+    marginals = ['gaussian', 'uniform -5 5', 'cauchy', 't 5', 'chi 5']
     edge_var = [1]
-
-    npermutations = [100]
-    df = [3]
-    
     method = [
         QAP,
     ]
 
+    npermutations = [100]
+    df = [3]
     metrics = [ComputeAll()]
     approximation = ["F-distr"]
+
+    setup = [
+        (partial(GaussianNetwork, copula_model='gaussian'), ASE),
+        (partial(GaussianNetwork, copula_model='clayton'), ASE),
+        (partial(GaussianNetwork, copula_model='gumbel'), ASE),
+        (partial(GaussianNetwork, copula_model='student_t', df=3), ASE),
+        (partial(GaussianNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.98, -0.98]), ASE),
+        
+        (partial(BernoulliNetwork, copula_model='gaussian'), pgd_fit_wrapper),
+        (partial(BernoulliNetwork, copula_model='clayton'), pgd_fit_wrapper),
+        (partial(BernoulliNetwork, copula_model='gumbel'), pgd_fit_wrapper),
+        (partial(BernoulliNetwork, copula_model='student_t', df=3), pgd_fit_wrapper),
+        (partial(BernoulliNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.98, -0.98]), pgd_fit_wrapper),
+    ]
     
     rng = np.random.default_rng(2)    
 
     param_names = [
+        "setup",
+        "method",
         "n",
         "k",
-        "rho",
         "alpha",
         "marginals",
+        "rho",
         "edge_var",
         "approximation",
         "npermutations",
-        "df",
-        "method",
+        "df"
     ]
 
-    param_values = product(n, k, rho, alpha, marginals, edge_var, approximation, npermutations, df, method)
-    
+    param_values = product(
+        setup, method, n, k, alpha, marginals, rho, edge_var, approximation, npermutations, df
+    )
+
     factorial_design = [dict(zip(param_names, v)) for v in param_values]
 
     out = run_simulation(
@@ -109,6 +125,31 @@ if __name__ == "__main__":
     )
 
     out = pd.DataFrame(out)
+    
+    rho2 = [0]
+    
+    setup = [
+        (partial(GaussianNetwork, copula_model='gaussian'), ASE),
+        (partial(BernoulliNetwork, copula_model='gaussian'), pgd_fit_wrapper),
+    ]
+    
+    param_values2 = product(
+        setup, method, n, k, alpha, marginals, rho2, edge_var, approximation, npermutations, df
+    )
+
+    factorial_design2 = [dict(zip(param_names, v)) for v in param_values2]
+
+    out2 = run_simulation(
+        nsim=nsim,
+        metrics=metrics,
+        factorial_design=factorial_design2,
+        rng=rng,
+        parallel=True,
+    )
+
+    out2 = pd.DataFrame(out2)
+    
+    out = pd.concat([out, out2], ignore_index=True)
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
     file_name = f"results/simulation_results_{timestamp}.csv"

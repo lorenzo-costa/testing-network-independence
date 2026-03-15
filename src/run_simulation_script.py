@@ -92,7 +92,7 @@ if __name__ == "__main__":
     factorial_design = []
     
     # load data with pre-estimated X and Z
-    data = load_hdf5('results/data_cauchy.h5')
+    data = load_hdf5('results/data_studentt.h5')
     print('Loaded data')
 
     for x in data:
