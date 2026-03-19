@@ -68,8 +68,8 @@ if __name__ == "__main__":
         partial(RVPermutationTest, permutation_type="latent"),
         # QAP,
         DiffusionCorrelation,
-        partial(PermutationTest, permutation_type="latent", test_function=cvm_stat_block_independence),
-        partial(PermutationTest, permutation_type="latent", test_function=cvm_stat_multivariate),
+        # partial(PermutationTest, permutation_type="latent", test_function=cvm_stat_block_independence),
+        # partial(PermutationTest, permutation_type="latent", test_function=cvm_stat_multivariate),
     ]
 
     npermutations = [100]
@@ -92,7 +92,7 @@ if __name__ == "__main__":
     factorial_design = []
     
     # load data with pre-estimated X and Z
-    data = load_hdf5('results/data_studentt.h5')
+    data = load_hdf5('results/data.h5')
     print('Loaded data')
 
     for x in data:

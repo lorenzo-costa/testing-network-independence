@@ -8,14 +8,14 @@ from src.metrics import (
     RelativeFrobeniusNorm,
 )
 from src.metrics import ComputeAll
-from src.methods import RVPermutationTest, LLKRatioTest, QAP, DiffusionCorrelation, PermutationTest
+from src.methods import RVPermutationTest, LLKRatioTest, QAP, DiffusionCorrelation, PermutationTest, ObservedCVM
 from src.solvers.binary_network import MLE_logistic
 from src.solvers.weighted_network import MLE_gaussian, ASE
 from src.solvers.MaMa_uuuuu import pgd_fit, pgd_fit_wrapper
 from src.helper_functions.simulation_functions import run_simulation
 from src.helper_functions.analyse_functions import aggregate_results
 from src.metrics import rv_coefficient_adjusted
-from src.helper_functions._metrics_helper import cvm_stat_multivariate, cvm_stat_block_independence
+from src.helper_functions._metrics_helper import cvm_stat_multivariate, cvm_stat_block_independence, observed_cvm_dependency
 
 import numpy as np
 import pandas as pd
@@ -62,20 +62,20 @@ def load_hdf5(path):
         return {k: read_obj(v) for k, v in f.items()}
 
 if __name__ == "__main__":
-
     
     nsim = 50
     n = [100, 200, 300]
     k = [3]
     rho = [0.2]
     alpha = [0.05]
-    marginals = ['gaussian', 'uniform -5 5', 'cauchy', 't 5', 'chi 5']
-    edge_var = [1]
+    marginals = ['gaussian', 'uniform -1 1', 't 5', 'chi 5', 'cauchy']
+    edge_var = [1, 3]
     method = [
-        QAP,
+        partial(ObservedCVM, test_function=observed_cvm_dependency),
+        partial(QAP)
     ]
 
-    npermutations = [100]
+    npermutations = [50]
     df = [3]
     metrics = [ComputeAll()]
     approximation = ["F-distr"]

@@ -511,6 +511,7 @@ class BernoulliNetwork(CopulaDGP, BaseDPG):
                  correlations=None,
                  center_latent=True,
                  self_loops=False,
+                 bias=0,
                  **args):
         
         # note here by multiple inheritance CopulaDGP init will be called
@@ -530,6 +531,7 @@ class BernoulliNetwork(CopulaDGP, BaseDPG):
         self.edge_var = edge_var
         self.symmetric = symmetric
         self.self_loops = self_loops
+        self.bias = bias
 
     def get_name(self):
         return f"BernoulliNetwork_" + str(self.copula_model) + f"_rho{self.rho}"
@@ -538,8 +540,8 @@ class BernoulliNetwork(CopulaDGP, BaseDPG):
         
         X, Z = self._sample_latent()
 
-        expected_A = np.clip(expit(Z @ Z.T), 0, 1)
-        expected_B = np.clip(expit(X @ X.T), 0, 1)
+        expected_A = np.clip(expit(Z @ Z.T - self.bias), 0, 1)
+        expected_B = np.clip(expit(X @ X.T - self.bias), 0, 1)
         try:
             if self.symmetric is True: # generate lower half and the sum to ensure symmetry
                 A = np.tril(self.rng.binomial(1, expected_A), k=-1)

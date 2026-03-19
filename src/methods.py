@@ -220,6 +220,7 @@ class PermutationTest(BaseMethod):
             for _ in range(self.npermutations):
                 perm = self.rng.permutation(B.shape[0])
                 B_perm = B[perm][:, perm]
+                
                 Xhat_perm = self.solver(B_perm, k=self.k, rng=self.rng)[0]
                 test_stat_perm = self.test_function(Zhat, Xhat_perm)
                 self.permutation_distribution.append(test_stat_perm)
@@ -272,6 +273,95 @@ class CVMPermutationTest(PermutationTest):
 
     def get_name(self):
         return "CVMPermutationTest_" + self.permutation_type
+
+class ObservedCVM(BaseMethod):
+    def __init__(
+        self,
+        rho,
+        npermutations=None,
+        alpha=0.05,
+        rng=None,
+        test_function=None,
+        permutation_type="latent",
+        **kwargs,
+    ):
+        super().__init__()
+
+        self.rho= rho
+        if rho== 0:
+            self.null = True
+        else:
+            self.null = False
+
+        self.permutation_distribution = []
+
+        self.alpha = alpha
+        self.npermutations = npermutations
+        self.rng = np.random.default_rng() if rng is None else rng
+        
+        self.test_function = test_function
+        self.permutation_type = permutation_type
+
+    def fit(self, data, **kwargs):
+        """Get null distribution of RV coefficient with permutations
+
+        The function estimates the latent position of the networks independently,
+        computes the RV coefficient and obtains the p-value by permutation.
+
+        Parameters
+        ----------
+        data : dict
+            A dictionary containing keys 'A', 'B', 'X', 'Z' where 'A' and 'B' are adjacency matrices
+            and 'X' and 'Z' are latent positions.
+        """
+
+        if not isinstance(data, dict):
+            raise ValueError(
+                "Invalid data format. Expected a dictionary with keys 'A', 'B'."
+            )
+        
+        # need to estimate latent positions
+        A = data.get("A")
+        B = data.get("B")
+        self.A = A
+        self.B = B
+
+        test_stat_estimate = self.test_function(A, B)
+        self.test_stat_estimate = test_stat_estimate
+        # permute one of the observe networks, re-estimate latent positions and compute RV coefficient
+        for _ in range(self.npermutations):
+            perm = self.rng.permutation(B.shape[0])
+            B_perm = B[perm][:, perm]
+            test_stat_perm = self.test_function(A, B_perm)
+            self.permutation_distribution.append(test_stat_perm)
+
+        # compute pvalue
+        pvalue = np.mean(
+            [i >= self.test_stat_estimate for i in self.permutation_distribution]
+        )
+        self.pvalue = pvalue
+        self.reject_null = bool(self.pvalue < self.alpha)
+
+        return
+
+    def get_estimated(self):
+        """Get fit results
+
+        Returns
+        -------
+        A dictionary with 'p-value', 'reject_null', and 'null' keys.
+        """
+        results = {
+            "p-value": self.pvalue,
+            "reject_null": self.reject_null,
+            "null": self.null,
+        }
+        return results
+
+    def get_name(self):
+        return "ObservedCVMPermutationTest"
+    
+
 
 class LLKRatioTest(BaseMethod):
     """Asymptotic Likelihood Ratio Test

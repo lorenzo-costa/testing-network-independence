@@ -40,8 +40,8 @@ if __name__ == "__main__":
     k = [3]
     rho = [0.2]
     alpha = [0.05]
-    marginals = ['gaussian', 'uniform -5 5', 't 5', 'chi 5']
-    edge_var = [1]
+    marginals = ['gaussian', 'uniform -1 1', 't 5', 'chi 5', 'cauchy']
+    edge_var = [1, 3]
     method = [FitIndependent]
 
     npermutations = [100]
@@ -51,17 +51,17 @@ if __name__ == "__main__":
     approximation = ["F-distr"]
 
     setup = [
-        # (partial(GaussianNetwork, copula_model='gaussian'), ASE),
-        # (partial(GaussianNetwork, copula_model='clayton'), ASE),
-        # (partial(GaussianNetwork, copula_model='gumbel'), ASE),
-        # (partial(GaussianNetwork, copula_model='student_t', df=3), ASE),
-        # (partial(GaussianNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.98, -0.98]), ASE),
+        (partial(GaussianNetwork, copula_model='gaussian'), ASE),
+        (partial(GaussianNetwork, copula_model='clayton'), ASE),
+        (partial(GaussianNetwork, copula_model='gumbel'), ASE),
+        (partial(GaussianNetwork, copula_model='student_t', df=3), ASE),
+        (partial(GaussianNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.98, -0.98]), ASE),
         
-        # (partial(BernoulliNetwork, copula_model='gaussian'), pgd_fit_wrapper),
-        # (partial(BernoulliNetwork, copula_model='clayton'), pgd_fit_wrapper),
-        # (partial(BernoulliNetwork, copula_model='gumbel'), pgd_fit_wrapper),
+        (partial(BernoulliNetwork, copula_model='gaussian'), pgd_fit_wrapper),
+        (partial(BernoulliNetwork, copula_model='clayton'), pgd_fit_wrapper),
+        (partial(BernoulliNetwork, copula_model='gumbel'), pgd_fit_wrapper),
         (partial(BernoulliNetwork, copula_model='student_t', df=3), pgd_fit_wrapper),
-        # (partial(BernoulliNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.98, -0.98]), pgd_fit_wrapper),
+        (partial(BernoulliNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.98, -0.98]), pgd_fit_wrapper),
     ]
     
     rng = np.random.default_rng(2)    
@@ -97,32 +97,32 @@ if __name__ == "__main__":
 
     out = pd.DataFrame(out)
 
-    # rho = [0]
-    # setup = [
-    #     (partial(GaussianNetwork, copula_model='gaussian'), ASE),
-    #     (partial(BernoulliNetwork, copula_model='gaussian'), pgd_fit_wrapper),
-    # ]
+    rho = [0]
+    setup = [
+        (partial(GaussianNetwork, copula_model='gaussian'), ASE),
+        (partial(BernoulliNetwork, copula_model='gaussian'), pgd_fit_wrapper),
+    ]
 
-    # rng = np.random.default_rng(2)    
-    # param_values = product(
-    #     setup, method, n, k, alpha, marginals, rho, df, edge_var, approximation, npermutations
-    # )
+    rng = np.random.default_rng(2)    
+    param_values = product(
+        setup, method, n, k, alpha, marginals, rho, df, edge_var, approximation, npermutations
+    )
 
-    # factorial_design = [dict(zip(param_names, v)) for v in param_values]
+    factorial_design = [dict(zip(param_names, v)) for v in param_values]
 
-    # out2 = run_simulation(
-    #     nsim=nsim,
-    #     metrics=metrics,
-    #     factorial_design=factorial_design,
-    #     rng=rng,
-    #     parallel=True,
-    # )
+    out2 = run_simulation(
+        nsim=nsim,
+        metrics=metrics,
+        factorial_design=factorial_design,
+        rng=rng,
+        parallel=True,
+    )
 
-    # out2 = pd.DataFrame(out2)
-    # print(len(out2))
-    # out = pd.concat([out, out2], ignore_index=True)
+    out2 = pd.DataFrame(out2)
+    print(len(out2))
+    out = pd.concat([out, out2], ignore_index=True)
 
-    filename = 'results/data_studentt.h5'
+    filename = 'results/data.h5'
 
     metadata = pd.DataFrame()
 

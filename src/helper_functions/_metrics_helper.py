@@ -14,6 +14,9 @@ Optimisations over the original:
 import numpy as np
 from scipy.sparse.linalg import eigsh
 from scipy.linalg import norm, blas
+from scipy.stats import rankdata
+from numba import njit
+
 try:
     import copent
     _HAS_COPENT = True
@@ -347,3 +350,96 @@ def relative_nuclear_error(X, Xhat):
     s_true = np.linalg.svd(X, compute_uv=False)
     
     return np.sum(s_error) / np.sum(s_true)
+
+@njit(cache=True)
+def _joint_cdf_bit(sa_dense, sb_dense, sort_order, M, K):
+    """
+    Computes F_AB[i] = #{j : sa[j] <= sa[i] AND sb[j] <= sb[i]} / M
+    in O(M log M) using a Fenwick (BIT) tree keyed on sb's dense ranks.
+
+    Key idea:
+      - Process points in ascending sa order (ties handled as a batch).
+      - For each group sharing the same sa value:
+          1. QUERY  the BIT for every point in the group (reads counts
+             of sb ranks <= current sb rank inserted so far).
+          2. UPDATE the BIT for every point in the group.
+        Splitting query and update within a tie-group ensures we count
+        ALL points with sa <= current (not just strictly <).
+    """
+    tree = np.zeros(K + 2, dtype=np.int64)
+    result = np.zeros(M, dtype=np.float64)
+
+    i = 0
+    while i < M:
+        # --- find end of current sa-tie group ---
+        j = i
+        cur_sa = sa_dense[sort_order[i]]
+        while j < M and sa_dense[sort_order[j]] == cur_sa:
+            j += 1
+
+        # --- UPDATE PHASE (insert entire group FIRST) ---
+        # Now the BIT contains all items with sa <= cur_sa
+        for k in range(i, j):
+            idx = sort_order[k]
+            r = int(sb_dense[idx])
+            while r <= K:          # point update
+                tree[r] += 1
+                r += r & (-r)
+
+        # --- QUERY PHASE (read from the updated BIT) ---
+        # Because we updated first, this correctly calculates P(SA <= sa AND SB <= sb)
+        for k in range(i, j):
+            idx = sort_order[k]
+            r = int(sb_dense[idx])
+            s = 0
+            while r > 0:           # prefix-sum [1 .. r]
+                s += tree[r]
+                r -= r & (-r)
+            result[idx] = float(s)
+
+        i = j
+
+    return result / M
+
+
+def observed_cvm_dependency(A, B):
+    """
+    Computes a rotationally-invariant Cramér-von Mises copula dependency
+    measure between two graphs A and B based on shared neighbor counts.
+
+    Parameters:
+        A, B (np.ndarray): N x N binary adjacency matrices.
+    Returns:
+        float: The Cramér-von Mises statistic.
+    """
+    N = A.shape[0]
+    if B.shape[0] != N:
+        raise ValueError("Matrices A and B must have the same number of nodes.")
+
+    # 1. Shared-neighbor matrices
+    SA = A @ A  # SA[i,j] = # nodes adjacent to both i and j in A
+    SB = B @ B
+
+    # 2. Off-diagonal elements only  (N*(N-1) pairs)
+    mask = ~np.eye(N, dtype=bool)
+    sa_vals = SA[mask]
+    sb_vals = SB[mask]
+    M = len(sa_vals)
+
+    # 3. Marginal empirical CDFs  (unchanged from original)
+    F_A = rankdata(sa_vals, method='max') / M
+    F_B = rankdata(sb_vals, method='max') / M
+
+    # 4. Dense ranks for BIT indexing  (maps unique values -> 1..K)
+    sa_dense = rankdata(sa_vals, method='dense').astype(np.int64)
+    sb_dense = rankdata(sb_vals, method='dense').astype(np.int64)
+    K = int(sb_dense.max())
+
+    # Sort indices by ascending sa_dense (stable = deterministic tie ordering)
+    sort_order = np.argsort(sa_dense, kind='stable').astype(np.int64)
+
+    # 5. Joint empirical CDF  — O(M log M) instead of O(M²)
+    F_AB = _joint_cdf_bit(sa_dense, sb_dense, sort_order, M, K)
+
+    # 6. Cramér-von Mises statistic
+    return float(np.sum((F_AB - F_A * F_B) ** 2))
