@@ -402,7 +402,7 @@ def _joint_cdf_bit(sa_dense, sb_dense, sort_order, M, K):
     return result / M
 
 
-def observed_cvm_dependency(A, B):
+def observed_cvm_dependency(A, B, degree=2):
     """
     Computes a rotationally-invariant Cramér-von Mises copula dependency
     measure between two graphs A and B based on shared neighbor counts.
@@ -417,8 +417,8 @@ def observed_cvm_dependency(A, B):
         raise ValueError("Matrices A and B must have the same number of nodes.")
 
     # 1. Shared-neighbor matrices
-    SA = A @ A  # SA[i,j] = # nodes adjacent to both i and j in A
-    SB = B @ B
+    SA = np.linalg.matrix_power(A, degree)  
+    SB = np.linalg.matrix_power(B, degree) 
 
     # 2. Off-diagonal elements only  (N*(N-1) pairs)
     mask = ~np.eye(N, dtype=bool)

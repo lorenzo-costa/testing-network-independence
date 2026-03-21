@@ -63,16 +63,17 @@ def load_hdf5(path):
 
 if __name__ == "__main__":
     
-    nsim = 50
+    nsim = 1
     n = [100, 200, 300]
     k = [3]
     rho = [0.2]
     alpha = [0.05]
-    marginals = ['gaussian', 'uniform -1 1', 't 5', 'chi 5', 'cauchy']
-    edge_var = [1, 3]
+    marginals = ['gaussian', 'uniform -1 1', 'cauchy']
+    edge_var = [1]
     method = [
-        partial(ObservedCVM, test_function=observed_cvm_dependency),
-        partial(QAP)
+        partial(ObservedCVM, test_function=partial(observed_cvm_dependency, degree=3)),
+        partial(ObservedCVM, test_function=partial(observed_cvm_dependency, degree=2)),
+        partial(ObservedCVM, test_function=partial(observed_cvm_dependency, degree=1)),
     ]
 
     npermutations = [50]
@@ -82,15 +83,15 @@ if __name__ == "__main__":
 
     setup = [
         (partial(GaussianNetwork, copula_model='gaussian'), ASE),
-        (partial(GaussianNetwork, copula_model='clayton'), ASE),
+        # (partial(GaussianNetwork, copula_model='clayton'), ASE),
         (partial(GaussianNetwork, copula_model='gumbel'), ASE),
-        (partial(GaussianNetwork, copula_model='student_t', df=3), ASE),
+        # (partial(GaussianNetwork, copula_model='student_t', df=3), ASE),
         (partial(GaussianNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.98, -0.98]), ASE),
         
         (partial(BernoulliNetwork, copula_model='gaussian'), pgd_fit_wrapper),
-        (partial(BernoulliNetwork, copula_model='clayton'), pgd_fit_wrapper),
+        # (partial(BernoulliNetwork, copula_model='clayton'), pgd_fit_wrapper),
         (partial(BernoulliNetwork, copula_model='gumbel'), pgd_fit_wrapper),
-        (partial(BernoulliNetwork, copula_model='student_t', df=3), pgd_fit_wrapper),
+        # (partial(BernoulliNetwork, copula_model='student_t', df=3), pgd_fit_wrapper),
         (partial(BernoulliNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.98, -0.98]), pgd_fit_wrapper),
     ]
     

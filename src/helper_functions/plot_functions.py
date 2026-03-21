@@ -128,6 +128,8 @@ def plot_with_bands(x_axis, y_axis, **kwargs):
     se_bands = kwargs.pop("se_bands", None)
     colors = kwargs.pop("colors", None)
     linestyles = kwargs.pop("linestyles", None)
+    hline = kwargs.pop("hline", None)
+    hline_name = kwargs.pop("hline_name", "Reference Line")
 
     ax = plt.gca()
     hue_variable = factors[0] if factors is not None and len(factors) >= 1 else None
@@ -169,6 +171,10 @@ def plot_with_bands(x_axis, y_axis, **kwargs):
                 alpha=0.2,
                 color=color,
             )
+    
+    if hline is not None:
+        ax.axhline(hline, color='black', linestyle='-', label=hline_name)
+
 
 
 def plot_boxplot(x_axis, y_axis, **kwargs):
