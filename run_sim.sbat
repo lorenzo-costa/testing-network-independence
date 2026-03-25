@@ -1,0 +1,50 @@
+#!/bin/bash
+
+#SBATCH --job-name=sim_full
+#SBATCH --output=logs/sim_observed_%j.out
+#SBATCH --error=logs/sim_observed_%j.err
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=32
+#SBATCH --mem=10G
+#SBATCH --time=02:00:00
+
+#SBATCH --account=stats_dept1
+#SBATCH --partition=standard
+
+# ── Notifications (optional — set your email here) ────────────────────────────
+##SBATCH --mail-type=BEGIN,END,FAIL
+##SBATCH --mail-user=lrcosta@umich.edu
+
+# Uncomment if your cluster requires loading a Python module first, e.g.:
+module load python
+echo "System Python module loaded."
+
+source .venv/bin/activate
+echo "Virtual environment activated successfully!"
+
+echo "Current Working Directory (where I am):"
+pwd
+
+echo "Contents of this directory:"
+ls -F
+
+echo "Python version and path:"
+which python
+python --version
+
+# ── Paths ─────────────────────────────────────────────────────────────────────
+
+# Make sure output directories exist
+mkdir -p results logs
+
+# ── Parallelism ───────────────────────────────────────────────────────────────
+
+# Expose the allocated CPUs to Python's multiprocessing (used by run_simulation_parallel)
+export OMP_NUM_THREADS=1          # prevent numpy/scipy from over-subscribing
+export OPENBLAS_NUM_THREADS=1     # same for OpenBLAS
+export MKL_NUM_THREADS=1          # same for MKL
+export NUMEXPR_NUM_THREA
+
+python -m src.run_simulation_script
+
+echo "End time    : $(date)"
