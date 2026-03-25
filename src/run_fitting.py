@@ -50,7 +50,7 @@ if __name__ == "__main__":
     
     approximation = ["F-distr"]
 
-    setup = [
+    setup = [ 
         (partial(GaussianNetwork, copula_model='gaussian'), ASE),
         (partial(GaussianNetwork, copula_model='clayton'), ASE),
         (partial(GaussianNetwork, copula_model='gumbel'), ASE),

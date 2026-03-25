@@ -356,13 +356,16 @@ def _joint_cdf_bit(sa_dense, sb_dense, sort_order, M, K):
     """
     Computes F_AB[i] = #{j : sa[j] <= sa[i] AND sb[j] <= sb[i]} / M
     in O(M log M) using a Fenwick (BIT) tree keyed on sb's dense ranks.
+    Note this has memory requirement O(M), if we try to move this to a 3 var case
+    computation would take O(M log M log M) but memory would be O(M^2). May be
+    worth looking into.
 
     Key idea:
       - Process points in ascending sa order (ties handled as a batch).
       - For each group sharing the same sa value:
-          1. QUERY  the BIT for every point in the group (reads counts
+          1. UPDATE the BIT for every point in the group.
+          2. QUERY  the BIT for every point in the group (reads counts
              of sb ranks <= current sb rank inserted so far).
-          2. UPDATE the BIT for every point in the group.
         Splitting query and update within a tie-group ensures we count
         ALL points with sa <= current (not just strictly <).
     """

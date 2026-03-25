@@ -37,8 +37,6 @@ def ASE(A, k=2, rng=None, **kwargs):
         A_dense = A.toarray() if hasattr(A, "toarray") else A
         evals, evectors = np.linalg.eigh(A_dense)
 
-    # FIX: Sort by absolute magnitude to match "LM" behavior, 
-    # and explicitly slice to keep only the top k dimensions.
     idx = np.argsort(np.abs(evals))[::-1][:k]
     evals = evals[idx]
     evectors = evectors[:, idx]

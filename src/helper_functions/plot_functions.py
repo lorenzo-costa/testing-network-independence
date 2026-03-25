@@ -174,6 +174,154 @@ def plot_with_bands(x_axis, y_axis, **kwargs):
     
     if hline is not None:
         ax.axhline(hline, color='black', linestyle='-', label=hline_name)
+        
+        
+def plot_scatter_markers(x_axis, y_axis, **kwargs):
+    """Plot scatter points with per-method marker styles and hollow/solid rendering.
+ 
+    Designed to be passed as ``plotting_function`` to :func:`plot_grid`, but can
+    also be called standalone via ``plt.gca()``.
+ 
+    Each method is drawn with its own marker shape and color.  Markers that are
+    *not* ``'x'`` (or ``'+'``) are rendered hollow (face transparent, colored
+    edge), while cross-style markers are drawn solid so their line-only geometry
+    remains visible.
+ 
+    Parameters
+    ----------
+    x_axis : str
+        Column name for the x-axis.
+    y_axis : str
+        Column name for the y-axis (typically a ``*_mean`` column produced by
+        :func:`analyse_functions.aggregate_results`).
+    data : pd.DataFrame
+        DataFrame slice passed in by :class:`~seaborn.FacetGrid` (or supplied
+        directly).
+    factors : list
+        Column names used as grouping factors.  ``factors[0]`` is treated as
+        the *hue* variable whose unique values are looked up in ``colors`` and
+        ``markers``.
+    colors : dict, optional
+        Mapping of hue-variable value → matplotlib color string.  Falls back to
+        the default color cycle when a value is missing.
+    markers : dict, optional
+        Mapping of hue-variable value → matplotlib marker string.  Falls back to
+        ``'o'`` when a value is missing.
+    marker_size : int, optional
+        Scatter point size (``s`` argument), by default 80.
+    linewidths : float, optional
+        Edge line width for hollow markers and stroke width for ``'x'``/``'+'``
+        markers, by default 2.5.
+    ylim : tuple, optional
+        ``(ymin, ymax)`` limits for the y-axis.  When *not* supplied and
+        ``y_axis`` looks like a rejection/power column the axis is clamped to
+        ``(-0.05, 1.05)`` automatically.
+    yticks : list, optional
+        Explicit y-tick positions.
+    yticklabels : list, optional
+        Labels matching ``yticks``.
+    y_axis_title : str, optional
+        Y-axis label, by default ``'Power'``.
+    spine_color : str, optional
+        Edge color applied to all four spines, by default ``'#555555'``.
+    tick_direction : str, optional
+        Direction for both axes ticks (``'in'``, ``'out'``, ``'inout'``),
+        by default ``'in'``.
+    hline : float, optional
+        Draw a horizontal reference line at this y value.
+    hline_name : str, optional
+        Label for the horizontal reference line, by default ``'Reference Line'``.
+    """
+    
+    data = kwargs.pop("data")
+    factors = kwargs.pop("factors", None)
+    colors = kwargs.pop("colors", None)
+    markers = kwargs.pop("markers", None)
+    marker_size = kwargs.pop("marker_size", 80)
+    linewidths = kwargs.pop("linewidths", 2.5)
+    ylim = kwargs.pop("ylim", None)
+    yticks = kwargs.pop("yticks", None)
+    yticklabels = kwargs.pop("yticklabels", None)
+    y_axis_title = kwargs.pop("y_axis_title", "Power")
+    spine_color = kwargs.pop("spine_color", "#555555")
+    tick_direction = kwargs.pop("tick_direction", "in")
+    hline = kwargs.pop("hline", None)
+    hline_name = kwargs.pop("hline_name", "Reference Line")
+ 
+    ax = plt.gca()
+ 
+    # Resolve hue variable from factors (mirrors plot_with_bands convention)
+    hue_variable = factors[0] if factors is not None and len(factors) >= 1 else None
+ 
+    if hue_variable is not None:
+        for method in data[hue_variable].unique():
+            subset = data[data[hue_variable] == method].sort_values(x_axis)
+            color = colors[method] if (colors is not None and method in colors) else None
+            marker = markers[method] if (markers is not None and method in markers) else "o"
+ 
+            # Cross/plus markers are line-only — draw solid
+            if marker in ("x", "+"):
+                ax.scatter(
+                    subset[x_axis],
+                    subset[y_axis],
+                    marker=marker,
+                    color=color,
+                    s=marker_size,
+                    linewidths=linewidths,
+                    label=method,
+                    zorder=3,
+                )
+            else:
+                # All other markers: hollow (transparent face, colored edge)
+                ax.scatter(
+                    subset[x_axis],
+                    subset[y_axis],
+                    marker=marker,
+                    edgecolors=color,
+                    facecolors="none",
+                    s=marker_size,
+                    linewidths=linewidths,
+                    label=method,
+                    zorder=3,
+                )
+    else:
+        # No hue — single series, plain scatter
+        subset = data.sort_values(x_axis)
+        ax.scatter(subset[x_axis], subset[y_axis], s=marker_size, zorder=3)
+ 
+    # --- y-axis formatting ---
+    power_pattern = re.compile(
+        r"(?:power|rejection|reject|type.?i)", re.IGNORECASE
+    )
+    auto_power = power_pattern.search(y_axis) is not None
+ 
+    if ylim is not None:
+        ax.set_ylim(*ylim)
+    elif auto_power:
+        ax.set_ylim(-0.05, 1.05)
+ 
+    if yticks is not None:
+        ax.set_yticks(yticks)
+        if yticklabels is not None:
+            ax.set_yticklabels(yticklabels, rotation=90, va="center")
+    elif auto_power and ylim is None:
+        ax.set_yticks([0, 0.25, 0.5, 0.75, 1.0])
+        ax.set_yticklabels(["0", "0.25", "0.5", "0.75", "1"], rotation=90, va="center")
+ 
+    if y_axis_title:
+        ax.set_ylabel(y_axis_title, fontsize=16)
+ 
+    # --- tick styling ---
+    ax.tick_params(axis="y", direction=tick_direction, length=6, pad=10)
+    ax.tick_params(axis="x", direction=tick_direction, length=8, pad=15)
+ 
+    # --- spine styling ---
+    for spine in ax.spines.values():
+        spine.set_edgecolor(spine_color)
+ 
+    # --- optional horizontal reference line ---
+    if hline is not None:
+        ax.axhline(hline, color="black", linestyle="-", label=hline_name)
 
 
 
@@ -244,7 +392,7 @@ def plot_boxplot(x_axis, y_axis, **kwargs):
 
 def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **kwargs):
     """Plot a grid of plots using the specified plotting function.
-
+ 
     Parameters
     ----------
     results : pd.DataFrame
@@ -275,10 +423,14 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
         axis labels and titles, by default {}
     add_legend : bool, optional
         Whether to add a legend to the plot, by default True
+    no_facet_y_axis : bool, optional
+        Whether to hide y-axis tick labels and ticks on every facet, by default False.
+        Useful when the shared y-axis label is sufficient and per-cell tick text
+        would be redundant or cluttered.
     save_path : str, optional
         Path to save the plot, by default None
-
-
+ 
+ 
     Returns
     -------
     sns.FacetGrid
@@ -286,7 +438,7 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
     """
     if plotting_function is None:
         raise ValueError("plotting_function must be provided.")
-
+ 
     height = kwargs.get("height", 1.3)
     save_path = kwargs.get("save_path", None)
     se_bands = kwargs.get("se_bands", None)
@@ -301,25 +453,28 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
     share_x = kwargs.get("share_x", True)
     share_y = kwargs.get("share_y", True)
     flip_x_axis = kwargs.get("flip_x_axis", False)
-
+    no_facet_y_axis = kwargs.get("no_facet_y_axis", False)
+    hide_row_titles = kwargs.get("hide_row_titles", False)
+    show_row_names = kwargs.get("show_row_names", True)
+ 
     if save_path is not None:
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
-
+ 
     hue_variable = factors[0] if len(factors) >= 2 else None
     aggregate_x = factors[1] if len(factors) >= 2 else factors[0]
     aggregate_y = factors[2] if len(factors) >= 3 else None
-
+ 
     g = sns.FacetGrid(
         grouped_stats,
         row=aggregate_y,
         col=aggregate_x,
-        margin_titles=True,
         sharey=share_y,
         sharex=share_x,
         height=height,
         aspect=aspect,
+        margin_titles=not hide_row_titles,
     )
-
+ 
     g.map_dataframe(
         plotting_function,
         x_axis=x_axis,
@@ -332,7 +487,10 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
         ax.set_xlabel("")
         ax.set_ylabel("")
         ax.set_title("")
-
+        if no_facet_y_axis:
+            ax.set_yticklabels([])
+            ax.tick_params(axis="y", length=0)
+ 
     # Set x and y axis labels only in central places
     if x_axis_title is None:
         x_axis_title = (
@@ -341,21 +499,21 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
             else name_conversion.get(x_axis, x_axis).replace("_", " ").title()
         )
     g.axes[-1, g.axes.shape[1] // 2].set_xlabel(x_axis_title)
-
+ 
     if y_axis_title is None:
         y_axis_title = (
             "Log " + name_conversion.get(y_axis, y_axis).replace("_", " ").title()
             if log_y_axis
             else name_conversion.get(y_axis, y_axis).replace("_", " ").title()
         )
-
+ 
     g.axes[g.axes.shape[0] // 2, 0].set_ylabel(y_axis_title)
-
+ 
     if len(factors) >= 2:
         # column facet titles
         for ax in range(g.axes.shape[1]):
             # put percentage sign for fraction variables
-
+ 
             if re.search(
                 r"(?<![a-z])(?:percentage|fraction|prop)(?![a-z])",
                 aggregate_x,
@@ -367,24 +525,36 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
             else:
                 facet_title = f"{name_conversion.get(aggregate_x, aggregate_x).replace('_', ' ').title()}: {g.col_names[ax]}"
             g.axes[0, ax].set_title(facet_title)
-
+ 
         # custom row facet labels
         if aggregate_y is not None:
-            for ax in range(g.axes.shape[0]):
-                # put percentage sign for fraction variables
-                if re.search(
-                    r"(?<![a-z])(?:percentage|fraction|prop)(?![a-z])",
-                    aggregate_y,
-                    re.IGNORECASE,
-                ):
-                    text = f"{int(g.row_names[ax] * 100)}\\% {name_conversion.get(aggregate_y, aggregate_y).replace('_', ' ').title()}"
-                else:
-                    text = f"{name_conversion.get(aggregate_y, aggregate_y).replace('_', ' ').title()}: {g.row_names[ax]}"
-                g.axes[ax, -1].texts[0].set_text(text)
-
+            if hide_row_titles:
+                # seaborn stores margin title Text artists in _margin_titles_texts
+                for t in getattr(g, "_margin_titles_texts", []):
+                    t.set_visible(False)
+                # also clear any texts attached directly to the rightmost axes
+                for ax in range(g.axes.shape[0]):
+                    for t in g.axes[ax, -1].texts:
+                        t.set_visible(False)
+            else:
+                for ax in range(g.axes.shape[0]):
+                    # put percentage sign for fraction variables
+                    if re.search(
+                        r"(?<![a-z])(?:percentage|fraction|prop)(?![a-z])",
+                        aggregate_y,
+                        re.IGNORECASE,
+                    ):
+                        text = f"{int(g.row_names[ax] * 100)}\\% {name_conversion.get(aggregate_y, aggregate_y).replace('_', ' ').title()}"
+                    else:
+                        if show_row_names:
+                            text = f"{name_conversion.get(aggregate_y, aggregate_y).replace('_', ' ').title()}: {g.row_names[ax]}"
+                        else:
+                            text = f"{g.row_names[ax]}"
+                    g.axes[ax, -1].texts[0].set_text(text)
+ 
     if add_legend is True:
         g.add_legend()
-
+ 
     # code to make the title centered above the grid not the legend
     plot_center_x = (
         g.axes[0, 0].get_position().x0 + g.axes[0, -1].get_position().x1
@@ -395,6 +565,8 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
             y=1.02,
             x=plot_center_x,
         )
+    elif title=="":
+        pass
     else:
         if log_y_axis is True:
             g.figure.suptitle(
@@ -432,7 +604,7 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
             if left < right:
                 # ax.invert_xaxis() is slightly cleaner than ax.set_xlim(right, left)
                 ax.invert_xaxis()
-
+ 
     if save_path is not None:
         plt.savefig(save_path + ".png", dpi=300, bbox_inches="tight")
         plt.savefig(save_path + ".pdf", dpi=300, bbox_inches="tight")

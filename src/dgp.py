@@ -22,6 +22,7 @@ from hyppo.tools.indep_sim import (
     two_parabolas,
     uncorrelated_bernoulli,
     multiplicative_noise,
+    multimodal_independence
 )
 
 # TODO:
@@ -47,6 +48,7 @@ SIM_REGISTRY = {
     "two_parabolas":        two_parabolas,
     "uncorrelated_bernoulli": uncorrelated_bernoulli,
     "multiplicative_noise": multiplicative_noise,
+    'multimodal_independence': multimodal_independence,
 }
 
 
@@ -354,7 +356,7 @@ class CopulaDGP:
         If the sim returns something wider than k we trim to the first k columns.
         """
         sim_fn = SIM_REGISTRY[self.latent_sim]
-        raw_x, raw_z = sim_fn(self.n, self.k, **self.sim_kwargs)
+        raw_x, raw_z = sim_fn(n=self.n, p=self.k, **self.sim_kwargs)
 
         X = self._align_shape(np.asarray(raw_x, dtype=float))
         Z = self._align_shape(np.asarray(raw_z, dtype=float))
@@ -512,6 +514,7 @@ class BernoulliNetwork(CopulaDGP, BaseDPG):
                  center_latent=True,
                  self_loops=False,
                  bias=0,
+                 rdpg=False,
                  **args):
         
         # note here by multiple inheritance CopulaDGP init will be called
@@ -532,6 +535,7 @@ class BernoulliNetwork(CopulaDGP, BaseDPG):
         self.symmetric = symmetric
         self.self_loops = self_loops
         self.bias = bias
+        self.rdpg = rdpg
 
     def get_name(self):
         return f"BernoulliNetwork_" + str(self.copula_model) + f"_rho{self.rho}"
@@ -539,9 +543,27 @@ class BernoulliNetwork(CopulaDGP, BaseDPG):
     def generate(self):
         
         X, Z = self._sample_latent()
+        
+        if self.rdpg=='max':
+            # normalise in [-1, 1]
+            X = X/np.max(X, axis=0, keepdims=True)
+            Z = Z/np.max(Z, axis=0, keepdims=True)
+        if self.rdpg=='spectral':
+            X = X / np.sqrt(np.linalg.norm(X, ord=2))
+            Z = Z / np.sqrt(np.linalg.norm(Z, ord=2))
+        if self.rdpg=='minmax':
+            X = (X- np.min(X, axis=0, keepdims=True)) / (np.max(X, axis=0, keepdims=True) - np.min(X, axis=0, keepdims=True) + 1e-15)
+            X = X/np.sqrt(X.shape[1])
+            
+            Z = (Z- np.min(Z, axis=0, keepdims=True)) / (np.max(Z, axis=0, keepdims=True) - np.min(Z, axis=0, keepdims=True) + 1e-15)
+            Z = Z/np.sqrt(Z.shape[1])
 
-        expected_A = np.clip(expit(Z @ Z.T - self.bias), 0, 1)
-        expected_B = np.clip(expit(X @ X.T - self.bias), 0, 1)
+        if self.rdpg is not None:
+            expected_A = np.clip(Z @ Z.T - self.bias, 0, 1)
+            expected_B = np.clip(X @ X.T - self.bias, 0, 1)
+        else:
+            expected_A = np.clip(expit(Z @ Z.T - self.bias), 0, 1)
+            expected_B = np.clip(expit(X @ X.T - self.bias), 0, 1)
         try:
             if self.symmetric is True: # generate lower half and the sum to ensure symmetry
                 A = np.tril(self.rng.binomial(1, expected_A), k=-1)

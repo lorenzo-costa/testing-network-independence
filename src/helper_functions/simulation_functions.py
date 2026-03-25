@@ -43,10 +43,14 @@ def run_scenario(metrics, args, seed, method_params=None):
 
     method.fit(data, **(method_params if method_params else {}))
     results = method.get_estimated()
+    
+    density_A = data['A'].sum()/data['A'].size
+    density_B = data['B'].sum()/data['B'].size
 
     out_metrics = {metric.get_name(): metric(results) for metric in metrics}
 
     out_metrics["args"] = args
+    out_metrics['density'] = (density_A, density_B)
     return out_metrics
 
 def run_scenario_wrapper(args):

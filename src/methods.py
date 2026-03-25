@@ -702,6 +702,7 @@ class DiffusionCorrelation(BaseMethod):
         alpha=0.05,
         rng=None,
         solver=None,
+        use_laplacian=False,
         **kwargs,
     ):
         self.rng = np.random.default_rng() if rng is None else rng
@@ -715,29 +716,31 @@ class DiffusionCorrelation(BaseMethod):
             self.null = False
         self.rho = rho
         
-        self.solver = ASE
+        self.solver = solver
 
         self.alpha = alpha
         
+        self.use_laplacian = use_laplacian
+        
         self.eps = 1e-10
 
-    def compute_normalized_laplacian(self, K):
-        """
-        Compute normalized graph Laplacian
-        L = B^(-1/2) * K * B^(-1/2) where B is the degree matrix
-        """
-        degrees = np.sum(K, axis=1)
+    # def compute_normalized_laplacian(self, K):
+    #     """
+    #     Compute normalized graph Laplacian
+    #     L = B^(-1/2) * K * B^(-1/2) where B is the degree matrix
+    #     """
+    #     degrees = np.sum(K, axis=1)
 
-        degrees[degrees < 1e-10] = 1.0 
+    #     degrees[degrees < 1e-10] = 1.0 
         
-        B_inv_sqrt = np.diag(1.0 / np.sqrt(degrees))
+    #     B_inv_sqrt = np.diag(1.0 / np.sqrt(degrees))
 
-        L = B_inv_sqrt @ K @ B_inv_sqrt
+    #     L = B_inv_sqrt @ K @ B_inv_sqrt
         
-        L = (L + L.T) / 2
-        L = np.nan_to_num(L)
+    #     L = (L + L.T) / 2
+    #     L = np.nan_to_num(L)
         
-        return L
+    #     return L
 
     def compute_distance_matrix(self, U):
         return squareform(pdist(U, metric="euclidean"))
@@ -788,13 +791,17 @@ class DiffusionCorrelation(BaseMethod):
                     )
                 self.k = self.k
 
-            # compute normalized Laplacian
-            A_laplacian = self.compute_normalized_laplacian(A)
-            B_laplacian = self.compute_normalized_laplacian(B)
+            if self.use_laplacian:
+                # compute normalized Laplacian
+                A_laplacian = self.compute_normalized_laplacian(A)
+                B_laplacian = self.compute_normalized_laplacian(B)
+            else:
+                A_laplacian = A
+                B_laplacian = B
 
             # diffusion map for t=1 (i.e. ASE)
-            Xhat, _ = self.solver(A_laplacian, k=self.k)
-            Zhat, _ = self.solver(B_laplacian, k=self.k)
+            Zhat = self.solver(A_laplacian, k=self.k, rng=self.rng)[0]  # 0 is the xhat, 1 are the evalues
+            Xhat = self.solver(B_laplacian, k=self.k, rng=self.rng)[0]
 
         else:
             Xhat = data.get("estimated_X")
