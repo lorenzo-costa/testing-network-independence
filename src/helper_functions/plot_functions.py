@@ -390,6 +390,126 @@ def plot_boxplot(x_axis, y_axis, **kwargs):
         sns.boxplot(data=temp, x=x_axis, y=y_axis, ax=ax)
 
 
+def plot_heatmap(x_axis, y_axis, **kwargs):
+    """Plot a heatmap inside a single FacetGrid facet.
+ 
+    Within each facet the data is already filtered to one (col, row) combination
+    by :class:`~seaborn.FacetGrid`.  This function pivots the remaining data so
+    that ``x_axis`` runs along the columns of the heatmap and ``factors[0]``
+    (the *hue* / method variable) runs along the rows, with ``y_axis`` as the
+    cell colour intensity.
+ 
+    Designed to be passed as ``plotting_function`` to :func:`plot_grid`, but
+    can also be called standalone against ``plt.gca()``.
+ 
+    Parameters
+    ----------
+    x_axis : str
+        Column used for heatmap columns (e.g. ``'latent_sim'``).
+    y_axis : str
+        Column whose values fill the cells (e.g. ``'TrueRejection_mean'``).
+    data : pd.DataFrame
+        DataFrame slice passed in by :class:`~seaborn.FacetGrid` (or provided
+        directly when calling standalone).
+    factors : list
+        ``factors[0]`` is used as the row-index of the heatmap (typically the
+        method / hue variable).
+    cmap : str, optional
+        Matplotlib / seaborn colormap name, by default ``'RdYlGn'``.
+    vmin : float, optional
+        Minimum value of the colour scale.  Defaults to ``0`` when the column
+        name suggests a power/rejection metric, otherwise the data minimum.
+    vmax : float, optional
+        Maximum value of the colour scale.  Defaults to ``1`` when the column
+        name suggests a power/rejection metric, otherwise the data maximum.
+    fmt : str, optional
+        ``annot`` format string, by default ``'.2f'``.
+    annot : bool, optional
+        Whether to annotate cells with their values, by default ``True``.
+    annot_fontsize : int, optional
+        Font size for cell annotations, by default ``8``.
+    linewidths : float, optional
+        Width of lines separating cells, by default ``0.5``.
+    linecolor : str, optional
+        Colour of the cell separator lines, by default ``'white'``.
+    row_order : list, optional
+        Explicit ordering of hue-variable values (rows).  Defaults to sorted
+        order of the unique values found in the facet slice.
+    col_order : list, optional
+        Explicit ordering of x-axis values (columns).  Defaults to sorted
+        ascending order.
+    cbar : bool, optional
+        Whether to draw the colour-bar, by default ``False`` (keeps facets
+        compact; a shared colour-bar can be added afterwards if needed).
+    x_tick_rotation : float, optional
+        Rotation of x-axis tick labels in degrees, by default ``0``.
+    y_tick_rotation : float, optional
+        Rotation of y-axis tick labels in degrees, by default ``0``.
+    """
+    data        = kwargs.pop("data")
+    factors     = kwargs.pop("factors", None)
+    cmap        = kwargs.pop("cmap", "RdYlGn")
+    fmt         = kwargs.pop("fmt", ".2f")
+    annot       = kwargs.pop("annot", True)
+    annot_fontsize  = kwargs.pop("annot_fontsize", 8)
+    linewidths  = kwargs.pop("linewidths", 0.5)
+    linecolor   = kwargs.pop("linecolor", "white")
+    row_order   = kwargs.pop("row_order", None)
+    col_order   = kwargs.pop("col_order", None)
+    cbar        = kwargs.pop("cbar", False)
+    x_tick_rotation = kwargs.pop("x_tick_rotation", 0)
+    y_tick_rotation = kwargs.pop("y_tick_rotation", 0)
+ 
+    # Auto-detect sensible colour-scale bounds for power/rejection metrics
+    power_pattern = re.compile(r"(?:power|rejection|reject|type.?i)", re.IGNORECASE)
+    auto_power = power_pattern.search(y_axis) is not None
+    vmin = kwargs.pop("vmin", 0.0 if auto_power else data[y_axis].min())
+    vmax = kwargs.pop("vmax", 1.0 if auto_power else data[y_axis].max())
+ 
+    hue_variable = factors[0] if factors is not None and len(factors) >= 1 else None
+ 
+    if hue_variable is None:
+        raise ValueError(
+            "plot_heatmap requires at least one entry in `factors` to use as "
+            "the heatmap row variable."
+        )
+ 
+    # Determine row/column ordering
+    if row_order is None:
+        row_order = sorted(data[hue_variable].unique())
+    if col_order is None:
+        col_order = sorted(data[x_axis].unique())
+ 
+    # Pivot to (hue_variable) × (x_axis) matrix
+    pivot = (
+        data.pivot_table(index=hue_variable, columns=x_axis, values=y_axis, aggfunc="mean")
+        .reindex(index=row_order, columns=col_order)
+    )
+ 
+    ax = plt.gca()
+    sns.heatmap(
+        pivot,
+        ax=ax,
+        cmap=cmap,
+        vmin=vmin,
+        vmax=vmax,
+        annot=annot,
+        fmt=fmt,
+        annot_kws={"size": annot_fontsize},
+        linewidths=linewidths,
+        linecolor=linecolor,
+        cbar=cbar,
+    )
+ 
+    # Tick label rotation
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=x_tick_rotation, ha="right" if x_tick_rotation else "center")
+    ax.set_yticklabels(ax.get_yticklabels(), rotation=y_tick_rotation, va="center")
+ 
+    # Clear axis labels — plot_grid sets them centrally
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+
+
 def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **kwargs):
     """Plot a grid of plots using the specified plotting function.
  

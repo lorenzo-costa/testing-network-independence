@@ -514,7 +514,7 @@ class BernoulliNetwork(CopulaDGP, BaseDPG):
                  center_latent=True,
                  self_loops=False,
                  bias=0,
-                 rdpg=False,
+                 rdpg=None,
                  **args):
         
         # note here by multiple inheritance CopulaDGP init will be called
@@ -544,19 +544,22 @@ class BernoulliNetwork(CopulaDGP, BaseDPG):
         
         X, Z = self._sample_latent()
         
-        if self.rdpg=='max':
-            # normalise in [-1, 1]
-            X = X/np.max(X, axis=0, keepdims=True)
-            Z = Z/np.max(Z, axis=0, keepdims=True)
-        if self.rdpg=='spectral':
-            X = X / np.sqrt(np.linalg.norm(X, ord=2))
-            Z = Z / np.sqrt(np.linalg.norm(Z, ord=2))
-        if self.rdpg=='minmax':
-            X = (X- np.min(X, axis=0, keepdims=True)) / (np.max(X, axis=0, keepdims=True) - np.min(X, axis=0, keepdims=True) + 1e-15)
-            X = X/np.sqrt(X.shape[1])
-            
-            Z = (Z- np.min(Z, axis=0, keepdims=True)) / (np.max(Z, axis=0, keepdims=True) - np.min(Z, axis=0, keepdims=True) + 1e-15)
-            Z = Z/np.sqrt(Z.shape[1])
+        if self.rdpg is not None:
+            if self.rdpg=='max':
+                # normalise in [-1, 1]
+                X = X/np.max(X, axis=0, keepdims=True)
+                Z = Z/np.max(Z, axis=0, keepdims=True)
+            elif self.rdpg=='spectral':
+                X = X / np.sqrt(np.linalg.norm(X, ord=2))
+                Z = Z / np.sqrt(np.linalg.norm(Z, ord=2))
+            elif self.rdpg=='minmax':
+                X = (X- np.min(X, axis=0, keepdims=True)) / (np.max(X, axis=0, keepdims=True) - np.min(X, axis=0, keepdims=True) + 1e-15)
+                X = X/np.sqrt(X.shape[1])
+                
+                Z = (Z- np.min(Z, axis=0, keepdims=True)) / (np.max(Z, axis=0, keepdims=True) - np.min(Z, axis=0, keepdims=True) + 1e-15)
+                Z = Z/np.sqrt(Z.shape[1])
+            else:
+                raise Exception(f"Unknown rdpg option: {self.rdpg}")
 
         if self.rdpg is not None:
             expected_A = np.clip(Z @ Z.T - self.bias, 0, 1)
@@ -564,6 +567,7 @@ class BernoulliNetwork(CopulaDGP, BaseDPG):
         else:
             expected_A = np.clip(expit(Z @ Z.T - self.bias), 0, 1)
             expected_B = np.clip(expit(X @ X.T - self.bias), 0, 1)
+        
         try:
             if self.symmetric is True: # generate lower half and the sum to ensure symmetry
                 A = np.tril(self.rng.binomial(1, expected_A), k=-1)
