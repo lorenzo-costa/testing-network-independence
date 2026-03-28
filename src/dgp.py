@@ -381,7 +381,16 @@ class CopulaDGP:
             repeats = -(-self.k // cols)          # ceiling division
             arr = np.tile(arr, (1, repeats))
         return arr[:, : self.k]
-        
+
+def BaseNetworkModel(CopulaDGP, BaseDGP):
+    def __init__(self, *args, **kwargs):
+        CopulaDGP.__init__(self, *args, **kwargs)
+        BaseDGP.__init__(self, *args, **kwargs)
+    def generate(self):
+        raise NotImplementedError("Subclasses should implement this!")
+    def name(self):
+        raise NotImplementedError("Subclasses should implement this!")
+
 
 class GaussianNetwork(CopulaDGP, BaseDPG):
     """
@@ -404,6 +413,10 @@ class GaussianNetwork(CopulaDGP, BaseDPG):
         Variance of the edges (default is 1).
     rng : np.random.Generator, optional
         Random number generator.
+    make_sparse: Bool
+        Whether to set some of the inner products to zero
+    sparsity_bias: float
+        Parameter controlling the sparsity of the adjacency matrix.
     """
 
     def __init__(self, 
@@ -420,6 +433,8 @@ class GaussianNetwork(CopulaDGP, BaseDPG):
                  correlations=None,
                  center_latent=True,
                  self_loops=False,
+                 sparsity_bias=0,
+                 make_sparse=True,
                  **args):
         
         # note here by multiple inheritance CopulaDGP init will be called
@@ -439,7 +454,20 @@ class GaussianNetwork(CopulaDGP, BaseDPG):
         self.edge_var = edge_var
         self.symmetric = symmetric
         self.self_loops = self_loops
+        self.sparsity_bias = sparsity_bias
+        self.make_sparse = make_sparse
+    
+    def _make_sparse(self, expected):
+        logits = expected - self.sparsity_bias
+        probs = 1 / (1 + np.exp(-logits))
         
+        mask = self.rng.uniform(size=expected.shape) < probs
+        # mask applied after adj matrix generation, maybe it's worth considering 
+        # setting the expected to zero directly or taking probs into account for variance 
+        # computation
+        weights = self.rng.normal(loc=expected, scale=self.edge_var)
+        
+        return weights * mask
 
     def generate(self):
 
@@ -447,9 +475,13 @@ class GaussianNetwork(CopulaDGP, BaseDPG):
 
         expected_A = Z @ Z.T
         expected_B = X @ X.T
-
-        A = self.rng.normal(loc=expected_A, scale=self.edge_var)
-        B = self.rng.normal(loc=expected_B, scale=self.edge_var)
+        
+        if self.make_sparse:
+            A = self._make_sparse(expected_A)
+            B = self._make_sparse(expected_B)
+        else:
+            A = self.rng.normal(loc=expected_A, scale=self.edge_var)
+            B = self.rng.normal(loc=expected_B, scale=self.edge_var)
 
         if self.self_loops is False:
             A[np.diag_indices_from(A)] = 0
@@ -513,7 +545,7 @@ class BernoulliNetwork(CopulaDGP, BaseDPG):
                  correlations=None,
                  center_latent=True,
                  self_loops=False,
-                 bias=0,
+                 sparsity_bias=0,
                  rdpg=None,
                  **args):
         
@@ -534,7 +566,7 @@ class BernoulliNetwork(CopulaDGP, BaseDPG):
         self.edge_var = edge_var
         self.symmetric = symmetric
         self.self_loops = self_loops
-        self.bias = bias
+        self.sparsity_bias = sparsity_bias
         self.rdpg = rdpg
 
     def get_name(self):
@@ -561,15 +593,18 @@ class BernoulliNetwork(CopulaDGP, BaseDPG):
             else:
                 raise Exception(f"Unknown rdpg option: {self.rdpg}")
 
+        # sparsity applied directly to inner product, maybe worht looking into 
+        # a randomly shutting down some edge like weighted network
         if self.rdpg is not None:
-            expected_A = np.clip(Z @ Z.T - self.bias, 0, 1)
-            expected_B = np.clip(X @ X.T - self.bias, 0, 1)
+            expected_A = np.clip(Z @ Z.T - self.sparsity_bias, 0, 1)
+            expected_B = np.clip(X @ X.T - self.sparsity_bias, 0, 1)
         else:
-            expected_A = np.clip(expit(Z @ Z.T - self.bias), 0, 1)
-            expected_B = np.clip(expit(X @ X.T - self.bias), 0, 1)
-        
+            expected_A = np.clip(expit(Z @ Z.T - self.sparsity_bias), 0, 1)
+            expected_B = np.clip(expit(X @ X.T - self.sparsity_bias), 0, 1)
+
         try:
-            if self.symmetric is True: # generate lower half and the sum to ensure symmetry
+            if self.symmetric is True: 
+                # generate only lower half and then sum to ensure symmetry
                 A = np.tril(self.rng.binomial(1, expected_A), k=-1)
                 B = np.tril(self.rng.binomial(1, expected_B), k=-1)
 

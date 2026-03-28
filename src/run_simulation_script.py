@@ -69,6 +69,8 @@ if __name__ == "__main__":
     alpha = [0.05]
     marginals = ['gaussian', 'uniform -1 1', 'cauchy', 't 5', 'chi 5']
     edge_var = [1, 3]
+    make_sparse = [True]
+    sparsity_bias = [0, 3]
 
     method = [
         partial(RVPermutationTest, permutation_type="latent"),
@@ -128,6 +130,44 @@ if __name__ == "__main__":
     )
 
     out = pd.DataFrame(out)
+    
+    setup2 = [
+        (partial(GaussianNetwork, copula_model='gaussian'), ASE),
+        (partial(BernoulliNetwork, copula_model='gaussian'), pgd_fit_wrapper),
+    ]
+    rho2 = [0.0]
+    
+    rng2 = np.random.default_rng(2)    
+
+    param_names2 = [
+        "setup",
+        "method",
+        "n",
+        "k",
+        "alpha",
+        "marginals",
+        "rho",
+        "edge_var",
+        "approximation",
+        "npermutations",
+        "df"
+    ]
+
+    param_values2 = product(
+        setup2, method, n, k, alpha, marginals, rho2, edge_var, approximation, npermutations, df
+    )
+
+    factorial_design2 = [dict(zip(param_names2, v)) for v in param_values2]
+
+    out2 = run_simulation(
+        nsim=nsim,
+        metrics=metrics,
+        factorial_design=factorial_design2,
+        rng=rng2,
+        parallel=True,
+    )
+    
+    out = pd.concat([out, pd.DataFrame(out2)], ignore_index=True)
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
     file_name = f"results/simulation_results_{timestamp}.csv"
