@@ -1,8 +1,8 @@
 #!/bin/bash
 
 #SBATCH --job-name=sim_lee2019
-#SBATCH --output=logs/sim_observed_%j.out
-#SBATCH --error=logs/sim_observed_%j.err
+#SBATCH --output=logs/sim_lee_%j.out
+#SBATCH --error=logs/sim_lee_%j.err
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=8G

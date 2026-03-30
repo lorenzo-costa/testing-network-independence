@@ -15,7 +15,7 @@ from src.solvers.MaMa_uuuuu import pgd_fit, pgd_fit_wrapper
 from src.helper_functions.simulation_functions import run_simulation
 from src.helper_functions.analyse_functions import aggregate_results
 from src.metrics import rv_coefficient_adjusted
-from src.helper_functions._metrics_helper import cvm_stat_multivariate, cvm_stat_block_independence, observed_cvm_dependency
+from src.helper_functions._metrics_helper import observed_cvm_dependency
 
 import numpy as np
 import pandas as pd
