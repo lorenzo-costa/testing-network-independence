@@ -62,7 +62,7 @@ def load_hdf5(path):
         return {k: read_obj(v) for k, v in f.items()}
 
 if __name__ == "__main__":
-    nsim = 50
+    nsim = 75
     n = [100, 200, 300]
     k = [3]
     rho = [0.2]
@@ -70,7 +70,7 @@ if __name__ == "__main__":
     marginals = ['gaussian', 'uniform -1 1', 'cauchy', 't 5', 'chi 5']
     edge_var = [1, 3]
     make_sparse = [True]
-    sparsity_bias = [0, 3]
+    sparsity_bias = [0, 2]
 
     method = [
         partial(RVPermutationTest, permutation_type="latent"),
@@ -111,11 +111,13 @@ if __name__ == "__main__":
         "edge_var",
         "approximation",
         "npermutations",
-        "df"
+        "df",
+        "make_sparse",
+        "sparsity_bias"
     ]
 
     param_values = product(
-        setup, method, n, k, alpha, marginals, rho, edge_var, approximation, npermutations, df
+        setup, method, n, k, alpha, marginals, rho, edge_var, approximation, npermutations, df, make_sparse, sparsity_bias
     )
 
     factorial_design = [dict(zip(param_names, v)) for v in param_values]
@@ -139,25 +141,11 @@ if __name__ == "__main__":
     
     rng2 = np.random.default_rng(2)    
 
-    param_names2 = [
-        "setup",
-        "method",
-        "n",
-        "k",
-        "alpha",
-        "marginals",
-        "rho",
-        "edge_var",
-        "approximation",
-        "npermutations",
-        "df"
-    ]
-
     param_values2 = product(
-        setup2, method, n, k, alpha, marginals, rho2, edge_var, approximation, npermutations, df
+        setup2, method, n, k, alpha, marginals, rho2, edge_var, approximation, npermutations, df, make_sparse, sparsity_bias
     )
 
-    factorial_design2 = [dict(zip(param_names2, v)) for v in param_values2]
+    factorial_design2 = [dict(zip(param_names, v)) for v in param_values2]
 
     out2 = run_simulation(
         nsim=nsim,

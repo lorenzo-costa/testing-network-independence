@@ -1,5 +1,5 @@
 import numpy as np
-from .helper_functions._metrics_helper import rv_coefficient_adjusted, cvm_stat_multivariate
+from .helper_functions._metrics_helper import rv_coefficient_adjusted
 import sys
 import os
 from scipy import stats, linalg
@@ -266,13 +266,6 @@ class RVPermutationTest(PermutationTest):
         
     def get_name(self):
         return "RVPermutationTest_" + self.permutation_type
-
-class CVMPermutationTest(PermutationTest):
-    def __init__(self, **kwargs):
-        super().__init__(test_function=cvm_stat_multivariate, **kwargs)
-
-    def get_name(self):
-        return "CVMPermutationTest_" + self.permutation_type
 
 class ObservedCVM(BaseMethod):
     def __init__(
