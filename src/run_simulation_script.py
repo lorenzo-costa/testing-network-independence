@@ -69,8 +69,8 @@ if __name__ == "__main__":
     alpha = [0.05]
     marginals = ['gaussian', 'uniform -1 1', 'cauchy', 't 5', 'chi 5']
     edge_var = [1, 3]
-    make_sparse = [True]
-    sparsity_bias = [0, 2]
+    make_sparse = [False, True]
+    sparsity_bias = [1]
 
     method = [
         partial(RVPermutationTest, permutation_type="latent"),
