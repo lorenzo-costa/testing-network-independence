@@ -77,6 +77,7 @@ if __name__ == "__main__":
         QAP,
         DiffusionCorrelation,
         partial(ObservedCVM, test_function=partial(observed_cvm_dependency, degree=2)),
+        partial(ObservedCVM, test_function=partial(observed_cvm_dependency, degree=1)),
     ]
 
     npermutations = [200]

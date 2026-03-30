@@ -22,7 +22,7 @@ from hyppo.tools.indep_sim import (
     two_parabolas,
     uncorrelated_bernoulli,
     multiplicative_noise,
-    multimodal_independence
+    multimodal_independence,
 )
 
 # TODO:

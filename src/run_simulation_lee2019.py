@@ -61,7 +61,7 @@ def load_hdf5(path):
 
 if __name__ == "__main__":
     
-    nsim = 100
+    nsim = 75
     n = [50, 100, 200, 300]
     k = [1]
     rho = [0.2]
@@ -71,6 +71,7 @@ if __name__ == "__main__":
     method = [
         QAP,
         partial(ObservedCVM, test_function=partial(observed_cvm_dependency, degree=2)),
+        partial(ObservedCVM, test_function=partial(observed_cvm_dependency, degree=1)),
         DiffusionCorrelation,
         partial(RVPermutationTest, permutation_type="latent"),
     ]
@@ -79,6 +80,8 @@ if __name__ == "__main__":
     df = [3]
     metrics = [ComputeAll()]
     approximation = ["F-distr"]
+    make_sparse = [True, False]
+    sparsity_bias = [1]
 
     setup = [
         (partial(GaussianNetwork, latent_sim='linear', sim_kwargs={'noise':True}), partial(ASE, k=2)),
@@ -98,6 +101,7 @@ if __name__ == "__main__":
         (partial(GaussianNetwork, latent_sim='ellipse', sim_kwargs={'noise':True}), partial(ASE, k=2)),
         (partial(GaussianNetwork, latent_sim='two_parabolas', sim_kwargs={'noise':True}), partial(ASE, k=2)),
         (partial(GaussianNetwork, latent_sim='uncorrelated_bernoulli', sim_kwargs={'noise':True}), partial(ASE, k=2)),
+        (partial(GaussianNetwork, latent_sim='multimodal_independence'), partial(ASE, k=2)),
 
         (partial(BernoulliNetwork, rdpg='minmax', latent_sim='linear', sim_kwargs={'noise':True}), partial(ASE, k=2)),
         (partial(BernoulliNetwork, rdpg='minmax', latent_sim='exponential', sim_kwargs={'noise':True}), partial(ASE, k=2)),
@@ -116,6 +120,8 @@ if __name__ == "__main__":
         (partial(BernoulliNetwork, rdpg='minmax', latent_sim='ellipse', sim_kwargs={'noise':True}), partial(ASE, k=2)),
         (partial(BernoulliNetwork, rdpg='minmax', latent_sim='two_parabolas', sim_kwargs={'noise':True}), partial(ASE, k=2)),
         (partial(BernoulliNetwork, rdpg='minmax', latent_sim='uncorrelated_bernoulli', sim_kwargs={'noise':True}), partial(ASE, k=2)),
+        (partial(BernoulliNetwork, rdpg='minmax', latent_sim='multimodal_independence'), partial(ASE, k=2)),
+
     ]
     
     rng = np.random.default_rng(2)    
@@ -131,11 +137,13 @@ if __name__ == "__main__":
         "edge_var",
         "approximation",
         "npermutations",
-        "df"
+        "df",
+        "make_sparse",
+        "sparsity_bias"
     ]
 
     param_values = product(
-        setup, method, n, k, alpha, marginals, rho, edge_var, approximation, npermutations, df
+        setup, method, n, k, alpha, marginals, rho, edge_var, approximation, npermutations, df, make_sparse, sparsity_bias
     )
 
     factorial_design = [dict(zip(param_names, v)) for v in param_values]
