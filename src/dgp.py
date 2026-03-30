@@ -83,6 +83,7 @@ class CopulaDGP:
         center_latent=True,
         latent_sim=None,       # NEW: name of a sim function, e.g. "quadratic"
         sim_kwargs=None,       # NEW: extra kwargs forwarded to that function
+        column_covariance=None,
         **kwargs,
     ):
         if rng is None:
@@ -92,6 +93,14 @@ class CopulaDGP:
         self.n = n
         self.k = k
         self.rho = rho
+        
+        if column_covariance is not None:
+            if not column_covariance.shape == (self.k, self.k):
+                raise ValueError(f"column_covariance must be a {self.k}x{self.k} matrix.")
+            self.column_covariance = column_covariance
+        else:
+            self.column_covariance = np.eye(self.k)
+
         self.marginals = marginals
         self.copula_model = copula_model
         self.df = df
@@ -107,6 +116,8 @@ class CopulaDGP:
             )
         self.latent_sim = latent_sim
         self.sim_kwargs = sim_kwargs or {}
+        
+        
 
         self._convert_marginals(marginals)
 
@@ -116,10 +127,12 @@ class CopulaDGP:
         with the specified dependence structure.
         Returns: u_z, u_x of shape (n, k)
         """
+            
         if self.copula_model == 'gaussian':
-            # 1. Generate Correlated Gaussians
-            z = self.rng.normal(size=(self.n, self.k))
-            e = self.rng.normal(size=(self.n, self.k))
+            # 1. Generate Correlated Gaussians using a k x k covariance matrix
+            mean = np.zeros(self.k)
+            z = self.rng.multivariate_normal(mean=mean, cov=self.column_covariance, size=self.n)
+            e = self.rng.multivariate_normal(mean=mean, cov=self.column_covariance, size=self.n)
             
             if self.rho == 1:
                 x = z
@@ -133,14 +146,13 @@ class CopulaDGP:
             u_x = ndtr(x)
             
         elif self.copula_model == 'student_t':
-            # 1. Generate Correlated Gaussians (Same as above)
-            g_z = self.rng.normal(size=(self.n, self.k))
-            g_e = self.rng.normal(size=(self.n, self.k))
+            # 1. Generate Correlated Gaussians
+            mean = np.zeros(self.k)
+            g_z = self.rng.multivariate_normal(mean=mean, cov=self.column_covariance, size=self.n)
+            g_e = self.rng.multivariate_normal(mean=mean, cov=self.column_covariance, size=self.n)
             g_x = self.rho * g_z + np.sqrt(1 - self.rho**2) * g_e
             
             # 2. Generate Chi-Square variable for scaling
-            # Shape (n, k) or (n, 1) depending if you want shared chi-sq per row or per element
-            # Usually t-copula uses one chi-sq scalar per vector realization (n, 1)
             w = self.rng.chisquare(df=self.df, size=(self.n, 1)) 
             
             # 3. Scale to create Multivariate t variables
@@ -434,7 +446,8 @@ class GaussianNetwork(CopulaDGP, BaseDPG):
                  center_latent=True,
                  self_loops=False,
                  sparsity_bias=0,
-                 make_sparse=True,
+                 make_sparse=False,
+                 column_covariance=None,
                  **args):
         
         # note here by multiple inheritance CopulaDGP init will be called
@@ -448,6 +461,7 @@ class GaussianNetwork(CopulaDGP, BaseDPG):
                          weights=weights, 
                          correlations=correlations, 
                          center_latent=center_latent, 
+                         column_covariance=column_covariance,
                           **args)
 
         
@@ -547,6 +561,7 @@ class BernoulliNetwork(CopulaDGP, BaseDPG):
                  self_loops=False,
                  sparsity_bias=0,
                  rdpg=None,
+                 column_covariance=None,
                  **args):
         
         # note here by multiple inheritance CopulaDGP init will be called
@@ -560,6 +575,7 @@ class BernoulliNetwork(CopulaDGP, BaseDPG):
                          weights=weights, 
                          correlations=correlations, 
                          center_latent=center_latent, 
+                         column_covariance=column_covariance,
                           **args)
 
         
