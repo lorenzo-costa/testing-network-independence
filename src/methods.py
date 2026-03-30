@@ -644,14 +644,13 @@ class QAP(BaseMethod):
         n = A.shape[0]
         A_centered = A - A.mean(axis=0)
         B_centered = B - B.mean(axis=0)
+        A_centered[np.arange(n), np.arange(n)] = 0
+        B_centered[np.arange(n), np.arange(n)] = 0
 
         phi_0_hat = 1 / (n * (n - 1) - 1) * np.sum(A_centered * B_centered)
 
         eta_hat_2_alpha = 1 / (n * (n - 1) - 1) * np.sum(A_centered**2)
         eta_hat_2_beta = 1 / (n * (n - 1) - 1) * np.sum(B_centered**2)
-
-        # eta_hat_1_alpha = 1/n * np.sum((1/(n-1)*np.sum(A_centered * B_centered, axis = 1))**2)
-        # eta_hat_1_beta = 1/n * np.sum((1/(n-1)*np.sum(B_centered * B_centered, axis = 1))**2)
 
         rho_hat = phi_0_hat / np.sqrt(eta_hat_2_alpha * eta_hat_2_beta)
 
