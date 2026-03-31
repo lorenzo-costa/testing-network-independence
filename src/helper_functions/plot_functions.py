@@ -509,6 +509,131 @@ def plot_heatmap(x_axis, y_axis, **kwargs):
     ax.set_xlabel("")
     ax.set_ylabel("")
 
+def plot_scatter_density(x_axis, y_axis, **kwargs):
+    """Scatter two columns of points with an optional KDE contour overlay.
+ 
+    This is the ``plot_grid``-compatible equivalent of :func:`visualise_latent`.
+    When used with :func:`plot_grid`, each facet receives the slice of
+    ``grouped_stats`` that corresponds to that (col, row) combination.
+    ``x_axis`` and ``y_axis`` are then the two columns to scatter against each
+    other — for example the estimated and true latent positions stored in a
+    long-form DataFrame.
+ 
+    Can also be called standalone against ``plt.gca()``.
+ 
+    Parameters
+    ----------
+    x_axis : str
+        Column name plotted on the x-axis (e.g. ``'latent_z'``).
+    y_axis : str
+        Column name plotted on the y-axis (e.g. ``'latent_x'``).
+    data : pd.DataFrame
+        DataFrame slice passed in by :class:`~seaborn.FacetGrid` (or supplied
+        directly when calling standalone).
+    factors : list, optional
+        Not used for splitting within the facet, but accepted for interface
+        compatibility with the other plot functions.
+    scatter_color : str, optional
+        Colour of the scatter points, by default ``'royalblue'``.
+    scatter_alpha : float, optional
+        Opacity of scatter points, by default ``0.4``.
+    scatter_size : float, optional
+        Marker size of scatter points, by default ``10``.
+    kdplot : bool, optional
+        Whether to overlay KDE contour lines, by default ``True``.
+    kde_levels : int, optional
+        Number of contour levels for the KDE, by default ``5``.
+    kde_color : str, optional
+        Colour of KDE contour lines, by default ``'black'``.
+    kde_linewidths : float, optional
+        Line width of KDE contours, by default ``1.5``.
+    diagonal : bool, optional
+        Whether to draw a perfect-correlation diagonal reference line,
+        by default ``False``.
+    diagonal_color : str, optional
+        Colour of the diagonal line, by default ``'red'``.
+    diagonal_style : str, optional
+        Linestyle of the diagonal line, by default ``'--'``.
+    grid : bool, optional
+        Whether to show a dashed background grid, by default ``True``.
+    x_label : str, optional
+        X-axis label, by default ``x_axis`` with underscores replaced by spaces.
+    y_label : str, optional
+        Y-axis label, by default ``y_axis`` with underscores replaced by spaces.
+    label_fontsize : int, optional
+        Font size for axis labels, by default ``12``.
+    """
+    data            = kwargs.pop("data")
+    _factors        = kwargs.pop("factors", None)          # accepted, not used here
+    scatter_color   = kwargs.pop("scatter_color", "royalblue")
+    scatter_alpha   = kwargs.pop("scatter_alpha", 0.4)
+    scatter_size    = kwargs.pop("scatter_size", 10)
+    kdplot          = kwargs.pop("kdplot", True)
+    kde_levels      = kwargs.pop("kde_levels", 5)
+    kde_color       = kwargs.pop("kde_color", "black")
+    kde_linewidths  = kwargs.pop("kde_linewidths", 1.5)
+    diagonal        = kwargs.pop("diagonal", False)
+    diagonal_color  = kwargs.pop("diagonal_color", "red")
+    diagonal_style  = kwargs.pop("diagonal_style", "--")
+    grid            = kwargs.pop("grid", True)
+    x_label         = kwargs.pop("x_label", x_axis.replace("_", " "))
+    y_label         = kwargs.pop("y_label", y_axis.replace("_", " "))
+    label_fontsize  = kwargs.pop("label_fontsize", 12)
+ 
+    ax = plt.gca()
+ 
+    def _flatten_column(col):
+        """Flatten a column that may contain scalars, lists, or numpy arrays."""
+        raw = col.values
+        # Fast path: already a plain numeric array
+        if raw.dtype.kind in ("f", "i", "u"):
+            return raw.astype(float)
+        # Slow path: object array whose elements are sequences (lists / arrays)
+        return np.concatenate([
+            np.atleast_1d(v).ravel() for v in raw
+        ]).astype(float)
+ 
+    x_vals = _flatten_column(data[x_axis])
+    y_vals = _flatten_column(data[y_axis])
+ 
+    ax.scatter(
+        x_vals, y_vals,
+        alpha=scatter_alpha,
+        s=scatter_size,
+        color=scatter_color,
+        label="Samples",
+    )
+ 
+    if kdplot and len(x_vals) > 1:
+        try:
+            sns.kdeplot(
+                x=x_vals, y=y_vals,
+                ax=ax,
+                levels=kde_levels,
+                color=kde_color,
+                linewidths=kde_linewidths,
+            )
+        except Exception:
+            # KDE can fail on degenerate data (e.g. all identical values); skip silently
+            pass
+ 
+    if diagonal:
+        lim_min = min(x_vals.min(), y_vals.min())
+        lim_max = max(x_vals.max(), y_vals.max())
+        ax.plot(
+            [lim_min, lim_max], [lim_min, lim_max],
+            color=diagonal_color,
+            linestyle=diagonal_style,
+            alpha=0.6,
+            label="Perfect Correlation",
+        )
+ 
+    if grid:
+        ax.grid(True, linestyle="--", alpha=0.5)
+ 
+    ax.set_xlabel(x_label, fontsize=label_fontsize)
+    ax.set_ylabel(y_label, fontsize=label_fontsize)
+
 
 def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **kwargs):
     """Plot a grid of plots using the specified plotting function.
@@ -574,7 +699,7 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
     share_y = kwargs.get("share_y", True)
     flip_x_axis = kwargs.get("flip_x_axis", False)
     no_facet_y_axis = kwargs.get("no_facet_y_axis", False)
-    hide_row_titles = kwargs.get("hide_row_titles", False)
+    show_row_titles = kwargs.get("show_row_titles", True)
     show_row_names = kwargs.get("show_row_names", True)
  
     if save_path is not None:
@@ -592,7 +717,7 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
         sharex=share_x,
         height=height,
         aspect=aspect,
-        margin_titles=not hide_row_titles,
+        margin_titles=show_row_titles,
     )
  
     g.map_dataframe(
@@ -648,7 +773,7 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
  
         # custom row facet labels
         if aggregate_y is not None:
-            if hide_row_titles:
+            if not show_row_titles:
                 # seaborn stores margin title Text artists in _margin_titles_texts
                 for t in getattr(g, "_margin_titles_texts", []):
                     t.set_visible(False)
@@ -727,7 +852,7 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
  
     if save_path is not None:
         plt.savefig(save_path + ".png", dpi=300, bbox_inches="tight")
-        plt.savefig(save_path + ".pdf", dpi=300, bbox_inches="tight")
+        # plt.savefig(save_path + ".pdf", dpi=300, bbox_inches="tight")
     else:
         plt.show()
     plt.close()

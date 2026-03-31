@@ -463,7 +463,6 @@ class GaussianNetwork(CopulaDGP, BaseDPG):
                          center_latent=center_latent, 
                          column_covariance=column_covariance,
                           **args)
-
         
         self.edge_var = edge_var
         self.symmetric = symmetric

@@ -12,8 +12,8 @@
 #SBATCH --partition=standard
 
 # ── Notifications (optional — set your email here) ────────────────────────────
-##SBATCH --mail-type=BEGIN,END,FAIL
-##SBATCH --mail-user=lrcosta@umich.edu
+#SBATCH --mail-type=BEGIN,END,FAIL
+#SBATCH --mail-user=lrcosta@umich.edu
 
 # Uncomment if your cluster requires loading a Python module first, e.g.:
 module load python

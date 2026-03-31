@@ -115,12 +115,11 @@ if __name__ == "__main__":
         "approximation",
         "npermutations",
         "df",
-        "make_sparse",
-        "sparsity_bias"
+        "column_covariance"
     ]
 
     param_values = product(
-        setup, method, n, k, alpha, marginals, rho, edge_var, approximation, npermutations, df, make_sparse, sparsity_bias
+        setup, method, n, k, alpha, marginals, rho, edge_var, approximation, npermutations, df, column_covariance
     )
 
     factorial_design = [dict(zip(param_names, v)) for v in param_values]
