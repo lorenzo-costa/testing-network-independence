@@ -701,6 +701,7 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
     no_facet_y_axis = kwargs.get("no_facet_y_axis", False)
     show_row_titles = kwargs.get("show_row_titles", True)
     show_row_names = kwargs.get("show_row_names", True)
+    show_col_names = kwargs.get("show_col_names", True)
  
     if save_path is not None:
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
@@ -768,7 +769,10 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
             elif aggregate_x[0] == "_":
                 facet_title = ""
             else:
-                facet_title = f"{name_conversion.get(aggregate_x, aggregate_x).replace('_', ' ').title()}: {g.col_names[ax]}"
+                if show_col_names:
+                    facet_title = f"{name_conversion.get(aggregate_x, aggregate_x).replace('_', ' ').title()}: {g.col_names[ax]}"
+                else:
+                    facet_title = f"{g.col_names[ax]}"
             g.axes[0, ax].set_title(facet_title)
  
         # custom row facet labels

@@ -58,12 +58,20 @@ def rv_coefficient_adjusted(A, B):
     temp_num = AtB.ravel()
     num = temp_num.dot(temp_num)
 
-    sx = np.linalg.svd(A, compute_uv=False)
-    sy = np.linalg.svd(B, compute_uv=False)
-    m   = min(len(sx), len(sy))
-    den = np.sum((sx[:m] ** 2) * (sy[:m] ** 2))
-
-    return num / den if den != 0 else 0
+    try:
+        sx = np.linalg.svd(A, compute_uv=False)
+        sy = np.linalg.svd(B, compute_uv=False)
+        m   = min(len(sx), len(sy))
+        den = np.sum((sx[:m] ** 2) * (sy[:m] ** 2))
+        return num / den if den != 0 else 0
+    # handle svd did not converge error
+    except np.linalg.LinAlgError:
+        # if data is infinite return nan for diagnostic purposes
+        if not np.isfinite(A).all() or not np.isfinite(B).all():
+            return np.nan 
+        # else return 0 to not inflate type I error
+        else:
+            return 0
 
 # ---------------------------------------------------------------------------
 # Miscellaneous helpers

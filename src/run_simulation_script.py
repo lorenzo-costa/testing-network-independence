@@ -78,7 +78,7 @@ if __name__ == "__main__":
         partial(ObservedCVM, test_function=partial(observed_cvm_dependency, degree=1)),
     ]
 
-    npermutations = [200]
+    npermutations = [20]
     df = [3]
     metrics = [ComputeAll()]
     approximation = ["F-distr"]
