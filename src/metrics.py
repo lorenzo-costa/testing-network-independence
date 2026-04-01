@@ -85,8 +85,7 @@ class RelativeFrobeniusNorm(BaseMetric):
             out = []
             for i in range(len(estimated)):
                 if not np.isfinite(estimated[i]).all() or not np.isfinite(truth[i]).all():
-                    est = np.nan
-                    true = np.nan
+                    out.append(np.nan)
                 else:
                     if self.gram_matrix:
                         # Compute the Gram matrix for both estimated and truth
@@ -96,9 +95,9 @@ class RelativeFrobeniusNorm(BaseMetric):
                         est = estimated[i]
                         true = truth[i]
 
-                num = norm(est - true, "fro")
-                den = norm(true, "fro")
-                out.append(num / den if den != 0 else 0)
+                    num = norm(est - true, "fro")
+                    den = norm(true, "fro")
+                    out.append(num / den if den != 0 else 0)
             # returns a list
             return out
 
