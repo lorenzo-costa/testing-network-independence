@@ -138,6 +138,9 @@ class RobustRelativeProcrustesDistance(BaseMetric):
         
         out = []
         for i in range(len(estimated)):
+            if not np.isfinite(estimated[i]).all() or not np.isfinite(truth[i]).all():
+                out.append(np.nan)
+                continue
             est = estimated[i]
             true = truth[i]
             
