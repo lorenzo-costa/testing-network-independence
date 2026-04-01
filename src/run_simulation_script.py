@@ -62,13 +62,13 @@ def load_hdf5(path):
         return {k: read_obj(v) for k, v in f.items()}
 
 if __name__ == "__main__":
-    nsim = 75
+    nsim = 1
     n = [100, 200, 300]
     k = [3]
     rho = [0.2]
     alpha = [0.05]
     marginals = ['gaussian', 'uniform -1 1', 'cauchy', 't 5', 'chi 5']
-    edge_var = [1, 3]
+    edge_var = [1]
 
     method = [
         partial(RVPermutationTest, permutation_type="latent"),
@@ -78,7 +78,7 @@ if __name__ == "__main__":
         partial(ObservedCVM, test_function=partial(observed_cvm_dependency, degree=1)),
     ]
 
-    npermutations = [20]
+    npermutations = [200]
     df = [3]
     metrics = [ComputeAll()]
     approximation = ["F-distr"]
@@ -144,7 +144,7 @@ if __name__ == "__main__":
     rng2 = np.random.default_rng(2)    
 
     param_values2 = product(
-        setup2, method, n, k, alpha, marginals, rho2, edge_var, approximation, npermutations, df, make_sparse, sparsity_bias
+        setup2, method, n, k, alpha, marginals, rho2, edge_var, approximation, npermutations, df, column_covariance
     )
 
     factorial_design2 = [dict(zip(param_names, v)) for v in param_values2]
