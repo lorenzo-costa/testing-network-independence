@@ -613,6 +613,7 @@ class BernoulliNetwork(CopulaDGP, BaseDPG):
         if self.rdpg is not None:
             expected_A = np.clip(Z @ Z.T - self.sparsity_bias, 0, 1)
             expected_B = np.clip(X @ X.T - self.sparsity_bias, 0, 1)
+            
         else:
             expected_A = np.clip(expit(Z @ Z.T - self.sparsity_bias), 0, 1)
             expected_B = np.clip(expit(X @ X.T - self.sparsity_bias), 0, 1)

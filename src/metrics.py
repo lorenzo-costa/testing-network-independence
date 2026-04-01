@@ -30,16 +30,6 @@ class RVCoefficient(BaseMetric):
 
     def get_name(self):
         return "RV Coefficient"
-    
-
-class CvMStatMultivariate(BaseMetric):
-    def __call__(self, results):
-        estimated = results["estimated_latent"]
-        truth = results["true_latent"]
-        return cvm_stat_multivariate(estimated, truth)
-
-    def get_name(self):
-        return "RV Coefficient"
 
 
 class AdjustedRVCoefficient(BaseMetric):
@@ -94,6 +84,8 @@ class RelativeFrobeniusNorm(BaseMetric):
         if isinstance(estimated, tuple):
             out = []
             for i in range(len(estimated)):
+                if not np.isfinite(estimated[i]).all() or not np.isfinite(truth[i]).all():
+                    return np.nan
                 if self.gram_matrix:
                     # Compute the Gram matrix for both estimated and truth
                     est = estimated[i] @ estimated[i].T
@@ -109,6 +101,9 @@ class RelativeFrobeniusNorm(BaseMetric):
             return out
 
         # single output computation
+        if not np.isfinite(estimated).all() or not np.isfinite(truth).all():
+            return np.nan
+        
         if self.gram_matrix:
             # Compute the Gram matrix for both estimated and truth
             estimated = estimated @ estimated.T
@@ -120,66 +115,6 @@ class RelativeFrobeniusNorm(BaseMetric):
 
     def get_name(self):
         return "RelativeFrobeniusNorm"
-
-
-class RelativeFrobeniusNorm(BaseMetric):
-    """Relative Frobenius Norm, computed as ||Xhat - X||_F / ||X||_F
-
-    Parameters
-    ----------
-    gram_matrix : bool
-        Whether to compute the Gram matrix of the latent positions.
-    results : dict
-        The results dictionary containing 'estimated_latent' and 'true_latent' keys.
-        If 'estimated_latent' is a list, relative frobenus norm will be applied to all
-        elements of the list
-
-    Output
-    ------
-    A float representing the relative Frobenius norm if 'estimated_latent' is a single array
-    A list of floats representing the relative Frobenius norm for each element if 'estimated_latent' is a list
-    """
-
-    def __init__(self, gram_matrix=False):
-        super().__init__()
-        # when feeding the estimate latent positions we compute the gram matrix to
-        # get rid of orthogonal invariance
-        self.gram_matrix = gram_matrix
-
-    def __call__(self, results):
-        estimated = results["estimated_latent"]
-        truth = results["true_latent"]
-
-        # handles the case where more than one network's latent pos are returned
-        if isinstance(estimated, tuple):
-            out = []
-            for i in range(len(estimated)):
-                if self.gram_matrix:
-                    # Compute the Gram matrix for both estimated and truth
-                    est = estimated[i] @ estimated[i].T
-                    true = truth[i] @ truth[i].T
-                else:
-                    est = estimated[i]
-                    true = truth[i]
-
-                num = norm(est - true, "fro")
-                den = norm(true, "fro")
-                out.append(num / den if den != 0 else 0)
-            # returns a list
-            return out
-
-        # single output computation
-        if self.gram_matrix:
-            # Compute the Gram matrix for both estimated and truth
-            estimated = estimated @ estimated.T
-            truth = truth @ truth.T
-
-        num = norm(estimated - truth, "fro")
-        den = norm(truth, "fro")
-        return num / den if den != 0 else 0
-
-    def get_name(self):
-        return "RelativeNuclearError"
     
 
 class RobustRelativeProcrustesDistance(BaseMetric):
