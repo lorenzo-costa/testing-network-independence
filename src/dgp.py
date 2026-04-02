@@ -576,7 +576,6 @@ class BernoulliNetwork(CopulaDGP, BaseDPG):
                          center_latent=center_latent, 
                          column_covariance=column_covariance,
                           **args)
-
         
         self.edge_var = edge_var
         self.symmetric = symmetric
@@ -589,7 +588,11 @@ class BernoulliNetwork(CopulaDGP, BaseDPG):
     
     def generate(self):
         
+        
         X, Z = self._sample_latent()
+        
+        while (not np.isfinite(X).all()) or (not np.isfinite(Z).all()):
+            X, Z = self._sample_latent()
         
         if self.rdpg is not None:
             if self.rdpg=='max':
