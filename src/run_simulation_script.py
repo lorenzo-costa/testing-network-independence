@@ -65,7 +65,7 @@ if __name__ == "__main__":
     nsim = 75
     n = [100, 200, 300]
     k = [3]
-    rho = [0.2]
+    rho = [0]
     alpha = [0.05]
     marginals = ['gaussian', 'uniform -1 1', 'cauchy', 't 5', 'chi 5']
     edge_var = [1]
@@ -91,13 +91,13 @@ if __name__ == "__main__":
         (partial(GaussianNetwork, copula_model='gaussian'), ASE),
         # (partial(GaussianNetwork, copula_model='clayton'), ASE),
         # (partial(GaussianNetwork, copula_model='gumbel'), ASE),
-        (partial(GaussianNetwork, copula_model='student_t', df=3), ASE),
+        # (partial(GaussianNetwork, copula_model='student_t', df=3), ASE),
         # (partial(GaussianNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.5, -0.5]), ASE),
         
         (partial(BernoulliNetwork, copula_model='gaussian'), pgd_fit_wrapper),
         # (partial(BernoulliNetwork, copula_model='clayton'), pgd_fit_wrapper),
         # (partial(BernoulliNetwork, copula_model='gumbel'), pgd_fit_wrapper),
-        (partial(BernoulliNetwork, copula_model='student_t', df=3), pgd_fit_wrapper),
+        # (partial(BernoulliNetwork, copula_model='student_t', df=3), pgd_fit_wrapper),
         # (partial(BernoulliNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.5, -0.5]), pgd_fit_wrapper),
     ]
     

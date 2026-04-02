@@ -232,7 +232,6 @@ def plot_scatter_markers(x_axis, y_axis, **kwargs):
     hline_name : str, optional
         Label for the horizontal reference line, by default ``'Reference Line'``.
     """
-    
     data = kwargs.pop("data")
     factors = kwargs.pop("factors", None)
     colors = kwargs.pop("colors", None)
@@ -247,8 +246,24 @@ def plot_scatter_markers(x_axis, y_axis, **kwargs):
     tick_direction = kwargs.pop("tick_direction", "in")
     hline = kwargs.pop("hline", None)
     hline_name = kwargs.pop("hline_name", "Reference Line")
+    x_tick_labelsize = kwargs.pop("x_tick_labelsize", plt.rcParams.get("xtick.labelsize", None))
+    y_tick_labelsize = kwargs.pop("y_tick_labelsize", plt.rcParams.get("ytick.labelsize", None))
+    x_tick_rotation = kwargs.pop("x_tick_rotation", 0)
+    x_order = kwargs.pop("x_order", None)
  
     ax = plt.gca()
+ 
+    # --- enforce x-axis category order ---
+    # Convert the x column to an ordered Categorical so matplotlib places
+    # tick positions in the requested sequence regardless of data arrival order.
+    data = data.copy()
+    if x_order is not None:
+        data[x_axis] = pd.Categorical(data[x_axis], categories=x_order, ordered=True)
+    elif data[x_axis].dtype == object or str(data[x_axis].dtype) == "category":
+        # No explicit order given: fall back to sorted alphabetical so at least
+        # the order is deterministic across facets.
+        cats = sorted(data[x_axis].dropna().unique())
+        data[x_axis] = pd.Categorical(data[x_axis], categories=cats, ordered=True)
  
     # Resolve hue variable from factors (mirrors plot_with_bands convention)
     hue_variable = factors[0] if factors is not None and len(factors) >= 1 else None
@@ -312,8 +327,16 @@ def plot_scatter_markers(x_axis, y_axis, **kwargs):
         ax.set_ylabel(y_axis_title, fontsize=16)
  
     # --- tick styling ---
-    ax.tick_params(axis="y", direction=tick_direction, length=6, pad=10)
-    ax.tick_params(axis="x", direction=tick_direction, length=8, pad=15)
+    ax.tick_params(axis="y", direction=tick_direction, length=6, pad=10,
+                   labelsize=y_tick_labelsize)
+    ax.tick_params(axis="x", direction=tick_direction, length=8, pad=15,
+                   labelsize=x_tick_labelsize)
+    if x_tick_rotation:
+        ticks = ax.get_xticks()
+        labels = [t.get_text() for t in ax.get_xticklabels()]
+        ax.set_xticks(ticks)
+        ax.set_xticklabels(labels, rotation=x_tick_rotation,
+                           ha="right" if x_tick_rotation > 0 else "center")
  
     # --- spine styling ---
     for spine in ax.spines.values():
@@ -699,12 +722,27 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
     share_y = kwargs.get("share_y", True)
     flip_x_axis = kwargs.get("flip_x_axis", False)
     no_facet_y_axis = kwargs.get("no_facet_y_axis", False)
+    legend_bbox = kwargs.get("legend_bbox", (1.01, 0.5))
+    col_row_only = kwargs.get("col_row_only", False)
+    # show_* kwargs — fine-grained control over title/label visibility
     show_row_titles = kwargs.get("show_row_titles", True)
     show_row_names = kwargs.get("show_row_names", True)
     show_col_names = kwargs.get("show_col_names", True)
+    show_x_axis_title = kwargs.get("show_x_axis_title", True)
+    row_order = kwargs.get("row_order", None)
+    col_order = kwargs.get("col_order", None)
  
     if save_path is not None:
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
+ 
+    # col_row_only=True: treat factors as [col] or [col, row] with no hue.
+    # A dummy column is injected so the plotting function receives a consistent
+    # factors list without an empty hue variable disrupting downstream code.
+    if col_row_only:
+        _dummy = "_single_hue"
+        grouped_stats = grouped_stats.copy()
+        grouped_stats[_dummy] = " "
+        factors = [_dummy] + list(factors)
  
     hue_variable = factors[0] if len(factors) >= 2 else None
     aggregate_x = factors[1] if len(factors) >= 2 else factors[0]
@@ -714,11 +752,13 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
         grouped_stats,
         row=aggregate_y,
         col=aggregate_x,
+        margin_titles=show_row_titles,
         sharey=share_y,
         sharex=share_x,
         height=height,
         aspect=aspect,
-        margin_titles=show_row_titles,
+        col_order=col_order,
+        row_order=row_order,
     )
  
     g.map_dataframe(
@@ -738,13 +778,14 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
             ax.tick_params(axis="y", length=0)
  
     # Set x and y axis labels only in central places
-    if x_axis_title is None:
-        x_axis_title = (
-            "Log " + name_conversion.get(x_axis, x_axis).replace("_", " ").title()
-            if log_x_axis
-            else name_conversion.get(x_axis, x_axis).replace("_", " ").title()
-        )
-    g.axes[-1, g.axes.shape[1] // 2].set_xlabel(x_axis_title)
+    if show_x_axis_title:
+        if x_axis_title is None:
+            x_axis_title = (
+                "Log " + name_conversion.get(x_axis, x_axis).replace("_", " ").title()
+                if log_x_axis
+                else name_conversion.get(x_axis, x_axis).replace("_", " ").title()
+            )
+        g.axes[-1, g.axes.shape[1] // 2].set_xlabel(x_axis_title)
  
     if y_axis_title is None:
         y_axis_title = (
@@ -752,14 +793,11 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
             if log_y_axis
             else name_conversion.get(y_axis, y_axis).replace("_", " ").title()
         )
- 
     g.axes[g.axes.shape[0] // 2, 0].set_ylabel(y_axis_title)
  
     if len(factors) >= 2:
         # column facet titles
         for ax in range(g.axes.shape[1]):
-            # put percentage sign for fraction variables
- 
             if re.search(
                 r"(?<![a-z])(?:percentage|fraction|prop)(?![a-z])",
                 aggregate_x,
@@ -778,31 +816,52 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
         # custom row facet labels
         if aggregate_y is not None:
             if not show_row_titles:
-                # seaborn stores margin title Text artists in _margin_titles_texts
+                # hide any margin title Text artists seaborn may have created
                 for t in getattr(g, "_margin_titles_texts", []):
                     t.set_visible(False)
-                # also clear any texts attached directly to the rightmost axes
-                for ax in range(g.axes.shape[0]):
-                    for t in g.axes[ax, -1].texts:
+                for row_idx in range(g.axes.shape[0]):
+                    for t in g.axes[row_idx, -1].texts:
                         t.set_visible(False)
             else:
-                for ax in range(g.axes.shape[0]):
-                    # put percentage sign for fraction variables
+                for row_idx in range(g.axes.shape[0]):
                     if re.search(
                         r"(?<![a-z])(?:percentage|fraction|prop)(?![a-z])",
                         aggregate_y,
                         re.IGNORECASE,
                     ):
-                        text = f"{int(g.row_names[ax] * 100)}\\% {name_conversion.get(aggregate_y, aggregate_y).replace('_', ' ').title()}"
+                        text = f"{int(g.row_names[row_idx] * 100)}\\% {name_conversion.get(aggregate_y, aggregate_y).replace('_', ' ').title()}"
                     else:
                         if show_row_names:
-                            text = f"{name_conversion.get(aggregate_y, aggregate_y).replace('_', ' ').title()}: {g.row_names[ax]}"
+                            text = f"{name_conversion.get(aggregate_y, aggregate_y).replace('_', ' ').title()}: {g.row_names[row_idx]}"
                         else:
-                            text = f"{g.row_names[ax]}"
-                    g.axes[ax, -1].texts[0].set_text(text)
+                            text = f"{g.row_names[row_idx]}"
+                    # Use seaborn's margin title text if it exists, else annotate
+                    if g.axes[row_idx, -1].texts:
+                        g.axes[row_idx, -1].texts[0].set_text(text)
+                    else:
+                        g.axes[row_idx, -1].annotate(
+                            text,
+                            xy=(1, 0.5),
+                            xycoords="axes fraction",
+                            xytext=(6, 0),
+                            textcoords="offset points",
+                            ha="left",
+                            va="center",
+                            rotation=90,
+                            fontsize=plt.rcParams.get("font.size", 10),
+                        )
  
     if add_legend is True:
-        g.add_legend()
+        # Use plt.legend() instead of g.add_legend() — seaborn's add_legend()
+        # physically shrinks the grid to make room for the legend, which creates
+        # a large whitespace gap to the right of the plots.
+        handles, labels = g.axes.flat[0].get_legend_handles_labels()
+        g.figure.legend(
+            handles, labels,
+            bbox_to_anchor=legend_bbox,
+            loc="center left",
+            frameon=False,
+        )
  
     # code to make the title centered above the grid not the legend
     plot_center_x = (
@@ -814,8 +873,6 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
             y=1.02,
             x=plot_center_x,
         )
-    elif title=="":
-        pass
     else:
         if log_y_axis is True:
             g.figure.suptitle(
