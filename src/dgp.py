@@ -117,8 +117,6 @@ class CopulaDGP:
         self.latent_sim = latent_sim
         self.sim_kwargs = sim_kwargs or {}
         
-        
-
         self._convert_marginals(marginals)
 
     def _generate_copula_uniforms(self):
@@ -127,7 +125,9 @@ class CopulaDGP:
         with the specified dependence structure.
         Returns: u_z, u_x of shape (n, k)
         """
-            
+        if self.rho is None:
+            raise ValueError("rho must be passed for Copula model")
+        
         if self.copula_model == 'gaussian':
             # 1. Generate Correlated Gaussians using a k x k covariance matrix
             mean = np.zeros(self.k)
@@ -254,32 +254,43 @@ class CopulaDGP:
             u_x = -1.0 / theta * np.log(arg)
         
         elif self.copula_model == 'mixture_uniform':
-            n_samples = self.n * self.k
+            # 1. Assign each sample (row) to a specific mixture component
+            # This determines which 'rho' each row will use
+            component_indices = self.rng.choice(len(self.weights), size=self.n, p=self.weights)
 
-            # 1. Assign each sample to a specific component based on weights
-            component_indices = self.rng.choice(len(self.weights), size=n_samples, p=self.weights)
+            # Initialize the full (n, k) latent Gaussian arrays
+            z_full = np.zeros((self.n, self.k))
+            x_full = np.zeros((self.n, self.k))
 
-            u_z_flat = np.zeros(n_samples)
-            u_x_flat = np.zeros(n_samples)
+            mean = np.zeros(self.k)
 
+            # 2. Generate data for each mixture component
             for i, rho in enumerate(self.correlations):
-                # Find indices belonging to this component
+                # Find which of the 'n' rows belong to this mixture component
                 mask = (component_indices == i)
                 count = np.sum(mask)
                 
                 if count > 0:
-                    # Generate Gaussian copula for this subset
-                    mean = [0, 0]
-                    cov = [[1, rho], [rho, 1]]
-                    # Sample (z, x) from bivariate normal
-                    bivariate = self.rng.multivariate_normal(mean, cov, size=count)
+                    # Generate Correlated Gaussians for these specific rows
+                    # using the shared k x k column covariance
+                    z = self.rng.multivariate_normal(mean=mean, cov=self.column_covariance, size=count)
+                    e = self.rng.multivariate_normal(mean=mean, cov=self.column_covariance, size=count)
                     
-                    # Transform to Uniform
-                    u_z_flat[mask] = ndtr(bivariate[:, 0])
-                    u_x_flat[mask] = ndtr(bivariate[:, 1])
+                    # Link Z and X using this component's specific rho
+                    if rho == 1:
+                        x = z
+                    elif rho == -1:
+                        x = -z
+                    else:
+                        x = rho * z + np.sqrt(1 - rho**2) * e
+                    
+                    # Place the generated rows back into the full arrays
+                    z_full[mask] = z
+                    x_full[mask] = x
 
-            u_z = u_z_flat.reshape(self.n, self.k)
-            u_x = u_x_flat.reshape(self.n, self.k)
+            # 3. Apply Gaussian CDF to the completed arrays to get Uniform margins
+            u_z = ndtr(z_full)
+            u_x = ndtr(x_full)
 
         else:
             raise NotImplementedError(f"Copula {self.copula_model} not implemented")
@@ -394,17 +405,151 @@ class CopulaDGP:
             arr = np.tile(arr, (1, repeats))
         return arr[:, : self.k]
 
-def BaseNetworkModel(CopulaDGP, BaseDGP):
-    def __init__(self, *args, **kwargs):
-        CopulaDGP.__init__(self, *args, **kwargs)
-        BaseDGP.__init__(self, *args, **kwargs)
-    def generate(self):
-        raise NotImplementedError("Subclasses should implement this!")
-    def name(self):
-        raise NotImplementedError("Subclasses should implement this!")
 
+class BaseSBM:
+    def __init__(self, 
+                 n,
+                 k,
+                 num_networks=2,
+                 block_probs_type=None,
+                 block_probs=None,
+                 community_assignment=None, 
+                 assignment_mode='random',
+                 assortativity=0.5,
+                 sparsity_bias=0.6,
+                 prob_switch=0.2,
+                 distance_probs=None,
+                 **kwargs):
+        """_summary_
 
-class GaussianNetwork(CopulaDGP, BaseDPG):
+        Parameters
+        ----------
+        n : int
+            Number of nodes
+        k : int
+            Number of communities
+        num_networks : int, optional
+            Number of networks, by default 1
+        block_probs : _type_, optional
+            _description_, by default None
+        community_assignment : _type_, optional
+            _description_, by default None
+        assignment_mode : str, optional
+            _description_, by default 'random'
+        prob_switch : float, optional
+            _description_, by default 0.7
+        distance_probs : _type_, optional
+            _description_, by default None
+        """
+        
+        self.n = n
+        self.num_networks = num_networks
+        if community_assignment is not None:
+            k = community_assignment[0].shape[1]
+            
+        self.community_assignment = community_assignment
+        self.k = k
+        self.assignment_mode = assignment_mode
+        self.prob_switch = prob_switch
+        self.block_probs_type = block_probs_type
+        self.block_probs = block_probs
+        self.distance_probs = distance_probs
+        self.sparsity_bias = sparsity_bias
+        self.assortativity = assortativity
+
+    def _sample_community_assignment(self):
+        assignment = [np.zeros((self.n, self.k)) for _ in range(self.num_networks)]
+        
+        if self.assignment_mode == 'random':
+            for i in range(self.num_networks):
+                idxs = self.rng.integers(low=0, high=self.k, size=self.n)
+                assignment[i][np.arange(self.n), idxs] = 1
+                
+        elif self.assignment_mode == 'correlated':
+            first_idxs = self.rng.integers(low=0, high=self.k, size=self.n)
+            assignment[0][np.arange(self.n), first_idxs] = 1
+            for i in range(1, self.num_networks):
+                # with some probability, copy the first assignment, otherwise random
+                switch_mask = self.rng.random(self.n) < self.prob_switch
+                n_switching_nodes = np.sum(switch_mask)
+                if n_switching_nodes > 0: 
+                    shift = self.rng.integers(1, self.k, size=n_switching_nodes)
+                    new_assignment = first_idxs.copy()
+                    new_assignment[switch_mask] = (first_idxs[switch_mask] + shift) % self.k
+                    assignment[i][np.arange(self.n), new_assignment] = 1
+        else:
+            raise ValueError(f"Unknown assignment_mode: {self.assignment_mode}")
+        
+        self.community_assignment = assignment
+        return assignment
+
+    def _generate_structured_matrix(self, assortativity=None):
+        if assortativity is None:
+            assortativity = self.assortativity
+            
+        # 1. Start with random base probabilities
+        mat = self.rng.random((self.k, self.k))
+
+        # Make symmetric (standard for undirected SBMs)
+        if self.symmetric:
+            mat = (mat + mat.T) / 2.0
+        
+        # 2. Create masks to separate diagonal from off-diagonal
+        diag_mask = np.eye(self.k, dtype=bool)
+
+        # 3. Apply Assortativity
+        # Multiply diagonal by (assortativity * 2) and off-diagonal by ((1 - assortativity) * 2)
+        # If assortativity=0.5, both multiply by 1.0 (no change).
+        mat[diag_mask] *= (assortativity * 2)
+        mat[~diag_mask] *= ((1.0 - assortativity) * 2)
+        
+        # 4. Apply Sparsity
+        mat *= (1-self.sparsity_bias)
+
+        return np.clip(mat, 0.0, 1.0)
+
+    def _sample_block_probs(self):
+        probs = []
+        if self.block_probs_type == 'random':
+            probs = [self._generate_structured_matrix() for _ in range(self.num_networks)]
+        elif self.block_probs_type == 'identical':
+            # Generate one matrix and use it for all networks
+            base_prob = self._generate_structured_matrix()
+            probs = [base_prob for _ in range(self.num_networks)]
+        elif self.block_probs_type == 'correlated':
+            base_prob = self._generate_structured_matrix()
+            for i in range(1, self.num_networks):
+                # Introduce some correlation by adding noise
+                noise = self.rng.normal(loc=0.0, scale=0.1, size=base_prob.shape)
+                probs.append(np.clip(base_prob + noise, 0.0, 1.0))
+        elif self.block_probs_type == 'switched':
+            for i in range(self.num_networks):
+                assortativity = self.assortativity if i % 2 == 0 else 1 - self.assortativity
+                new_prob = self._generate_structured_matrix(assortativity)
+                probs.append(new_prob)
+
+        elif self.block_probs_type == 'distance':
+            raise NotImplementedError
+            
+        else:
+            raise ValueError(f"Unknown block_probs_type: {self.block_probs_type}")
+        
+        self.block_probs = probs
+        
+        return probs
+    
+    def _sample_sbm_latent(self):
+        if self.community_assignment is None:
+            community_assignment = self._sample_community_assignment()
+            self.community_assignment = community_assignment
+        if self.block_probs is None:
+            block_probs = self._sample_block_probs()
+            self.block_probs = block_probs
+
+        return self.community_assignment, self.block_probs
+    
+
+class GaussianNetwork(CopulaDGP, BaseDPG, BaseSBM):
     """
     Weighted network DGP with Gaussian weights on edges.
 
@@ -434,7 +579,7 @@ class GaussianNetwork(CopulaDGP, BaseDPG):
     def __init__(self, 
                  n, 
                  k, 
-                 rho, 
+                 rho=None, 
                  marginals='gaussian', 
                  edge_var=1, 
                  rng=None, 
@@ -448,10 +593,12 @@ class GaussianNetwork(CopulaDGP, BaseDPG):
                  sparsity_bias=0,
                  make_sparse=False,
                  column_covariance=None,
+                 sbm=False,
                  **args):
         
         # note here by multiple inheritance CopulaDGP init will be called
-        super().__init__(n=n,
+        CopulaDGP.__init__(self, 
+                             n=n,
                          k=k, 
                          rho=rho, 
                          marginals=marginals, 
@@ -463,12 +610,14 @@ class GaussianNetwork(CopulaDGP, BaseDPG):
                          center_latent=center_latent, 
                          column_covariance=column_covariance,
                           **args)
+        BaseSBM.__init__(self, n=n, k=k, **args)
         
         self.edge_var = edge_var
         self.symmetric = symmetric
         self.self_loops = self_loops
         self.sparsity_bias = sparsity_bias
         self.make_sparse = make_sparse
+        self.sbm = sbm
     
     def _make_sparse(self, expected):
         logits = expected - self.sparsity_bias
@@ -483,9 +632,16 @@ class GaussianNetwork(CopulaDGP, BaseDPG):
         return weights * mask
 
     def generate(self):
-
-        X, Z = self._sample_latent()
-
+        if self.sbm:
+            community_assignment, probs_matrices = self._sample_sbm_latent()
+            Z_community, Z_probs = community_assignment[0], probs_matrices[0]
+            X_community, X_probs = community_assignment[1], probs_matrices[1]
+            
+            X = X_community @ X_probs**0.5
+            Z = Z_community @ Z_probs**0.5
+        else:
+            X, Z = self._sample_latent()
+        
         expected_A = Z @ Z.T
         expected_B = X @ X.T
         
@@ -520,7 +676,7 @@ class GaussianNetwork(CopulaDGP, BaseDPG):
         return f"GaussianNetwork_" + str(self.copula_model) + f"_rho{self.rho}"
 
 
-class BernoulliNetwork(CopulaDGP, BaseDPG):
+class BernoulliNetwork(CopulaDGP, BaseDPG, BaseSBM):
     """
     Network Data Generating Process using Bernoulli likelihood.
 
@@ -547,7 +703,7 @@ class BernoulliNetwork(CopulaDGP, BaseDPG):
     def __init__(self, 
                  n, 
                  k, 
-                 rho, 
+                 rho=None, 
                  marginals='gaussian', 
                  edge_var=1, 
                  rng=None, 
@@ -561,10 +717,10 @@ class BernoulliNetwork(CopulaDGP, BaseDPG):
                  sparsity_bias=0,
                  rdpg=None,
                  column_covariance=None,
+                 sbm=False,
                  **args):
         
-        # note here by multiple inheritance CopulaDGP init will be called
-        super().__init__(n=n,
+        CopulaDGP.__init__(self, n=n,
                          k=k, 
                          rho=rho, 
                          marginals=marginals, 
@@ -577,22 +733,30 @@ class BernoulliNetwork(CopulaDGP, BaseDPG):
                          column_covariance=column_covariance,
                           **args)
         
+        BaseSBM.__init__(self, n=n, k=k, **args)
+        
         self.edge_var = edge_var
         self.symmetric = symmetric
         self.self_loops = self_loops
         self.sparsity_bias = sparsity_bias
         self.rdpg = rdpg
-
+        self.sbm = sbm
+        
     def get_name(self):
         return f"BernoulliNetwork_" + str(self.copula_model) + f"_rho{self.rho}"
     
     def generate(self):
-        
-        
-        X, Z = self._sample_latent()
-        
-        while (not np.isfinite(X).all()) or (not np.isfinite(Z).all()):
+        if self.sbm:
+            community_assignment, probs_matrices = self._sample_sbm_latent()
+            Z_community, Z_probs = community_assignment[0], probs_matrices[0]
+            X_community, X_probs = community_assignment[1], probs_matrices[1]
+            
+            X = X_community @ X_probs**0.5
+            Z = Z_community @ Z_probs**0.5
+        else:
             X, Z = self._sample_latent()
+            while (not np.isfinite(X).all()) or (not np.isfinite(Z).all()):
+                X, Z = self._sample_latent()
         
         if self.rdpg is not None:
             if self.rdpg=='max':
@@ -610,16 +774,20 @@ class BernoulliNetwork(CopulaDGP, BaseDPG):
                 Z = Z/np.sqrt(Z.shape[1])
             else:
                 raise Exception(f"Unknown rdpg option: {self.rdpg}")
-
-        # sparsity applied directly to inner product, maybe worht looking into 
-        # a randomly shutting down some edge like weighted network
-        if self.rdpg is not None:
-            expected_A = np.clip(Z @ Z.T - self.sparsity_bias, 0, 1)
-            expected_B = np.clip(X @ X.T - self.sparsity_bias, 0, 1)
-            
+        elif self.rdpg is not None:
+            # sparsity applied directly to inner product, maybe worht looking into 
+            # a randomly shutting down some edge like weighted network
+            expected_A = Z @ Z.T - self.sparsity_bias
+            expected_B = X @ X.T - self.sparsity_bias
+        elif self.sbm is True:
+            expected_A = Z @ Z.T
+            expected_B = X @ X.T
         else:
-            expected_A = np.clip(expit(Z @ Z.T - self.sparsity_bias), 0, 1)
-            expected_B = np.clip(expit(X @ X.T - self.sparsity_bias), 0, 1)
+            expected_A = expit(Z @ Z.T - self.sparsity_bias)
+            expected_B = expit(X @ X.T - self.sparsity_bias)
+        
+        expected_A = np.clip(expected_A, 0, 1)
+        expected_B = np.clip(expected_B, 0, 1)
 
         try:
             if self.symmetric is True: 
