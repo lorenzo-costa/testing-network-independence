@@ -62,7 +62,7 @@ def load_hdf5(path):
         return {k: read_obj(v) for k, v in f.items()}
 
 if __name__ == "__main__":
-    nsim = 1
+    nsim = 75
     n = [100, 200, 300]
     k = [3]
     rho = [0.2]
