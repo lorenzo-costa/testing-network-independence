@@ -605,14 +605,7 @@ class QAP(BaseMethod):
             self.permutation_distribution.append(test_stat_perm)
 
         # compute pvalue
-        pvalue = np.mean(
-            [i >= self.test_stat_estimate for i in self.permutation_distribution]
-        )
-
-        l_pos = np.mean(self.permutation_distribution <= np.abs(self.test_stat_estimate))
-        l_neg = np.mean(self.permutation_distribution <= -np.abs(self.test_stat_estimate))
-
-        self.pvalue = 1 - l_pos + l_neg
+        self.pvalue = np.mean(np.abs(self.permutation_distribution) >= np.abs(self.test_stat_estimate))
         
         self.reject_null = bool(self.pvalue < self.alpha)
 

@@ -108,11 +108,12 @@ if __name__ == "__main__":
         "sparsity_bias",
         "prob_switch",
         "assignment_mode",
-        "block_probs_type"
+        "block_probs_type",
+        "assortativity"
     ]
 
     param_values = product(
-        setup, method, n, k, alpha, marginals, rho, edge_var, npermutations, sparsity_bias, prob_switch, assignment_mode, block_probs_type
+        setup, method, n, k, alpha, marginals, rho, edge_var, npermutations, sparsity_bias, prob_switch, assignment_mode, block_probs_type, assortativity
     )
 
     factorial_design = [dict(zip(param_names, v)) for v in param_values]

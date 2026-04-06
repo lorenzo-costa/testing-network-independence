@@ -751,40 +751,40 @@ class BernoulliNetwork(CopulaDGP, BaseDPG, BaseSBM):
             Z_community, Z_probs = community_assignment[0], probs_matrices[0]
             X_community, X_probs = community_assignment[1], probs_matrices[1]
             
-            X = X_community @ X_probs**0.5
-            Z = Z_community @ Z_probs**0.5
+            expected_A = Z_community @ Z_probs @ Z_community.T
+            expected_B = X_community @ X_probs @ X_community.T
+            
+            # placeholder, no real Z and X for SBM
+            X, Z = np.random.normal(size=(self.n, self.k)), np.random.normal(size=(self.n, self.k))
         else:
             X, Z = self._sample_latent()
             while (not np.isfinite(X).all()) or (not np.isfinite(Z).all()):
                 X, Z = self._sample_latent()
         
-        if self.rdpg is not None:
-            if self.rdpg=='max':
-                # normalise in [-1, 1]
-                X = X/np.max(X, axis=0, keepdims=True)
-                Z = Z/np.max(Z, axis=0, keepdims=True)
-            elif self.rdpg=='spectral':
-                X = X / np.sqrt(np.linalg.norm(X, ord=2))
-                Z = Z / np.sqrt(np.linalg.norm(Z, ord=2))
-            elif self.rdpg=='minmax':
-                X = (X- np.min(X, axis=0, keepdims=True)) / (np.max(X, axis=0, keepdims=True) - np.min(X, axis=0, keepdims=True) + 1e-15)
-                X = X/np.sqrt(X.shape[1])
-                
-                Z = (Z- np.min(Z, axis=0, keepdims=True)) / (np.max(Z, axis=0, keepdims=True) - np.min(Z, axis=0, keepdims=True) + 1e-15)
-                Z = Z/np.sqrt(Z.shape[1])
+            if self.rdpg is not None:
+                if self.rdpg=='max':
+                    # normalise in [-1, 1]
+                    X = X/np.max(X, axis=0, keepdims=True)
+                    Z = Z/np.max(Z, axis=0, keepdims=True)
+                elif self.rdpg=='spectral':
+                    X = X / np.sqrt(np.linalg.norm(X, ord=2))
+                    Z = Z / np.sqrt(np.linalg.norm(Z, ord=2))
+                elif self.rdpg=='minmax':
+                    X = (X- np.min(X, axis=0, keepdims=True)) / (np.max(X, axis=0, keepdims=True) - np.min(X, axis=0, keepdims=True) + 1e-15)
+                    X = X/np.sqrt(X.shape[1])
+                    
+                    Z = (Z- np.min(Z, axis=0, keepdims=True)) / (np.max(Z, axis=0, keepdims=True) - np.min(Z, axis=0, keepdims=True) + 1e-15)
+                    Z = Z/np.sqrt(Z.shape[1])
+                else:
+                    raise Exception(f"Unknown rdpg option: {self.rdpg}")
+            elif self.rdpg is not None:
+                # sparsity applied directly to inner product, maybe worht looking into 
+                # a randomly shutting down some edge like weighted network
+                expected_A = Z @ Z.T - self.sparsity_bias
+                expected_B = X @ X.T - self.sparsity_bias
             else:
-                raise Exception(f"Unknown rdpg option: {self.rdpg}")
-        elif self.rdpg is not None:
-            # sparsity applied directly to inner product, maybe worht looking into 
-            # a randomly shutting down some edge like weighted network
-            expected_A = Z @ Z.T - self.sparsity_bias
-            expected_B = X @ X.T - self.sparsity_bias
-        elif self.sbm is True:
-            expected_A = Z @ Z.T
-            expected_B = X @ X.T
-        else:
-            expected_A = expit(Z @ Z.T - self.sparsity_bias)
-            expected_B = expit(X @ X.T - self.sparsity_bias)
+                expected_A = expit(Z @ Z.T - self.sparsity_bias)
+                expected_B = expit(X @ X.T - self.sparsity_bias)
         
         expected_A = np.clip(expected_A, 0, 1)
         expected_B = np.clip(expected_B, 0, 1)
