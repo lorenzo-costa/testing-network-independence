@@ -777,7 +777,6 @@ class BernoulliNetwork(CopulaDGP, BaseDPG, BaseSBM):
                     Z = Z/np.sqrt(Z.shape[1])
                 else:
                     raise Exception(f"Unknown rdpg option: {self.rdpg}")
-            elif self.rdpg is not None:
                 # sparsity applied directly to inner product, maybe worht looking into 
                 # a randomly shutting down some edge like weighted network
                 expected_A = Z @ Z.T - self.sparsity_bias

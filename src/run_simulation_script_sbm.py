@@ -80,7 +80,7 @@ if __name__ == "__main__":
 
     npermutations = [200]
     metrics = [ComputeAll()]
-    assortativity = [0.2, 0.5, 0.8]
+    assortativity = [-0.8, -0.5, 0.5, 0.8]
     sparsity_bias = [0.3, 0.7]
     prob_switch = [0.2, 0.5]
     assignment_mode = ['random', 'correlated']
