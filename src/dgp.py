@@ -84,6 +84,7 @@ class CopulaDGP:
         latent_sim=None,       # NEW: name of a sim function, e.g. "quadratic"
         sim_kwargs=None,       # NEW: extra kwargs forwarded to that function
         column_covariance=None,
+        rdpg_distribution=None,
         **kwargs,
     ):
         if rng is None:
@@ -107,6 +108,7 @@ class CopulaDGP:
         self.weights = weights
         self.correlations = correlations
         self.center_latent = center_latent
+        self.rdpp_distribution = rdpg_distribution
 
         # ── sim path ──────────────────────────────────────────────────────────
         if latent_sim is not None and latent_sim not in SIM_REGISTRY:
@@ -131,8 +133,8 @@ class CopulaDGP:
         if self.copula_model == 'gaussian':
             # 1. Generate Correlated Gaussians using a k x k covariance matrix
             mean = np.zeros(self.k)
-            z = self.rng.multivariate_normal(mean=mean, cov=self.column_covariance, size=self.n)
-            e = self.rng.multivariate_normal(mean=mean, cov=self.column_covariance, size=self.n)
+            z = self.rng.multivariate_normal(mean=mean, cov=self.column_covariance, size=self.n, check_valid='warn')
+            e = self.rng.multivariate_normal(mean=mean, cov=self.column_covariance, size=self.n, check_valid='warn')
             
             if self.rho == 1:
                 x = z
@@ -320,6 +322,7 @@ class CopulaDGP:
                 'gamma':     (stats.gamma, ['a', 'scale']), # Special handling for scale
                 'lognormal': (stats.lognorm, ['s']),
                 'cauchy' :  (stats.cauchy, ['loc', 'scale']),
+                'dirichlet': (stats.dirichlet, ['alpha'])
             }
 
             if name not in registry:
@@ -345,7 +348,7 @@ class CopulaDGP:
         # 3. Apply to both variables
         self.marginal_x = parse_dist(marginals.get("x", "gaussian"))
         self.marginal_z = parse_dist(marginals.get("z", "gaussian"))
-        
+
     def _sample_latent(self):
         """Return X, Z each of shape (n, k)."""
 
@@ -356,6 +359,8 @@ class CopulaDGP:
         u_z, u_x = self._generate_copula_uniforms()
         Z = self.marginal_z.ppf(u_z)
         X = self.marginal_x.ppf(u_x)
+        while (not np.isfinite(X).all()) or (not np.isfinite(Z).all()):
+                X, Z = self._sample_latent()
 
         if self.center_latent:
             Z = Z - Z.mean(axis=0)
@@ -383,6 +388,8 @@ class CopulaDGP:
 
         X = self._align_shape(np.asarray(raw_x, dtype=float))
         Z = self._align_shape(np.asarray(raw_z, dtype=float))
+        while (not np.isfinite(X).all()) or (not np.isfinite(Z).all()):
+                X, Z = self._sample_latent()
 
         if self.center_latent:
             X = X - X.mean(axis=0)
@@ -641,6 +648,8 @@ class GaussianNetwork(CopulaDGP, BaseDPG, BaseSBM):
             Z = Z_community @ Z_probs**0.5
         else:
             X, Z = self._sample_latent()
+            while (not np.isfinite(X).all()) or (not np.isfinite(Z).all()):
+                X, Z = self._sample_latent()
         
         expected_A = Z @ Z.T
         expected_B = X @ X.T
