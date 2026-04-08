@@ -65,7 +65,7 @@ if __name__ == "__main__":
     nsim = 75
     n = [100, 200, 300]
     k = [3]
-    rho = [0]
+    rho = [0.2]
     alpha = [0.05]
     marginals = ['gaussian', 'uniform -1 1', 'cauchy', 't 5', 'chi 5']
     edge_var = [1]
@@ -83,11 +83,6 @@ if __name__ == "__main__":
     metrics = [ComputeAll()]
     approximation = ["F-distr"]
     
-    np.array(
-        [[2, 1.25, 0.0], 
-         [1.25, 1, 0.0],
-         [0.0, 0.0, 0.1]]
-        )
     column_covariance = [
         np.array([[10, 7, 0.0], [7, 5, 0.0], [0.0, 0.0, 1]]),
         np.eye(3)
