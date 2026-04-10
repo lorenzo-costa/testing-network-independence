@@ -133,6 +133,7 @@ class PermutationTest(BaseMethod):
         alpha=0.05,
         rng=None,
         solver=None,
+        use_true_latent=False,
         k=None,
         test_function=rv_coefficient_adjusted,
         permutation_type="latent",
@@ -159,6 +160,7 @@ class PermutationTest(BaseMethod):
         self.k = k
         self.test_function = test_function
         self.permutation_type = permutation_type
+        self.use_true_latent = use_true_latent
 
     def fit(self, data, **kwargs):
         """Get null distribution of RV coefficient with permutations
@@ -177,36 +179,44 @@ class PermutationTest(BaseMethod):
             raise ValueError(
                 "Invalid data format. Expected a dictionary with keys 'A', 'B'."
             )
-        
-        if 'estimated_X' not in data.keys():
-            # need to estimate latent positions
-            A = data.get("A")
-            B = data.get("B")
-            self.A = A
-            self.B = B
-            # true latent positions may not be provided
-            X = data.get("X", None)
-            Z = data.get("Z", None)
 
-            # get the number of dimensions (k). If X or Z is provided, use its
-            # shape (i.e. the "true" value of k)
-            if X is not None or Z is not None:
-                self.k = X.shape[1] if X is not None else Z.shape[1]
-            else:
-                if self.k is None:
-                    raise ValueError(
-                        "Number of dimensions (k) must be specified if X and Z are not provided."
-                    )
-                self.k = self.k
-
-            Zhat = self.solver(A, k=self.k, rng=self.rng)[0]  # 0 is the xhat, 1 are the evalues
-            Xhat = self.solver(B, k=self.k, rng=self.rng)[0]
-
+        if self.use_true_latent:
+            if 'X' not in data.keys() or 'Z' not in data.keys():
+                raise ValueError("True latent positions must be provided when use_true_latent is True.")
+            X = data['X']
+            Z = data['Z']
+            Xhat = X.copy()
+            Zhat = Z.copy()
         else:
-            Zhat = data.get("estimated_Z")
-            Xhat = data.get("estimated_X")
-            Z = data.get("true_Z", None)
-            X = data.get("true_X", None)
+            if 'estimated_X' not in data.keys():
+                # need to estimate latent positions
+                A = data.get("A")
+                B = data.get("B")
+                self.A = A
+                self.B = B
+                # true latent positions may not be provided
+                X = data.get("X", None)
+                Z = data.get("Z", None)
+
+                # get the number of dimensions (k). If X or Z is provided, use its
+                # shape (i.e. the "true" value of k)
+                if X is not None or Z is not None:
+                    self.k = X.shape[1] if X is not None else Z.shape[1]
+                else:
+                    if self.k is None:
+                        raise ValueError(
+                            "Number of dimensions (k) must be specified if X and Z are not provided."
+                        )
+                    self.k = self.k
+
+                Zhat = self.solver(A, k=self.k, rng=self.rng)[0]  # 0 is the xhat, 1 are the evalues
+                Xhat = self.solver(B, k=self.k, rng=self.rng)[0]
+
+            else:
+                Zhat = data.get("estimated_Z")
+                Xhat = data.get("estimated_X")
+                Z = data.get("Z", None)
+                X = data.get("X", None)
             
         self.X = X
         self.Z = Z
@@ -272,6 +282,7 @@ class ObservedCVM(BaseMethod):
         npermutations=None,
         alpha=0.05,
         rng=None,
+        use_true_latent=False,
         test_function=None,
         permutation_type="latent",
         **kwargs,
@@ -292,6 +303,7 @@ class ObservedCVM(BaseMethod):
         
         self.test_function = test_function
         self.permutation_type = permutation_type
+        self.use_true_latent = use_true_latent
 
     def fit(self, data, **kwargs):
         """Get null distribution of RV coefficient with permutations
@@ -459,8 +471,8 @@ class LLKRatioTest(BaseMethod):
         else:
             Xhat = data.get("estimated_X")
             Zhat = data.get("estimated_Z")
-            X = data.get("true_X", None)
-            Z = data.get("true_Z", None)
+            X = data.get("X", None)
+            Z = data.get("Z", None)
 
         n, k = Zhat.shape
         self.Zhat = Zhat
@@ -685,6 +697,7 @@ class DiffusionCorrelation(BaseMethod):
         alpha=0.05,
         rng=None,
         solver=None,
+        use_true_latent=False,
         use_laplacian=False,
         **kwargs,
     ):
@@ -706,24 +719,26 @@ class DiffusionCorrelation(BaseMethod):
         self.use_laplacian = use_laplacian
         
         self.eps = 1e-10
-
-    # def compute_normalized_laplacian(self, K):
-    #     """
-    #     Compute normalized graph Laplacian
-    #     L = B^(-1/2) * K * B^(-1/2) where B is the degree matrix
-    #     """
-    #     degrees = np.sum(K, axis=1)
-
-    #     degrees[degrees < 1e-10] = 1.0 
         
-    #     B_inv_sqrt = np.diag(1.0 / np.sqrt(degrees))
+        self.use_true_latent = use_true_latent
 
-    #     L = B_inv_sqrt @ K @ B_inv_sqrt
+    def compute_normalized_laplacian(self, K):
+        """
+        Compute normalized graph Laplacian
+        L = B^(-1/2) * K * B^(-1/2) where B is the degree matrix
+        """
+        degrees = np.sum(K, axis=1)
+
+        degrees[degrees < 1e-10] = 1.0 
         
-    #     L = (L + L.T) / 2
-    #     L = np.nan_to_num(L)
+        B_inv_sqrt = np.diag(1.0 / np.sqrt(degrees))
+
+        L = B_inv_sqrt @ K @ B_inv_sqrt
         
-    #     return L
+        L = (L + L.T) / 2
+        L = np.nan_to_num(L)
+        
+        return L
 
     def compute_distance_matrix(self, U):
         return squareform(pdist(U, metric="euclidean"))
@@ -752,45 +767,52 @@ class DiffusionCorrelation(BaseMethod):
             raise ValueError(
                 "Invalid data format. Expected a dictionary with keys 'A', 'B'."
             )
-
-        if 'estimated_X' not in data.keys() or 'estimated_Z' not in data.keys():
-            
-            A = data.get("A")
-            B = data.get("B")
-            self.A = A
-            self.B = B
-            # true latent positions may not be provided
-            X = data.get("X", None)
-            Z = data.get("Z", None)
-
-            # get the number of dimensions (k). If X or Z is provided, use its
-            # shape (i.e. the "true" value of k)
-            if X is not None or Z is not None:
-                self.k = X.shape[1] if X is not None else Z.shape[1]
-            else:
-                if self.k is None:
-                    raise ValueError(
-                        "Number of dimensions (k) must be specified if X and Z are not provided."
-                    )
-                self.k = self.k
-
-            if self.use_laplacian:
-                # compute normalized Laplacian
-                A_laplacian = self.compute_normalized_laplacian(A)
-                B_laplacian = self.compute_normalized_laplacian(B)
-            else:
-                A_laplacian = A
-                B_laplacian = B
-
-            # diffusion map for t=1 (i.e. ASE)
-            Zhat = self.solver(A_laplacian, k=self.k, rng=self.rng)[0]  # 0 is the xhat, 1 are the evalues
-            Xhat = self.solver(B_laplacian, k=self.k, rng=self.rng)[0]
-
+        
+        if self.use_true_latent:
+            if 'X' not in data.keys() or 'Z' not in data.keys():
+                raise ValueError("True latent positions must be provided when use_true_latent is True.")
+            X = data['X']
+            Z = data['Z']
+            Xhat = X.copy()
+            Zhat = Z.copy()
         else:
-            Xhat = data.get("estimated_X")
-            Zhat = data.get("estimated_Z")
-            X = data.get("true_X", None)
-            Z = data.get("true_Z", None)
+            if 'estimated_X' not in data.keys():
+                # need to estimate latent positions
+                A = data.get("A")
+                B = data.get("B")
+                self.A = A
+                self.B = B
+                # true latent positions may not be provided
+                X = data.get("X", None)
+                Z = data.get("Z", None)
+
+                # get the number of dimensions (k). If X or Z is provided, use its
+                # shape (i.e. the "true" value of k)
+                if X is not None or Z is not None:
+                    self.k = X.shape[1] if X is not None else Z.shape[1]
+                else:
+                    if self.k is None:
+                        raise ValueError(
+                            "Number of dimensions (k) must be specified if X and Z are not provided."
+                        )
+                    self.k = self.k
+                
+                if self.use_laplacian:
+                # compute normalized Laplacian
+                    A_laplacian = self.compute_normalized_laplacian(A)
+                    B_laplacian = self.compute_normalized_laplacian(B)
+                else:
+                    A_laplacian = A
+                    B_laplacian = B
+
+                Zhat = self.solver(A_laplacian, k=self.k, rng=self.rng)[0]  # 0 is the xhat, 1 are the evalues
+                Xhat = self.solver(B_laplacian, k=self.k, rng=self.rng)[0]
+
+            else:
+                Zhat = data.get("estimated_Z")
+                Xhat = data.get("estimated_X")
+                Z = data.get("Z", None)
+                X = data.get("X", None)
 
         self.X = X
         self.Z = Z
@@ -816,10 +838,6 @@ class DiffusionCorrelation(BaseMethod):
                     pvalue=1.0
                     print("Error in computing MGC. Check the distance matrices.")
                     print(distances_A.sum(), distances_B.sum())
-
-        # elif self.test_method == "dcorr":
-        #     dcorr = self.compute_dcorr(distances_A, distances_B)
-        #     p_value, null_dist = self.permutation_test(A, X, dcorr)
         else:
             print(self.test_method)
             raise ValueError("Unknown method for computing test statistic.")

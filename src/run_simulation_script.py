@@ -68,14 +68,14 @@ if __name__ == "__main__":
     rho = [0.2]
     alpha = [0.05]
     marginals = ['gaussian', 'uniform -1 1', 'cauchy', 't 5', 'chi 5']
-    edge_var = [1]
+    edge_var = [1, 3]
 
     method = [
         partial(RVPermutationTest, permutation_type="latent"),
         QAP,
         DiffusionCorrelation,
         partial(ObservedCVM, test_function=partial(observed_cvm_dependency, degree=2)),
-        partial(ObservedCVM, test_function=partial(observed_cvm_dependency, degree=1)),
+        # partial(ObservedCVM, test_function=partial(observed_cvm_dependency, degree=1)),
     ]
 
     npermutations = [200]
@@ -83,21 +83,18 @@ if __name__ == "__main__":
     metrics = [ComputeAll()]
     approximation = ["F-distr"]
     
-    column_covariance = [
-        np.array([[10, 7, 0.0], [7, 5, 0.0], [0.0, 0.0, 1]]),
-        np.eye(3)
-        ]
+    use_true_latent = [False, True]
     
     setup = [
         (partial(GaussianNetwork, copula_model='gaussian'), ASE),
-        # (partial(GaussianNetwork, copula_model='clayton'), ASE),
-        # (partial(GaussianNetwork, copula_model='gumbel'), ASE),
+        (partial(GaussianNetwork, copula_model='clayton'), ASE),
+        (partial(GaussianNetwork, copula_model='gumbel'), ASE),
         (partial(GaussianNetwork, copula_model='student_t', df=3), ASE),
         (partial(GaussianNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.5, -0.5]), ASE),
         
         (partial(BernoulliNetwork, copula_model='gaussian'), pgd_fit_wrapper),
-        # (partial(BernoulliNetwork, copula_model='clayton'), pgd_fit_wrapper),
-        # (partial(BernoulliNetwork, copula_model='gumbel'), pgd_fit_wrapper),
+        (partial(BernoulliNetwork, copula_model='clayton'), pgd_fit_wrapper),
+        (partial(BernoulliNetwork, copula_model='gumbel'), pgd_fit_wrapper),
         (partial(BernoulliNetwork, copula_model='student_t', df=3), pgd_fit_wrapper),
         (partial(BernoulliNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.5, -0.5]), pgd_fit_wrapper),
     ]
@@ -116,11 +113,11 @@ if __name__ == "__main__":
         "approximation",
         "npermutations",
         "df",
-        "column_covariance"
+        "use_true_latent"
     ]
 
     param_values = product(
-        setup, method, n, k, alpha, marginals, rho, edge_var, approximation, npermutations, df, column_covariance
+        setup, method, n, k, alpha, marginals, rho, edge_var, approximation, npermutations, df, use_true_latent
     )
 
     factorial_design = [dict(zip(param_names, v)) for v in param_values]
@@ -145,7 +142,7 @@ if __name__ == "__main__":
     rng2 = np.random.default_rng(2)    
 
     param_values2 = product(
-        setup2, method, n, k, alpha, marginals, rho2, edge_var, approximation, npermutations, df, column_covariance
+        setup2, method, n, k, alpha, marginals, rho2, edge_var, approximation, npermutations, df, use_true_latent
     )
 
     factorial_design2 = [dict(zip(param_names, v)) for v in param_values2]
