@@ -80,7 +80,13 @@ if __name__ == "__main__":
 
     npermutations = [200]
     df = [3]
-    metrics = [ComputeAll()]
+    metrics = [
+        Rejection(),
+        FalseRejection(),
+        TrueRejection(),
+        FalseAcceptance(),
+        TrueAcceptance(),
+    ]
     approximation = ["F-distr"]
     
     use_true_latent = [False, True]
