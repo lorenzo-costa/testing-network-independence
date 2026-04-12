@@ -64,7 +64,7 @@ def load_hdf5(path):
 if __name__ == "__main__":
     nsim = 100
     n = [100, 200, 300]
-    k = [4]
+    k = [3]
     rho = [0.2]
     alpha = [0.05]
     marginals = ['gaussian', 'uniform -1 1', 'cauchy', 't 5', 'chi 5']
