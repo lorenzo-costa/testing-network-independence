@@ -162,13 +162,20 @@ def _joint_cdf_bit(sa_dense, sb_dense, sort_order, M, K):
     return result / M
 
 
-def observed_cvm_dependency(A, B, degree=2):
+def observed_cvm_dependency(A, B, degree=2, rank_method='average'):
     """
     Computes a rotationally-invariant Cramér-von Mises copula dependency
     measure between two graphs A and B based on shared neighbor counts.
 
     Parameters:
         A, B (np.ndarray): N x N binary adjacency matrices.
+        degree (int): The degree of the shared neighbor count (default is 2).
+        rank_method (str): The ranking method to use (default is 'max').
+            Options include:
+            - 'max': Use the maximum rank (default). Plug-in estimator standard
+            in copula theory (Deheuvels 1979). Has jump discontinuities.
+            - 'average': Use the average rank. AKA mid-rank copula transform.
+            Sort of smoothing
     Returns:
         float: The Cramér-von Mises statistic.
     """
@@ -187,19 +194,19 @@ def observed_cvm_dependency(A, B, degree=2):
     M = len(sa_vals)
 
     # 3. Marginal empirical CDFs  (unchanged from original)
-    F_A = rankdata(sa_vals, method='max') / M
-    F_B = rankdata(sb_vals, method='max') / M
+    F_A = rankdata(sa_vals, method=rank_method) / M
+    F_B = rankdata(sb_vals, method=rank_method) / M
 
     # 4. Dense ranks for BIT indexing  (maps unique values -> 1..K)
-    sa_dense = rankdata(sa_vals, method='dense').astype(np.int64)
-    sb_dense = rankdata(sb_vals, method='dense').astype(np.int64)
+    sa_dense = rankdata(sa_vals, method=rank_method).astype(np.int64)
+    sb_dense = rankdata(sb_vals, method=rank_method).astype(np.int64)
     K = int(sb_dense.max())
 
     # Sort indices by ascending sa_dense (stable = deterministic tie ordering)
     sort_order = np.argsort(sa_dense, kind='stable').astype(np.int64)
 
-    # 5. Joint empirical CDF  — O(M log M) instead of O(M²)
+    # empirical copula via rank transform O(M log M) instead of O(M²)
     F_AB = _joint_cdf_bit(sa_dense, sb_dense, sort_order, M, K)
 
     # 6. Cramér-von Mises statistic
-    return float(np.sum((F_AB - F_A * F_B) ** 2))
+    return float(np.mean((F_AB - F_A * F_B) ** 2))
