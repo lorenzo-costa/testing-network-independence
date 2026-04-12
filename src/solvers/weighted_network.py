@@ -24,7 +24,6 @@ def ASE(A, k=2, rng=None, **kwargs):
     np.ndarray, np.ndarray
         Estimated latent positions, estimated eigenvalues
     """
-    k=4
     if rng is None:
         rng = np.random.default_rng()
 

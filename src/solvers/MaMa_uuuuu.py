@@ -327,7 +327,6 @@ def pgd_fit(A, k,
     -------
     Z_hat, alpha_hat, beta_hat  (or with history appended)
     """
-    k=4
     if rng is None:
         rng = np.random.default_rng()
 
@@ -402,7 +401,6 @@ def pgd_fit_wrapper(A, k,
                     return_history=False,
                     backend='auto'):
     """Wrapper for pgd_fit returning Z + alpha[:, None]."""
-    k=2
     if return_history:
         Z, alpha, beta, history = pgd_fit(
             A, k, X=X, eta_Z=eta_Z, eta_alpha=eta_alpha, eta_beta=eta_beta,
