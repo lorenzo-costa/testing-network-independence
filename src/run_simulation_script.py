@@ -81,11 +81,7 @@ if __name__ == "__main__":
     npermutations = [200]
     df = [3]
     metrics = [
-        Rejection(),
-        FalseRejection(),
-        TrueRejection(),
-        FalseAcceptance(),
-        TrueAcceptance(),
+       ComputeAll(),
     ]
     approximation = ["F-distr"]
     

@@ -327,7 +327,7 @@ def pgd_fit(A, k,
     -------
     Z_hat, alpha_hat, beta_hat  (or with history appended)
     """
-    k = 4
+
     if rng is None:
         rng = np.random.default_rng()
 
