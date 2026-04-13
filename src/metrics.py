@@ -323,19 +323,17 @@ class ComputeAll(BaseMetric):
             out.update(test_metrics)
 
         if estimated_latent is not None:
-            # est = RelativeFrobeniusNorm(gram_matrix=self.gram_matrix)(results)
-            # latent_metrics = {
-            #     "RelativeFrobeniusNorm_x": est[0],
-            #     "RelativeFrobeniusNorm_z": est[1],
-            # }
-            
-            
-            est_procrustes = RobustRelativeProcrustesDistance()(results)
+            est = RelativeFrobeniusNorm(gram_matrix=self.gram_matrix)(results)
             latent_metrics = {
-                "ProcrustesDistance_x": est_procrustes[0],
-                "ProcrustesDistance_z": est_procrustes[1],
+                "RelativeFrobeniusNorm_x": est[0],
+                "RelativeFrobeniusNorm_z": est[1],
             }
             
+            est_procrustes = RobustRelativeProcrustesDistance()(results)
+            latent_metrics.update({
+                "ProcrustesDistance_x": est_procrustes[0],
+                "ProcrustesDistance_z": est_procrustes[1],
+            })
             out.update(latent_metrics)
 
         return out

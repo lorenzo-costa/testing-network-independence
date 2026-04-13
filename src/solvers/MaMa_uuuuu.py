@@ -403,7 +403,6 @@ def pgd_fit_wrapper(A, k,
                     backend='auto'):
     """Wrapper for pgd_fit returning Z + alpha[:, None]."""
     k = 5
-    
     if return_history:
         Z, alpha, beta, history = pgd_fit(
             A, k, X=X, eta_Z=eta_Z, eta_alpha=eta_alpha, eta_beta=eta_beta,
