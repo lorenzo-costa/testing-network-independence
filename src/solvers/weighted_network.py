@@ -50,6 +50,7 @@ def ASE(A, k=2, rng=None, **kwargs):
     return xhat, evals
 
 
+
 def MLE_gaussian(A, k=2, rng=None, shrink=0.5, **kwargs):
     """Maximum Likelihood Estimation for Gaussian adjacency matrix.
 

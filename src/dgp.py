@@ -85,6 +85,9 @@ class CopulaDGP:
         sim_kwargs=None,       # NEW: extra kwargs forwarded to that function
         column_covariance=None,
         rdpg_distribution=None,
+        dim_common=None,
+        dim_individual=None,
+        shared_latent_type=None,
         **kwargs,
     ):
         if rng is None:
@@ -120,7 +123,11 @@ class CopulaDGP:
         self.sim_kwargs = sim_kwargs or {}
         
         self._convert_marginals(marginals)
-
+        
+        self.dim_common = dim_common
+        self.dim_individual = dim_individual
+        self.shared_latent_type = shared_latent_type
+        
     def _generate_copula_uniforms(self):
         """
         Generates Uniform(0,1) random variables (u_z, u_x) 
@@ -354,6 +361,9 @@ class CopulaDGP:
 
         if self.latent_sim is not None:
             return self._sample_latent_sim()
+        
+        if self.dim_common is not None:
+            return self._sample_orthogonal_subspace()
 
         # ── original copula path ──────────────────────────────────────────────
         u_z, u_x = self._generate_copula_uniforms()
@@ -367,6 +377,43 @@ class CopulaDGP:
             X = X - X.mean(axis=0)
 
         return X, Z
+    
+    def _sample_orthogonal_subspace(self):
+        
+        if not self.dim_individual + self.dim_common == self.k:
+            raise ValueError("dim_common + dim_individual must equal k")
+        
+        X = np.zeros((self.n, self.k))
+        Z = np.zeros((self.n, self.k))
+        
+        if self.shared_latent_type == "gaussian":
+            U_gauss = np.random.randn(self.n, self.dim_common)  # Shared latent positions from Gaussian
+            V_x_gauss = np.random.randn(self.n, self.dim_individual)  # X-specific latent positions
+            V_z_gauss = np.random.randn(self.n, self.dim_individual)  # Z-specific latent positions
+            
+            U, _ = np.linalg.qr(U_gauss)  # Orthonormalize U
+            V_x, _ = np.linalg.qr(V_x_gauss)  # Orthonormalize V_x
+            V_z, _ = np.linalg.qr(V_z_gauss)  # Orthonormalize V_z
+            
+            X = np.hstack((U, V_x))          
+            Z = np.hstack((U, V_z)) 
+                
+        elif self.shared_latent_type == "one_hot":   
+            idxs = np.random.randint(0, self.dim_common, size=self.n)
+            C = np.zeros((self.n, self.dim_common))
+            C[np.arange(self.n), idxs] = 1.0
+
+            V = np.random.randn(self.n, self.dim_individual)
+            W = np.random.randn(self.n, self.dim_individual)
+
+            X = np.concatenate([C, V], axis=1)
+            Z = np.concatenate([C, W], axis=1)
+        else:
+            raise ValueError(f"Unknown shared_latent_type: {self.shared_latent_type}")
+
+        return X, Z
+    
+
 
     def _sample_latent_sim(self):
         """
@@ -601,6 +648,8 @@ class GaussianNetwork(CopulaDGP, BaseDPG, BaseSBM):
                  make_sparse=False,
                  column_covariance=None,
                  sbm=False,
+                 latent_X = None,
+                 latent_Z = None,
                  **args):
         
         # note here by multiple inheritance CopulaDGP init will be called
@@ -625,6 +674,8 @@ class GaussianNetwork(CopulaDGP, BaseDPG, BaseSBM):
         self.sparsity_bias = sparsity_bias
         self.make_sparse = make_sparse
         self.sbm = sbm
+        self.X = latent_X
+        self.Z = latent_Z
     
     def _make_sparse(self, expected):
         logits = expected - self.sparsity_bias
@@ -639,17 +690,30 @@ class GaussianNetwork(CopulaDGP, BaseDPG, BaseSBM):
         return weights * mask
 
     def generate(self):
-        if self.sbm:
-            community_assignment, probs_matrices = self._sample_sbm_latent()
-            Z_community, Z_probs = community_assignment[0], probs_matrices[0]
-            X_community, X_probs = community_assignment[1], probs_matrices[1]
-            
-            X = X_community @ X_probs**0.5
-            Z = Z_community @ Z_probs**0.5
+        """Sample matrix and latent positions. Model definiton specifies options for:
+        - latent postion type (SBM or general copula-based)
+        - symmetric adjacency or not (default symmetric)
+        - self loops or not (default no self loops)
+
+        Returns
+        -------
+        out: dict
+            dictionary with keys 'A', 'B' for adjacency matrices, 'Z', 'X' for the latent positions
+        """
+        if self.X is not None and self.Z is not None:
+            Z, X = self.Z, self.X
         else:
-            X, Z = self._sample_latent()
-            while (not np.isfinite(X).all()) or (not np.isfinite(Z).all()):
+            if self.sbm:
+                community_assignment, probs_matrices = self._sample_sbm_latent()
+                Z_community, Z_probs = community_assignment[0], probs_matrices[0]
+                X_community, X_probs = community_assignment[1], probs_matrices[1]
+                
+                X = X_community @ X_probs**0.5
+                Z = Z_community @ Z_probs**0.5
+            else:
                 X, Z = self._sample_latent()
+                while (not np.isfinite(X).all()) or (not np.isfinite(Z).all()):
+                    X, Z = self._sample_latent()
         
         expected_A = Z @ Z.T
         expected_B = X @ X.T
@@ -727,6 +791,8 @@ class BernoulliNetwork(CopulaDGP, BaseDPG, BaseSBM):
                  rdpg=None,
                  column_covariance=None,
                  sbm=False,
+                 latent_X = None,
+                 latent_Z = None,
                  **args):
         
         CopulaDGP.__init__(self, n=n,
@@ -750,49 +816,66 @@ class BernoulliNetwork(CopulaDGP, BaseDPG, BaseSBM):
         self.sparsity_bias = sparsity_bias
         self.rdpg = rdpg
         self.sbm = sbm
+        self.X = latent_X
+        self.Z = latent_Z
         
     def get_name(self):
         return f"BernoulliNetwork_" + str(self.copula_model) + f"_rho{self.rho}"
     
     def generate(self):
-        if self.sbm:
-            community_assignment, probs_matrices = self._sample_sbm_latent()
-            Z_community, Z_probs = community_assignment[0], probs_matrices[0]
-            X_community, X_probs = community_assignment[1], probs_matrices[1]
-            
-            expected_A = Z_community @ Z_probs @ Z_community.T
-            expected_B = X_community @ X_probs @ X_community.T
-            
-            # placeholder, no real Z and X for SBM
-            X, Z = np.random.normal(size=(self.n, self.k)), np.random.normal(size=(self.n, self.k))
+        """Sample matrix and latent positions. Model definiton specifies options for:
+        - latent postion type (SBM, RDPG, or general copula-based)
+        - symmetric adjacency or not (default symmetric)
+        - self loops or not (default no self loops)
+
+        Returns
+        -------
+        out: dict
+            dictionary with keys 'A', 'B' for adjacency matrices, 'Z', 'X' for the latent positions
+        """
+        if self.X is not None and self.Z is not None:
+            X, Z = self.X, self.Z
+            expected_A = Z @ Z.T
+            expected_B = X @ X.T
         else:
-            X, Z = self._sample_latent()
-            while (not np.isfinite(X).all()) or (not np.isfinite(Z).all()):
-                X, Z = self._sample_latent()
-        
-            if self.rdpg is not None:
-                if self.rdpg=='max':
-                    # normalise in [-1, 1]
-                    X = X/np.max(X, axis=0, keepdims=True)
-                    Z = Z/np.max(Z, axis=0, keepdims=True)
-                elif self.rdpg=='spectral':
-                    X = X / np.sqrt(np.linalg.norm(X, ord=2))
-                    Z = Z / np.sqrt(np.linalg.norm(Z, ord=2))
-                elif self.rdpg=='minmax':
-                    X = (X- np.min(X, axis=0, keepdims=True)) / (np.max(X, axis=0, keepdims=True) - np.min(X, axis=0, keepdims=True) + 1e-15)
-                    X = X/np.sqrt(X.shape[1])
-                    
-                    Z = (Z- np.min(Z, axis=0, keepdims=True)) / (np.max(Z, axis=0, keepdims=True) - np.min(Z, axis=0, keepdims=True) + 1e-15)
-                    Z = Z/np.sqrt(Z.shape[1])
-                else:
-                    raise Exception(f"Unknown rdpg option: {self.rdpg}")
-                # sparsity applied directly to inner product, maybe worht looking into 
-                # a randomly shutting down some edge like weighted network
-                expected_A = Z @ Z.T - self.sparsity_bias
-                expected_B = X @ X.T - self.sparsity_bias
+            if self.sbm:
+                community_assignment, probs_matrices = self._sample_sbm_latent()
+                Z_community, Z_probs = community_assignment[0], probs_matrices[0]
+                X_community, X_probs = community_assignment[1], probs_matrices[1]
+                
+                expected_A = Z_community @ Z_probs @ Z_community.T
+                expected_B = X_community @ X_probs @ X_community.T
+                
+                # placeholder, no real Z and X for SBM
+                X, Z = np.random.normal(size=(self.n, self.k)), np.random.normal(size=(self.n, self.k))
             else:
-                expected_A = expit(Z @ Z.T - self.sparsity_bias)
-                expected_B = expit(X @ X.T - self.sparsity_bias)
+                X, Z = self._sample_latent()
+                while (not np.isfinite(X).all()) or (not np.isfinite(Z).all()):
+                    X, Z = self._sample_latent()
+            
+                if self.rdpg is not None:
+                    if self.rdpg=='max':
+                        # normalise in [-1, 1]
+                        X = X/np.max(X, axis=0, keepdims=True)
+                        Z = Z/np.max(Z, axis=0, keepdims=True)
+                    elif self.rdpg=='spectral':
+                        X = X / np.sqrt(np.linalg.norm(X, ord=2))
+                        Z = Z / np.sqrt(np.linalg.norm(Z, ord=2))
+                    elif self.rdpg=='minmax':
+                        X = (X- np.min(X, axis=0, keepdims=True)) / (np.max(X, axis=0, keepdims=True) - np.min(X, axis=0, keepdims=True) + 1e-15)
+                        X = X/np.sqrt(X.shape[1])
+                        
+                        Z = (Z- np.min(Z, axis=0, keepdims=True)) / (np.max(Z, axis=0, keepdims=True) - np.min(Z, axis=0, keepdims=True) + 1e-15)
+                        Z = Z/np.sqrt(Z.shape[1])
+                    else:
+                        raise Exception(f"Unknown rdpg option: {self.rdpg}")
+                    # sparsity applied directly to inner product, maybe worht looking into 
+                    # a randomly shutting down some edge like weighted network
+                    expected_A = Z @ Z.T - self.sparsity_bias
+                    expected_B = X @ X.T - self.sparsity_bias
+                else:
+                    expected_A = expit(Z @ Z.T - self.sparsity_bias)
+                    expected_B = expit(X @ X.T - self.sparsity_bias)
         
         expected_A = np.clip(expected_A, 0, 1)
         expected_B = np.clip(expected_B, 0, 1)

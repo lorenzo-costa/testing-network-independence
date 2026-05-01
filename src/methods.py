@@ -3,7 +3,6 @@ from .helper_functions._metrics_helper import rv_coefficient_adjusted
 import sys
 import os
 from scipy import stats, linalg
-from .solvers.weighted_network import ASE
 from scipy.spatial.distance import pdist, squareform
 import warnings
 sys.path.append(os.path.abspath(os.path.join(os.getcwd(), "..")))
@@ -129,7 +128,7 @@ class PermutationTest(BaseMethod):
     def __init__(
         self,
         rho,
-        npermutations=None,
+        npermutations=100,
         alpha=0.05,
         rng=None,
         solver=None,
@@ -279,7 +278,7 @@ class ObservedCVM(BaseMethod):
     def __init__(
         self,
         rho,
-        npermutations=None,
+        npermutations=100,
         alpha=0.05,
         rng=None,
         use_true_latent=False,
@@ -431,7 +430,7 @@ class LLKRatioTest(BaseMethod):
     def fit(self, data, **kwargs):
         """Estimates the latent positions and computes p-value
 
-        Parameters
+        ParametersFn
         ----------
         data : dict
             A dictionary containing keys 'A', 'B', 'X', 'Z' where 'A' and 'B' are adjacency matrices
@@ -563,7 +562,7 @@ class QAP(BaseMethod):
         self,
         rho,
         alpha=0.05,
-        npermutations=None,
+        npermutations=100,
         null_hypothesis="independence",
         rng=None,
         **args,
@@ -693,7 +692,7 @@ class DiffusionCorrelation(BaseMethod):
         rho,
         k=None,
         test_method="mgc",
-        npermutations=1000,
+        npermutations=100,
         alpha=0.05,
         rng=None,
         solver=None,
@@ -892,7 +891,7 @@ class CanonicalCorrelationTest(BaseMethod):
         self,
         rho,
         k=None,
-        npermutations=1000,
+        npermutations=100,
         solver=None,
         alpha=0.05,
         permutation_type="latent",
