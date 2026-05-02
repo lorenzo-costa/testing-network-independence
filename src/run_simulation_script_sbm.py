@@ -88,8 +88,6 @@ if __name__ == "__main__":
     
     setup = [ 
         (partial(GaussianNetwork, sbm=True), ASE),
-        (partial(GaussianNetwork, sbm=True), ASE),
-        (partial(BernoulliNetwork, sbm=True), ASE),
         (partial(BernoulliNetwork, sbm=True), ASE),
     ]
     

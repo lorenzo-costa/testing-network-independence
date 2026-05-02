@@ -1,182 +1,118 @@
-from src.dgp import GaussianNetwork, BernoulliNetwork
-from src.metrics import (
-    Rejection,
-    FalseRejection,
-    TrueRejection,
-    FalseAcceptance,
-    TrueAcceptance,
-    RelativeFrobeniusNorm,
-)
+from src.load_config import load_config
+ 
 from src.metrics import ComputeAll
-from src.methods import RVPermutationTest, LLKRatioTest, QAP, DiffusionCorrelation, PermutationTest, ObservedCVM
-from src.solvers.binary_network import MLE_logistic
-from src.solvers.weighted_network import MLE_gaussian, ASE
-from src.solvers.MaMa_uuuuu import pgd_fit, pgd_fit_wrapper
 from src.helper_functions.simulation_functions import run_simulation
 from src.helper_functions.analyse_functions import aggregate_results
-from src.metrics import rv_coefficient_adjusted
-from src.helper_functions._metrics_helper import observed_cvm_dependency
-
+ 
 import numpy as np
 import pandas as pd
-from scipy import stats
 from itertools import product
 from datetime import datetime
-from functools import partial
-import argparse
-import h5py
-
-
-def get_dist_string(dist_obj):
-    name = dist_obj.dist.name
-
-    # Combine positional args and keyword args into one list of strings
-    args_str = [str(a) for a in dist_obj.args]
-    kwds_str = [f"{k}={v}" for k, v in dist_obj.kwds.items()]
-
-    # Join them together with commas
-    params_join = ", ".join(args_str + kwds_str)
-
-    return f"{name}({params_join})"
+import os
  
-def load_hdf5(path):
-    def read_obj(obj):
-
-        # dataset
-        if isinstance(obj, h5py.Dataset):
-            return obj[()]
-
-        # group
-        if isinstance(obj, h5py.Group):
-            out = {}
-
-            # put attributes directly as keys
-            out.update({k: v for k, v in obj.attrs.items()})
-
-            for key, item in obj.items():
-                out[key] = read_obj(item)
-
-            return out
-
-    with h5py.File(path, "r") as f:
-        return {k: read_obj(v) for k, v in f.items()}
-
+ 
 if __name__ == "__main__":
-    nsim = 100
-    n = [100, 200, 300]
-    k = [3]
-    rho = [0.2]
-    alpha = [0.05]
-    marginals = ['gaussian', 'uniform -1 1', 'cauchy', 't 5', 'chi 5']
-    edge_var = [1]
-
-    method = [
-        partial(RVPermutationTest, permutation_type="latent"),
-        QAP,
-        DiffusionCorrelation,
-        partial(ObservedCVM, test_function=partial(observed_cvm_dependency, degree=2)),
-        # partial(ObservedCVM, test_function=partial(observed_cvm_dependency, degree=1)),
-    ]
-
-    npermutations = [200]
-    df = [3]
-    metrics = [
-       ComputeAll(),
-    ]
-    approximation = ["F-distr"]
+ 
+    # ── Load all parameters from config.yaml ─────────────────────────────────
+    cfg = load_config("config.yaml")
+ 
+    sim      = cfg["simulation"]
+    methods  = cfg["methods"]
+    setups   = cfg["setups"]
+    null     = cfg["null_setups"]
+    metrics  = cfg["metrics"]
+    rng      = cfg["rng"]
+    out_dir  = cfg["output"]["results_dir"]
     
-    use_true_latent = [False, True]
-    
-    setup = [
-        (partial(GaussianNetwork, copula_model='gaussian'), ASE),
-        (partial(GaussianNetwork, copula_model='clayton'), ASE),
-        (partial(GaussianNetwork, copula_model='gumbel'), ASE),
-        (partial(GaussianNetwork, copula_model='student_t', df=3), ASE),
-        (partial(GaussianNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.5, -0.5]), ASE),
-        
-        (partial(BernoulliNetwork, copula_model='gaussian'), pgd_fit_wrapper),
-        (partial(BernoulliNetwork, copula_model='clayton'), pgd_fit_wrapper),
-        (partial(BernoulliNetwork, copula_model='gumbel'), pgd_fit_wrapper),
-        (partial(BernoulliNetwork, copula_model='student_t', df=3), pgd_fit_wrapper),
-        (partial(BernoulliNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.5, -0.5]), pgd_fit_wrapper),
-    ]
-    
-    rng = np.random.default_rng(2)    
-
+    # save setup
+    os.makedirs(out_dir, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    file_name = f"{out_dir}/simulation_results_{timestamp}.csv"
+ 
+    # ── Build factorial design (H1)  ─────────────────────────────────
     param_names = [
-        "setup",
-        "method",
-        "n",
-        "k",
-        "alpha",
-        "marginals",
-        "rho",
-        "edge_var",
-        "approximation",
-        "npermutations",
-        "df",
-        "use_true_latent"
+        "setup", "method", "n", "k", "alpha", "marginals",
+        "rho", "edge_var", "approximation", "npermutations",
+        "df", "use_true_latent",
     ]
-
+ 
     param_values = product(
-        setup, method, n, k, alpha, marginals, rho, edge_var, approximation, npermutations, df, use_true_latent
+        setups,
+        methods["list"],
+        sim["n"],
+        sim["k"],
+        sim["alpha"],
+        sim["marginals"],
+        sim["rho"],
+        sim["edge_var"],
+        methods["approximation"],
+        methods["npermutations"],
+        methods["df"],
+        methods["use_true_latent"],
     )
-
+ 
     factorial_design = [dict(zip(param_names, v)) for v in param_values]
-
-    
+ 
     out = run_simulation(
-        nsim=nsim,
+        nsim=sim["nsim"],
         metrics=metrics,
         factorial_design=factorial_design,
         rng=rng,
         parallel=True,
     )
-
+    
     out = pd.DataFrame(out)
     
-    setup2 = [
-        (partial(GaussianNetwork, copula_model='gaussian'), ASE),
-        (partial(BernoulliNetwork, copula_model='gaussian'), pgd_fit_wrapper),
-    ]
-    rho2 = [0.0]
+    # save this first in case next one crashes
+    out.to_csv(file_name, index=False)
     
-    rng2 = np.random.default_rng(2)    
-
+ 
+    # ── Build factorial design (H0) ─────────────────────────────────
+    rng2 = np.random.default_rng(sim["seed"])   # fresh seeded RNG for null runs
+ 
     param_values2 = product(
-        setup2, method, n, k, alpha, marginals, rho2, edge_var, approximation, npermutations, df, use_true_latent
+        null["setups"],
+        methods["list"],
+        sim["n"],
+        sim["k"],
+        sim["alpha"],
+        sim["marginals"],
+        null["rho"],                             # rho = 0.0
+        sim["edge_var"],
+        methods["approximation"],
+        methods["npermutations"],
+        methods["df"],
+        methods["use_true_latent"],
     )
-
+ 
     factorial_design2 = [dict(zip(param_names, v)) for v in param_values2]
-
+ 
     out2 = run_simulation(
-        nsim=nsim,
+        nsim=sim["nsim"],
         metrics=metrics,
         factorial_design=factorial_design2,
         rng=rng2,
         parallel=True,
     )
-    
-    out = pd.concat([out, pd.DataFrame(out2)], ignore_index=True)
-    
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-    file_name = f"results/simulation_results_{timestamp}.csv"
-
-    # save first here so if the pandas columns crashes i still have results
-    out.to_csv(file_name, index=False)
-
-    out["n"] = out["args"].apply(lambda x: x["n"])
-    out["k"] = out["args"].apply(lambda x: x["k"])
-    out["edge_var"] = out["args"].apply(lambda x: x.get("edge_var", "NA"))
-    out["approximation"] = out["args"].apply(lambda x: x.get("approximation", "NA"))
-    out["dgp"] = out["args"].apply(lambda x: x.get("dgp_name", "NA"))
-    out["solver"] = out["args"].apply(lambda x: x.get('solver', "NA"))
-    out['rho'] = out["args"].apply(lambda x: x.get("rho", "NA"))
-
-    out["method"] = out["args"].apply(lambda x: x.get("method_name", "NA"))
-
-    out["marginals"] = out["args"].apply(lambda x: x.get("marginals").name if hasattr(x.get("marginals"), "name") else "NA")
-    
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-
-    out.to_csv(file_name, index=False)
+ 
+    # ── Combine & save ────────────────────────────────────────────────────────
+    results = pd.concat([pd.DataFrame(out), pd.DataFrame(out2)], ignore_index=True)
+ 
+    # Save raw first (guard against column-extraction errors below)
+    results.to_csv(file_name, index=False)
+ 
+    # ── Flatten nested 'args' dict into columns ───────────────────────────────
+    results["n"]            = results["args"].apply(lambda x: x["n"])
+    results["k"]            = results["args"].apply(lambda x: x["k"])
+    results["edge_var"]     = results["args"].apply(lambda x: x.get("edge_var", "NA"))
+    results["approximation"]= results["args"].apply(lambda x: x.get("approximation", "NA"))
+    results["dgp"]          = results["args"].apply(lambda x: x.get("dgp_name", "NA"))
+    results["solver"]       = results["args"].apply(lambda x: x.get("solver", "NA"))
+    results["rho"]          = results["args"].apply(lambda x: x.get("rho", "NA"))
+    results["method"]       = results["args"].apply(lambda x: x.get("method_name", "NA"))
+    results["marginals"]    = results["args"].apply(
+        lambda x: x.get("marginals").name if hasattr(x.get("marginals"), "name") else "NA"
+    )
+ 
+    results.to_csv(file_name, index=False)
+    print(f"Results saved to {file_name}")

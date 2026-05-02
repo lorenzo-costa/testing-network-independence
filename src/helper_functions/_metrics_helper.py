@@ -172,9 +172,9 @@ def observed_cvm_dependency(A, B, degree=2, rank_method='average'):
         degree (int): The degree of the shared neighbor count (default is 2).
         rank_method (str): The ranking method to use (default is 'max').
             Options include:
-            - 'max': Use the maximum rank (default). Plug-in estimator standard
+            - 'max': Use the maximum rank . Plug-in estimator standard
             in copula theory (Deheuvels 1979). Has jump discontinuities.
-            - 'average': Use the average rank. AKA mid-rank copula transform.
+            - 'average' (default): Use the average rank. AKA mid-rank copula transform.
             Sort of smoothing
     Returns:
         float: The Cramér-von Mises statistic.

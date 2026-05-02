@@ -83,15 +83,15 @@ if __name__ == "__main__":
 
     setup = [
         (partial(GaussianNetwork, copula_model='gaussian'), ASE),
-        # (partial(GaussianNetwork, copula_model='clayton'), ASE),
+        (partial(GaussianNetwork, copula_model='clayton'), ASE),
         (partial(GaussianNetwork, copula_model='gumbel'), ASE),
-        # (partial(GaussianNetwork, copula_model='student_t', df=3), ASE),
+        (partial(GaussianNetwork, copula_model='student_t', df=3), ASE),
         (partial(GaussianNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.98, -0.98]), ASE),
         
         (partial(BernoulliNetwork, copula_model='gaussian'), pgd_fit_wrapper),
-        # (partial(BernoulliNetwork, copula_model='clayton'), pgd_fit_wrapper),
+        (partial(BernoulliNetwork, copula_model='clayton'), pgd_fit_wrapper),
         (partial(BernoulliNetwork, copula_model='gumbel'), pgd_fit_wrapper),
-        # (partial(BernoulliNetwork, copula_model='student_t', df=3), pgd_fit_wrapper),
+        (partial(BernoulliNetwork, copula_model='student_t', df=3), pgd_fit_wrapper),
         (partial(BernoulliNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[0.98, -0.98]), pgd_fit_wrapper),
     ]
     
