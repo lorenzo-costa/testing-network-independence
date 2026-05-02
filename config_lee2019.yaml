@@ -1,0 +1,132 @@
+# =============================================================================
+# Config: Lee 2019 Latent Simulation Study
+# Replicates the dependency patterns from Lee et al. (2019).
+# Networks are generated from diverse latent functional relationships
+# (linear, spiral, circle, etc.) rather than copula models.
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# Simulation Control
+# -----------------------------------------------------------------------------
+simulation:
+  nsim: 75                  # Fewer reps than the main study (shapes are more numerous)
+  seed: 2
+
+  n: [50, 100, 200, 300]   # Includes n=50 to probe small-sample behaviour
+  k: [1]                    # Single latent dimension (scalar latent variable)
+  rho: [0.2]
+  alpha: [0.05]
+  edge_var: [1, 3]          # Two edge variances: standard and inflated noise
+
+  # Only Gaussian marginals used in this study
+  marginals:
+    - gaussian
+
+
+# -----------------------------------------------------------------------------
+# Testing Methods
+# -----------------------------------------------------------------------------
+methods:
+  npermutations: [200]
+  df: [3]
+  approximation: ["F-distr"]
+  # NOTE: use_true_latent is not a sweep dimension in this experiment
+
+  list:
+    - name: QAP
+      kwargs: {}
+
+    - name: ObservedCVM
+      kwargs:
+        degree: 2
+
+    - name: ObservedCVM
+      kwargs:
+        degree: 1
+
+    - name: DiffusionCorrelation
+      kwargs: {}
+
+    - name: RVPermutationTest
+      kwargs:
+        permutation_type: latent
+
+
+# -----------------------------------------------------------------------------
+# DGP & Solver Setups
+# All setups use ASE with k=2 (two-dimensional embedding regardless of latent k).
+# The latent_sim key selects the functional form of the latent relationship.
+# noise: true adds observation noise to the latent positions.
+# -----------------------------------------------------------------------------
+setups:
+  ase_k: 2    # Embedding dimension for ASE — fixed at 2 for all Lee2019 setups
+
+  # --- Gaussian (continuous-weight) networks ---
+  gaussian_latent_sims:
+    - linear
+    - exponential
+    - cubic
+    - quadratic
+    - w_shaped
+    - spiral
+    - step
+    - fourth_root
+    - joint_normal
+    - logarithmic
+    - sin_sixteen_pi
+    - square
+    - diamond
+    - circle
+    - ellipse
+    - two_parabolas
+    - uncorrelated_bernoulli
+    - multimodal_independence   # No noise kwarg for this one (see loader)
+
+  # --- Bernoulli (binary-edge) networks ---
+  # All use rdpg='minmax' rescaling so edge probabilities stay in [0,1]
+  bernoulli_latent_sims:
+    - linear
+    - exponential
+    - cubic
+    - quadratic
+    - w_shaped
+    - spiral
+    - step
+    - fourth_root
+    - joint_normal
+    - logarithmic
+    - sin_sixteen_pi
+    - square
+    - diamond
+    - circle
+    - ellipse
+    - two_parabolas
+    - uncorrelated_bernoulli
+    - multimodal_independence   # No noise kwarg for this one (see loader)
+
+  bernoulli_rdpg: minmax        # RDPG rescaling strategy for Bernoulli networks
+
+
+# -----------------------------------------------------------------------------
+# Sparsity (Lee 2019 specific)
+# Controls whether networks are made sparse before fitting.
+# -----------------------------------------------------------------------------
+sparsity:
+  make_sparse: [True, False]   # Sweep over sparse and dense variants
+  sparsity_bias: [1]           # Bias term controlling degree of sparsification
+
+
+# -----------------------------------------------------------------------------
+# Metrics
+# -----------------------------------------------------------------------------
+metrics:
+  compute_all: true
+
+
+# -----------------------------------------------------------------------------
+# Output
+# -----------------------------------------------------------------------------
+output:
+  results_dir: results
+  file_prefix: sim_lee2019     # Output file: sim_lee2019_<YYYYMMDD_HHMM>.csv

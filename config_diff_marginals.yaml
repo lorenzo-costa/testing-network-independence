@@ -1,0 +1,147 @@
+# =============================================================================
+# Config: Differential Marginals Study
+# Investigates robustness when the two networks have *different* marginal
+# distributions (e.g. one Gaussian, one Cauchy). Marginals are specified
+# as {x, y} pairs rather than a single shared distribution.
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# Simulation Control
+# -----------------------------------------------------------------------------
+simulation:
+  nsim: 100
+  seed: 2
+
+  n: [100, 200, 300]
+  k: [3]
+  rho: [0.2]
+  alpha: [0.05]
+  edge_var: [1]
+
+  # Marginals are asymmetric pairs: x=network 1, y=network 2.
+  # Each entry is a dict with 'x' and 'y' keys.
+  # Supported distribution strings: 'gaussian', 'uniform -1 1', 'cauchy',
+  #   't <df>', 'chi <df>'
+  marginals:
+    - x: gaussian
+      y: "uniform -1 1"
+
+    - x: gaussian
+      y: cauchy
+
+    - x: "uniform -1 1"
+      y: cauchy
+
+    - x: gaussian
+      y: "chi 5"
+
+
+# -----------------------------------------------------------------------------
+# Testing Methods
+# -----------------------------------------------------------------------------
+methods:
+  npermutations: [200]
+  df: [3]
+  approximation: ["F-distr"]
+  use_true_latent: [False]     # Oracle latent positions not used in this study
+
+  list:
+    - name: RVPermutationTest
+      kwargs:
+        permutation_type: latent
+
+    - name: QAP
+      kwargs: {}
+
+    - name: DiffusionCorrelation
+      kwargs: {}
+
+    - name: ObservedCVM
+      kwargs:
+        degree: 2              # Only degree-2 variant included (degree-1 dropped)
+
+
+# -----------------------------------------------------------------------------
+# DGP & Solver Setups (H1: rho > 0)
+# Same copula grid as the main study.
+# -----------------------------------------------------------------------------
+setups:
+  # --- Gaussian networks ---
+  - dgp: GaussianNetwork
+    copula_model: gaussian
+    solver: ASE
+
+  - dgp: GaussianNetwork
+    copula_model: clayton
+    solver: ASE
+
+  - dgp: GaussianNetwork
+    copula_model: gumbel
+    solver: ASE
+
+  - dgp: GaussianNetwork
+    copula_model: student_t
+    df: 3
+    solver: ASE
+
+  - dgp: GaussianNetwork
+    copula_model: mixture_uniform
+    weights: [0.5, 0.5]
+    correlations: [0.5, -0.5]
+    solver: ASE
+
+  # --- Bernoulli networks ---
+  - dgp: BernoulliNetwork
+    copula_model: gaussian
+    solver: pgd_fit_wrapper
+
+  - dgp: BernoulliNetwork
+    copula_model: clayton
+    solver: pgd_fit_wrapper
+
+  - dgp: BernoulliNetwork
+    copula_model: gumbel
+    solver: pgd_fit_wrapper
+
+  - dgp: BernoulliNetwork
+    copula_model: student_t
+    df: 3
+    solver: pgd_fit_wrapper
+
+  - dgp: BernoulliNetwork
+    copula_model: mixture_uniform
+    weights: [0.5, 0.5]
+    correlations: [0.5, -0.5]
+    solver: pgd_fit_wrapper
+
+
+# -----------------------------------------------------------------------------
+# Null Hypothesis Setups (H0: rho = 0)
+# -----------------------------------------------------------------------------
+null_setups:
+  rho: [0.0]
+
+  setups:
+    - dgp: GaussianNetwork
+      copula_model: gaussian
+      solver: ASE
+
+    - dgp: BernoulliNetwork
+      copula_model: gaussian
+      solver: pgd_fit_wrapper
+
+
+# -----------------------------------------------------------------------------
+# Metrics
+# -----------------------------------------------------------------------------
+metrics:
+  compute_all: true
+
+
+# -----------------------------------------------------------------------------
+# Output
+# -----------------------------------------------------------------------------
+output:
+  results_dir: results
+  file_prefix: simulation_results

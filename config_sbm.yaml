@@ -1,0 +1,110 @@
+# =============================================================================
+# Config: Stochastic Block Model (SBM) Study
+# Evaluates methods under misspecification: networks have community structure
+# (SBM) rather than a smooth latent space. No copula model or use_true_latent
+# sweep — the focus is on SBM-specific structural parameters.
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# Simulation Control
+# -----------------------------------------------------------------------------
+simulation:
+  nsim: 75
+  seed: 2
+
+  n: [100, 200, 300]
+  k: [3]
+  rho: [0.2]
+  alpha: [0.05]
+  edge_var: [1]
+
+  # Only Gaussian marginals used (SBM misspecification is the primary variable)
+  marginals:
+    - gaussian
+
+
+# -----------------------------------------------------------------------------
+# Testing Methods
+# -----------------------------------------------------------------------------
+methods:
+  npermutations: [200]
+  # NOTE: df and approximation are not parameters in the SBM experiment
+
+  list:
+    - name: RVPermutationTest
+      kwargs:
+        permutation_type: latent
+
+    - name: QAP
+      kwargs: {}
+
+    - name: DiffusionCorrelation
+      kwargs: {}
+
+    - name: ObservedCVM
+      kwargs:
+        degree: 2
+
+    - name: ObservedCVM
+      kwargs:
+        degree: 1
+
+
+# -----------------------------------------------------------------------------
+# DGP & Solver Setups
+# Both DGPs use sbm=True. The solver is ASE (same for both).
+# There is no null/H0 run in the SBM experiment.
+# -----------------------------------------------------------------------------
+setups:
+  - dgp: GaussianNetwork
+    sbm: true
+    solver: ASE
+
+  - dgp: BernoulliNetwork
+    sbm: true
+    solver: ASE
+
+
+# -----------------------------------------------------------------------------
+# SBM-Specific Parameters
+# These parameters control the block structure and are swept in the factorial design.
+# -----------------------------------------------------------------------------
+sbm:
+  # Assortativity: negative = disassortative (cross-block edges more likely),
+  # positive = assortative (within-block edges more likely)
+  assortativity: [-0.8, -0.5, 0.5, 0.8]
+
+  # sparsity_bias: controls overall edge density (lower = sparser)
+  sparsity_bias: [0.3, 0.7]
+
+  # prob_switch: probability that a node is assigned to a different block
+  # between the two networks (controls cross-network community alignment)
+  prob_switch: [0.2, 0.5]
+
+  # assignment_mode:
+  #   'random'     — block memberships assigned independently
+  #   'correlated' — block memberships correlated across networks
+  assignment_mode: [random, correlated]
+
+  # block_probs_type:
+  #   'random'    — block probability matrices drawn randomly
+  #   'identical' — both networks share the same block probability matrix
+  block_probs_type: [random, identical]
+
+
+# -----------------------------------------------------------------------------
+# Metrics
+# -----------------------------------------------------------------------------
+metrics:
+  compute_all: true
+
+
+# -----------------------------------------------------------------------------
+# Output
+# Extra SBM columns (copula, sparsity_bias, assignment_mode, block_probs_type,
+# column_covariance) are extracted from args in the script.
+# -----------------------------------------------------------------------------
+output:
+  results_dir: results
+  file_prefix: simulation_results

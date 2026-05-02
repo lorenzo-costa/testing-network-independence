@@ -1,0 +1,138 @@
+# =============================================================================
+# Config: Observed CVM Degree Sweep
+# A focused pilot/debugging study (nsim=1) that benchmarks ObservedCVM
+# across polynomial degrees 1, 2, and 3. Strong mixture correlations
+# (±0.98) are used to stress-test the test functions.
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# Simulation Control
+# NOTE: nsim=1 — this is intended as a quick pilot / sanity-check run.
+# Increase nsim for a proper power study.
+# -----------------------------------------------------------------------------
+simulation:
+  nsim: 1
+  seed: 2
+
+  n: [100, 200, 300]
+  k: [3]
+  rho: [0.2]
+  alpha: [0.05]
+  edge_var: [1]
+
+  # Subset of marginals — cauchy included but heavier-tailed ones excluded
+  marginals:
+    - gaussian
+    - "uniform -1 1"
+    - cauchy
+
+
+# -----------------------------------------------------------------------------
+# Testing Methods
+# Only ObservedCVM variants are benchmarked here, across three polynomial degrees.
+# -----------------------------------------------------------------------------
+methods:
+  npermutations: [50]           # Reduced permutations — appropriate for nsim=1 pilots
+  df: [3]
+  approximation: ["F-distr"]
+  # use_true_latent is not a parameter in this experiment
+
+  list:
+    - name: ObservedCVM
+      kwargs:
+        degree: 3               # Cubic polynomial test function
+
+    - name: ObservedCVM
+      kwargs:
+        degree: 2               # Quadratic polynomial test function
+
+    - name: ObservedCVM
+      kwargs:
+        degree: 1               # Linear polynomial test function
+
+
+# -----------------------------------------------------------------------------
+# DGP & Solver Setups (H1: rho > 0)
+# Uses high mixture correlations (±0.98) to create a strongly bimodal copula.
+# -----------------------------------------------------------------------------
+setups:
+  # --- Gaussian networks ---
+  - dgp: GaussianNetwork
+    copula_model: gaussian
+    solver: ASE
+
+  - dgp: GaussianNetwork
+    copula_model: clayton
+    solver: ASE
+
+  - dgp: GaussianNetwork
+    copula_model: gumbel
+    solver: ASE
+
+  - dgp: GaussianNetwork
+    copula_model: student_t
+    df: 3
+    solver: ASE
+
+  - dgp: GaussianNetwork
+    copula_model: mixture_uniform
+    weights: [0.5, 0.5]
+    correlations: [0.98, -0.98]   # Strong positive/negative mix (vs ±0.5 in main study)
+    solver: ASE
+
+  # --- Bernoulli networks ---
+  - dgp: BernoulliNetwork
+    copula_model: gaussian
+    solver: pgd_fit_wrapper
+
+  - dgp: BernoulliNetwork
+    copula_model: clayton
+    solver: pgd_fit_wrapper
+
+  - dgp: BernoulliNetwork
+    copula_model: gumbel
+    solver: pgd_fit_wrapper
+
+  - dgp: BernoulliNetwork
+    copula_model: student_t
+    df: 3
+    solver: pgd_fit_wrapper
+
+  - dgp: BernoulliNetwork
+    copula_model: mixture_uniform
+    weights: [0.5, 0.5]
+    correlations: [0.98, -0.98]
+    solver: pgd_fit_wrapper
+
+
+# -----------------------------------------------------------------------------
+# Null Hypothesis Setups (H0: rho = 0)
+# Only Gaussian copula variants run under the null.
+# -----------------------------------------------------------------------------
+null_setups:
+  rho: [0.0]
+
+  setups:
+    - dgp: GaussianNetwork
+      copula_model: gaussian
+      solver: ASE
+
+    - dgp: BernoulliNetwork
+      copula_model: gaussian
+      solver: pgd_fit_wrapper
+
+
+# -----------------------------------------------------------------------------
+# Metrics
+# -----------------------------------------------------------------------------
+metrics:
+  compute_all: true
+
+
+# -----------------------------------------------------------------------------
+# Output
+# -----------------------------------------------------------------------------
+output:
+  results_dir: results
+  file_prefix: simulation_results   # Output: simulation_results_<YYYYMMDD_HHMM>.csv
