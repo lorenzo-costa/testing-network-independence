@@ -31,7 +31,7 @@ simulation:
   dim_individual : [3]    # Number of individual latent dimensions (for multiness setups)
   rho: [0.2]              # Correlation parameter under H1 (signal strength); 0.0 = null hypothesis
   alpha: [0.05]           # Nominal significance level(s) for hypothesis tests
-  edge_var: [1]           # Edge weight variance (used in Gaussian networks)
+  edge_var: [3]           # Edge weight variance (used in Gaussian networks)
   shared_latent_type : ['gaussian', 'one_hot']
  
 # -----------------------------------------------------------------------------

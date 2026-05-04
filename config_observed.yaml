@@ -19,7 +19,7 @@ simulation:
   k: [3]
   rho: [0.2]
   alpha: [0.05]
-  edge_var: [1]
+  edge_var: [3]
 
   # Subset of marginals — cauchy included but heavier-tailed ones excluded
   marginals:
