@@ -3,11 +3,12 @@ load_config.py
 --------------
 Universal config loader for all simulation experiments.
 
-Supports four experiment types, auto-detected from YAML structure:
+Supports five experiment types, auto-detected from YAML structure:
   - "standard"       -> main study + observed CVM sweep (same structure, different values)
   - "lee2019"        -> latent functional-relationship study (Lee et al. 2019)
   - "diff_marginals" -> asymmetric per-network marginal distributions
   - "sbm"            -> stochastic block model misspecification study
+  - "multiness"      -> multi-network study with common/individual latent dimensions
 
 Public API
 ----------
@@ -136,7 +137,7 @@ def _resolve_methods_block(methods_cfg: dict) -> dict:
         "list":            [_resolve_method(m) for m in methods_cfg["list"]],
         "npermutations":   methods_cfg.get("npermutations", [200]),
         "df":              methods_cfg.get("df", [3]),
-        "approximation":   methods_cfg.get("approximation", ["F-distr"]),
+        "approximation":   methods_cfg.get("approximation"),  # None when absent (e.g. multiness)
         "use_true_latent": methods_cfg.get("use_true_latent"),  # None when absent
     }
 
@@ -152,8 +153,9 @@ def _detect_experiment_type(raw: dict) -> str:
     Detection priority (most specific first):
       1. "sbm"           -- top-level `sbm:` key is present
       2. "lee2019"       -- `setups` is a dict with a `gaussian_latent_sims` key
-      3. "diff_marginals"-- first marginals entry is a dict (has 'x'/'y' keys)
-      4. "standard"      -- everything else (main study + observed CVM sweep)
+      3. "multiness"     -- simulation block contains `dim_common` key
+      4. "diff_marginals"-- first marginals entry is a dict (has 'x'/'y' keys)
+      5. "standard"      -- everything else (main study + observed CVM sweep)
     """
     if "sbm" in raw:
         return "sbm"
@@ -161,6 +163,9 @@ def _detect_experiment_type(raw: dict) -> str:
     setups_raw = raw.get("setups", {})
     if isinstance(setups_raw, dict) and "gaussian_latent_sims" in setups_raw:
         return "lee2019"
+
+    if "dim_common" in raw.get("simulation", {}):
+        return "multiness"
 
     marginals = raw.get("simulation", {}).get("marginals", [])
     if marginals and isinstance(marginals[0], dict):
@@ -180,25 +185,27 @@ def load_config(path: str = "config.yaml") -> dict:
     Returned keys
     -------------
     experiment_type : str
-        One of "standard", "lee2019", "diff_marginals", "sbm".
+        One of "standard", "lee2019", "diff_marginals", "sbm", "multiness".
     simulation : dict
         Raw simulation block: nsim, n, k, rho, alpha, edge_var, marginals, seed.
+        multiness also carries: dim_common, dim_individual, shared_latent_type.
     rng : np.random.Generator
         Seeded RNG ready for use.
     methods : dict
-        list           -- resolved callables
-        npermutations  -- list of ints
-        df             -- list of ints (None for sbm)
-        approximation  -- list of strings (None for sbm)
+        list            -- resolved callables
+        npermutations   -- list of ints
+        df              -- list of ints (None for sbm / multiness)
+        approximation   -- list of strings or None when absent (multiness / sbm)
         use_true_latent -- list of bools or None when not applicable
     setups : list
         (partial(DGP, ...), Solver) tuples for the H1 run.
     null_setups : dict | None
         {"rho": [...], "setups": [...]} for H0 runs, or None.
     extra_params : dict
-        lee2019 -> {"sparsity": {"make_sparse": [...], "sparsity_bias": [...]}}
-        sbm     -> {"sbm": {"assortativity": [...], "sparsity_bias": [...], ...}}
-        others  -> {}
+        lee2019   -> {"sparsity": {"make_sparse": [...], "sparsity_bias": [...]}}
+        sbm       -> {"sbm": {"assortativity": [...], ...}}
+        multiness -> {}   (extra dims live directly in cfg["simulation"])
+        others    -> {}
     metrics : list
     output : dict
         results_dir, file_prefix
@@ -218,6 +225,7 @@ def load_config(path: str = "config.yaml") -> dict:
     elif exp_type == "sbm":
         setups = _resolve_sbm_setups(raw["setups"])
     else:
+        # standard, diff_marginals, multiness — all use copula-style setup entries
         setups = [_resolve_standard_setup(e) for e in raw["setups"]]
 
     # -- Resolve null setups (standard-family experiments only) ---------------
@@ -283,17 +291,51 @@ def build_factorial_design(cfg: dict) -> tuple:
     def _standard_rows(setups_list, rho_list):
         names = [
             "setup", "method", "n", "k", "alpha", "marginals",
-            "rho", "edge_var", "approximation", "npermutations", "df",
+            "rho", "edge_var", "npermutations", "df",
         ]
         vals = [
             setups_list, mth["list"], sim["n"], sim["k"], sim["alpha"],
             sim["marginals"], rho_list, sim["edge_var"],
-            mth["approximation"], mth["npermutations"], mth["df"],
+            mth["npermutations"], mth["df"],
         ]
+        # approximation is optional — absent in multiness configs
+        if mth["approximation"] is not None:
+            names.append("approximation")
+            vals.append(mth["approximation"])
         if mth["use_true_latent"] is not None:
             names.append("use_true_latent")
             vals.append(mth["use_true_latent"])
         return [dict(zip(names, v)) for v in iproduct(*vals)]
+
+    # -- Multiness ------------------------------------------------------------
+    if exp == "multiness":
+        names = [
+            "setup", "method", "n", "k", "alpha",
+            "rho", "edge_var", "npermutations", "df",
+            "dim_common", "dim_individual", "shared_latent_type",
+        ]
+        vals = [
+            sets, mth["list"], sim["n"], sim["k"], sim["alpha"],
+            sim["rho"], sim["edge_var"],
+            mth["npermutations"], mth["df"],
+            sim["dim_common"], sim["dim_individual"], sim["shared_latent_type"],
+        ]
+        if mth["use_true_latent"] is not None:
+            names.append("use_true_latent")
+            vals.append(mth["use_true_latent"])
+
+        h1 = [dict(zip(names, v)) for v in iproduct(*vals)]
+
+        h0 = None
+        if cfg["null_setups"]:
+            null  = cfg["null_setups"]
+            names_h0 = [n if n != "rho" else "rho" for n in names]  # same schema
+            vals_h0  = [null["setups"] if n == "setup" else
+                        null["rho"]    if n == "rho"   else v
+                        for n, v in zip(names, vals)]
+            h0 = [dict(zip(names_h0, v)) for v in iproduct(*vals_h0)]
+
+        return h1, h0
 
     # -- Lee 2019 -------------------------------------------------------------
     if exp == "lee2019":
