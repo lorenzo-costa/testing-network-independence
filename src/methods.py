@@ -325,16 +325,21 @@ class ObservedCVM(BaseMethod):
         # need to estimate latent positions
         A = data.get("A")
         B = data.get("B")
+        Z = data.get("Z", None)
+        X = data.get("X", None)
+        
         self.A = A
         self.B = B
+        
+        matrix_A = Z@Z.T if self.use_true_latent and Z is not None else A
+        matrix_B = X@X.T if self.use_true_latent and X is not None else B
 
-        test_stat_estimate = self.test_function(A, B)
+        test_stat_estimate = self.test_function(matrix_A, matrix_B)
         self.test_stat_estimate = test_stat_estimate
-        # permute one of the observe networks, re-estimate latent positions and compute RV coefficient
         for _ in range(self.npermutations):
             perm = self.rng.permutation(B.shape[0])
-            B_perm = B[perm][:, perm]
-            test_stat_perm = self.test_function(A, B_perm)
+            matrix_B_perm = matrix_B[perm][:, perm]
+            test_stat_perm = self.test_function(matrix_A, matrix_B_perm)
             self.permutation_distribution.append(test_stat_perm)
 
         # compute pvalue
