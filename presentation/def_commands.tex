@@ -1,0 +1,216 @@
+%    Include other referenced packages here.
+\usepackage{pgfplots}
+\usepackage{mathtools}
+\usepackage{amssymb,amsmath,amsthm}
+%\usepackage[inline]{enumitem}
+\usepackage{relsize}
+\usepackage{mathtools}
+\usepackage{multicol}
+\usepackage{booktabs}
+\usepackage{calc}
+\usepackage{esdiff}
+\usepackage{systeme}
+\usepackage{bm}
+\usepackage[most]{tcolorbox}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% definitions
+% theorem, proposition, corollary, lemma
+% \newtheorem{theorem}{Theorem}[section]
+% \newtheorem{corollary}{Corollary}[theorem]
+% \newtheorem{lemma}[theorem]{Lemma}
+% \newtheorem{proposition}{Proposition}[section]
+% \newtheorem{definition}{Definition}[section]
+
+
+\newcommand{\mydef}[2]{
+    \begin{tcolorbox}[colback=blue!5, colframe=blue!75!black, title=#1]
+        #2
+    \end{tcolorbox}
+}
+
+
+% numerical sets
+\newcommand{\real}{{\mathbb R}}
+\newcommand{\realm}{{{\mathbb R}^m}}
+\newcommand{\rational}{{\mathbb Q}}
+\newcommand{\integer}{{\mathbb Z}}
+\newcommand{\naturals}{{\mathbb N}}
+\newcommand{\complex}{{\mathbb C}}
+\newcommand{\F}{{\mathbb F}}
+\newcommand{\R}{{\mathbb R}}
+\newcommand{\C}{{\mathbb C}}
+\newcommand{\Rn}{{\mathbb R}^n}
+\newcommand{\Rm}{{\mathbb R}^m}
+\newcommand{\cn}{{\mathbb C}^n}
+\newcommand{\rnn}{{{\mathbb R}^{n\times n}}}
+\newcommand{\rnm}{{{\mathbb R}^{n\times m}}}
+\newcommand{\rmn}{{{\mathbb R}^{m\times n}}}
+\newcommand{\cnn}{{{\mathbb C}^{n\times n}}}
+
+% abs and norm, ceil and floor, inner product
+\DeclarePairedDelimiter\abs{\lvert}{\rvert}%
+\DeclarePairedDelimiter\norm{\lVert}{\rVert}%
+\DeclarePairedDelimiter\ceil{\lceil}{\rceil}
+\DeclarePairedDelimiter\floor{\lfloor}{\rfloor}
+\DeclarePairedDelimiter\inner{\langle}{\rangle}
+%\providecommand{\norm}[1]{\lVert#1\rVert}
+% Swap the definition of \abs* and \norm*, so that \abs
+% and \norm resizes the size of the brackets, and the 
+% starred version does not.
+\makeatletter
+\let\oldabs\abs
+\def\abs{\@ifstar{\oldabs}{\oldabs*}}
+%
+\let\oldnorm\norm
+\def\norm{\@ifstar{\oldnorm}{\oldnorm*}}
+\makeatother
+
+% common functions
+\newcommand{\rtr}{\real\to\real}
+\newcommand{\rttr}{\real^2\to\real}
+
+% common matrices
+\newcommand{\MmnF}{M_{mn}(\F)}
+\newcommand{\MnF}{M_{n}(\F)}
+
+% diagonal matrix
+\DeclareMathOperator{\diag}{diag}
+
+%domain 
+\DeclareMathOperator{\dom}{dom}
+
+% image of a linear operator
+\DeclareMathOperator{\Ima}{Im}
+
+% range of a linear operator
+\DeclareMathOperator{\range}{range}
+
+% Rank of a linear operator
+\DeclareMathOperator{\rank}{rank}
+
+% projection of a linear operator
+\DeclareMathOperator{\proj}{proj}
+
+% Null and Column space of a matrix
+\DeclareMathOperator{\rspace}{\mathcal{R}}
+\DeclareMathOperator{\nspace}{\mathcal{N}}
+\DeclareMathOperator{\cspace}{\mathcal{C}}
+
+% Trace of a linear operator
+\DeclareMathOperator{\tr}{tr}
+
+% Rank of a linear operator
+\DeclareMathOperator{\vspan}{span}
+
+% Sign of a function
+\DeclareMathOperator{\sign}{sgn}
+
+% differential d
+\newcommand{\dif}{\mathop{}\!\mathrm{d}}
+\newcommand{\od}[2]{\frac{\dif #1}{\dif #2}}
+\newcommand{\dod}[2]{\displaystyle\frac{\dif #1}{\dif #2}}
+
+% complement
+\newcommand{\scomp}[1]{{#1^\complement}}
+
+% interior & closure
+\newcommand{\interior}[1]{{\kern0pt#1}^{\mathrm{o}}}
+\newcommand{\closure}[1]{{\overline{#1}}}
+
+% evaluated integral 
+\newcommand\eval[3]{\left[#1\right]_{#2}^{#3}}
+
+% matrices p q
+\newcommand{\rmat}[2]{{{\mathbb R}^{{#1}\times {#2}}}}
+
+% vectors
+\newcommand{\vect}[1]{\mathbf{#1}}
+\newcommand{\va}{\mathbf{a}}
+\newcommand{\vb}{\mathbf{b}}
+\newcommand{\vc}{\mathbf{c}}
+\newcommand{\vd}{\mathbf{d}}
+\newcommand{\ve}{\mathbf{e}}
+\newcommand{\vf}{\mathbf{f}}
+\newcommand{\vp}{\mathbf{p}}
+\newcommand{\vq}{\mathbf{q}}
+\newcommand{\vr}{\mathbf{r}}
+\newcommand{\vs}{\mathbf{s}}
+\newcommand{\vx}{\mathbf{x}}
+\newcommand{\vy}{\mathbf{y}}
+\newcommand{\vz}{\mathbf{z}}
+\newcommand{\vu}{\mathbf{u}}
+\newcommand{\vw}{\mathbf{w}}
+\newcommand{\vv}{\mathbf{v}}
+\newcommand{\vT}{\mathbf{T}}
+\newcommand{\vX}{\mathbf{X}}
+\newcommand{\vY}{\mathbf{Y}}
+
+\newcommand{\vzero}{\mathbf{0}}
+\newcommand{\mzero}{\mathbf{O}}
+
+\newcommand{\vtn}[4]{
+\vect{#1}=\left[
+\begin{array}{c}
+#2 \\
+#3 \\
+#4
+\end{array}
+\right]}
+
+\newcommand{\vtu}[3]{
+\left[
+\begin{array}{c}
+#1 \\
+#2 \\
+#3
+\end{array}
+\right]}
+
+\newcommand{\vtd}[4]{
+\left[
+\begin{array}{c}
+#1 \\
+#2 \\
+#3 \\
+#4
+\end{array}
+\right]}
+
+\newcommand{\vdn}[3]{
+\vect{#1}=\left[
+\begin{array}{c}
+#2 \\
+#3 
+\end{array}
+\right]}
+
+\newcommand{\vdu}[2]{
+\left[
+\begin{array}{c}
+#1 \\
+#2 
+\end{array}
+\right]}
+
+\newcommand{\stlb}[3]{
+\left\{\begin{matrix}
+#1 \\ #2 \\ #3
+\end{matrix}\right.}
+
+\newcommand{\stlt}[3]{
+\left\{\begin{matrix}
+#1 \\ #2 \\ #3
+\end{matrix}\right.}
+
+% horbars in matrices
+\newcommand{\brows}[1]{%
+  \begin{bmatrix}
+  \begin{array}{@{\protect\rotvert\;}c@{\;\protect\rotvert}}
+  #1
+  \end{array}
+  \end{bmatrix}
+}
+\newcommand{\rotvert}{\rotatebox[origin=c]{90}{$\vert$}}
+\newcommand{\rowsvdots}{\multicolumn{1}{@{}c@{}}{\vdots}}
+

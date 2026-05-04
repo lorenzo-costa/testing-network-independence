@@ -1,0 +1,952 @@
+\documentclass[10.5pt]{beamer}
+
+%\linespread{1.2}
+\include{def_commands}
+\usepackage{bm} 
+\usepackage{amsmath}
+\usepackage{xcolor}
+\usepackage{comment}
+\usepackage{graphicx}
+\usepackage{listings}
+\setbeamertemplate{caption}[numbered]
+\usetheme{CambridgeUS}
+\usecolortheme{dolphin}
+\usepackage{color}
+\usepackage{subcaption}
+\usepackage[most]{tcolorbox}
+\usepackage{tikz}
+\usepackage{pifont}
+
+\usepackage[round]{natbib} 
+\bibliographystyle{plainnat} 
+
+\setbeamercovered{transparent}
+
+\definecolor{dkgreen}{rgb}{0,0.6,0}
+\definecolor{gray}{rgb}{0.5,0.5,0.5}
+\definecolor{mauve}{rgb}{0.58,0,0.82}
+
+\lstset{frame=tb,
+  language=Python,
+  aboveskip=3mm,
+  belowskip=3mm,
+  showstringspaces=false,
+  columns=flexible,
+  basicstyle={\small\ttfamily},
+  numbers=none,
+  numberstyle=\tiny\color{gray},
+  keywordstyle=\color{blue},
+  commentstyle=\color{dkgreen},
+  stringstyle=\color{mauve},
+  breaklines=true,
+  breakatwhitespace=true,
+  tabsize=3
+}
+
+\newcommand{\methoditem}[2]{
+\ifnum#1=\value{methodindex}
+    {\color{blue}\textbf{$\blacktriangleright$ #2}}
+\else
+    {\color{gray}#2}
+\fi
+}
+
+
+\newcounter{methodindex}
+
+\setbeamersize{text margin left=8mm,text margin right=8mm} 
+\beamertemplatenavigationsymbolsempty
+
+\hypersetup{
+    colorlinks = true,
+    linkcolor = blue!60!black,
+    citecolor = red
+}
+
+\setbeamertemplate{footline}{
+  \hfill%
+  \usebeamercolor[fg]{page number in head/foot}%
+  \usebeamerfont{page number in head/foot}%
+  \setbeamertemplate{page number in head/foot}[framenumber]%
+  \usebeamertemplate*{page number in head/foot}\kern1em\vskip2pt%
+}
+
+\AtBeginSection[]
+{
+  \begin{frame}
+    \frametitle{Table of Contents}
+    \tableofcontents[currentsection]
+  \end{frame}
+}
+
+\title{Network Independence Testing via Copulas}
+\author{\vspace{-0.5cm} Lorenzo Costa}
+\institute{}
+\date{March 2026}
+
+\begin{document}
+
+\begin{frame}
+\titlepage
+\end{frame}
+
+% \begin{frame}{Contents}
+% 	\tableofcontents
+% \end{frame}
+
+\begin{frame}{Problem Definition}
+\textbf{Goal}: test the independence between two layers of a multiplex network. For adjacency matrices $A\in \mathbb{R}^{n\times n}, B\in \mathbb{R}^{n\times n}$ we want to test:
+\[
+H_0: A\perp B \text{ vs } H_1: A\not\perp B
+\]
+
+\textbf{Setup}: Assume there exists latent variables $z_{i}, x_{i}\in \mathbb{R}^d$ such that entries of the adjacency matrices are \textbf{conditionally independent} given these latent variables:
+\[
+p(A_{ij}, B_{ij}) = p_A(A_{ij}|z_{i}, z_{j}) p_B(B_{ij}|x_{i}, x_{j}) \;p_{z, x}(z_{i}, z_{j}, x_{i}, x_{j})
+\]
+\end{frame}
+
+% \begin{frame}{Why do we care ?}
+    
+% \end{frame}
+
+\begin{frame}{Why do we need this?}
+For example in economics understanding systemic financial risk requires analyzing how institutions interact across different markets. Modelling these as multiple networks on the same nodes relies on a key assumption:
+\begin{itemize}
+    \item if they are \textbf{independent} we can just sum the individual risks
+    \item if they are \textbf{dependent}  summing individual risk leads to significant under-estimation of risk e.g. \citep{poledna_multi-layer_2015} 
+\end{itemize}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.5\linewidth]{figures/risk.png}
+    \caption{Risk for different markets - Mexican Banking system}
+    \label{fig:placeholder}
+\end{figure}
+
+\end{frame}
+
+\section{From the literature}
+
+\begin{frame}{From the literature}
+From the literature two main threads of research emerge:
+\begin{enumerate}
+\setlength{\itemsep}{1.2em}
+
+    \item tests based on \textbf{latent positions} such as based on model assumption \citep{fosdick_testing_2015}, distance correlation \citep{lee_network_2019} or RKHS \citep{wen_rkhs-based_2023}.
+    \begin{itemize}
+        \item \textbf{cons}: requires estimation of latent positions and choice of embedding dimension
+        \item \textbf{pros}: reduces noise, possibly higher power
+    \end{itemize}
+    \pause
+    \item tests based on the \textbf{adjacency matrix} itself such as the Quadratic Assignment Procedure  \citep{mantel_detection_1967, shi_asymptotic_2025}
+    \begin{itemize}
+        \item \textbf{cons}: more sensitive to noise, may have lower power.
+        \item \textbf{pros}: no embedding needed, easier to use 
+    \end{itemize}
+    
+\end{enumerate}
+
+\end{frame}
+
+\begin{frame}{From the literature}
+All the methods presented later have a similar structure:
+\begin{block}{Testing Procedure}
+\begin{itemize}
+    \item \textbf{Step 1: embedding} (optional). Estimate latent positions $\hat{X}, \hat{Z}$.
+    \item \textbf{Step 2: test statistic}. Compute dependence some measure of dependence.
+    \item \textbf{Step 3: null distribution}. Approximate the null distribution by permuting the nodes and obtain a p-value.
+\end{itemize}
+\end{block}
+By choosing step 1 and 2 we obtain different tests having specific strengths and weaknesses.
+\end{frame}
+
+\subsection{Distance Correlation}
+
+\begin{frame}{From the literature - Distance Covariance}
+Define $(Z', X')$ iid copies of random vectors $(Z, X)$ and:
+\[
+m_1(X, x) =\mathbb{E}_{X}||X-x|| \quad m_2(X, X') = \mathbb{E}_{X, X'}||X-X'||
+\]
+
+\mydef{Distance Covariance \citep{szekely_measuring_2007}}{
+Distance covariance is defined as:
+\[
+dcov(Z, X) = \mathbb{E}_{Z, Z', X, X'}(d(Z, Z')d(X, X')) 
+\]
+for $d(x, x') = ||x-x'|| - m_1(X, x) - m_1(X', x') + m_2(X, X')$. 
+}
+Distance correlation is then defined by dividing $dcov$ by distance variances.
+
+$\Rightarrow$ it can be shown that $dcov$ is zero if and only if $Z, X$ are independent 
+\end{frame}
+
+\begin{frame}{From the literature - Distance Correlation}
+We can define a sample version as:
+\[
+dcov(Z, X) = \frac{1}{n^{2}}\sum_{i,j}\tilde{C}_{ij}\tilde{D}_{ij}
+\]
+for $\tilde{D}$ the doubly centred matrix of distances $D_{ij}=||Z_i - Z_j||$ (and $\tilde{C}$ in a similar way for $X$)
+\vspace{.5em}
+
+\citet{shen_distance_2020} further extend this to a "local optimal" version, called \textbf{Multiscale Graph Correlation} (MGC), which has higher finite-sample power. 
+
+\end{frame}
+
+\begin{frame}{Multiscale Graph Correlation}
+Define $N_{i, k}$ as the set containing the $k$ closest nodes to $i$ and the truncated matrix $D_{ij}^{(k)}=D_{ij}1(j \in N_{i, k})$ (and $\tilde{D}^{(k)}$ its centred version).
+\mydef{Multiscale Graph Correlation}{
+Define local distance covariance as:
+\vspace{-.5em}
+\[
+dcov^{k,m}(Z, X) = \frac{1}{n^{2}}\sum_{i,j}\tilde{C}^{(k)}_{ij}\tilde{D}^{(m)}_{ij}
+\] 
+\vspace{-1.5em}
+
+and MGC as the maximum local correlation:
+\vspace{-.5em}
+\[
+MGC(Z, X) = \max_{k, m} dcorr^{k, m}(Z, X)
+\]
+} 
+\end{frame}
+
+
+\begin{frame}{From the literature - Distance Correlation}
+\citet{lee_network_2019} present a method to test independence between two networks that is:
+\begin{itemize}
+    \item \textbf{valid} if the two networks are exchangeable 
+    \item consistent under \textbf{any} form of dependency if $A, B$ are constrained to $\Theta$ where the embedding map is injective
+\end{itemize}
+
+\begin{block}{Testing Procedure }
+\begin{itemize}
+    \item \textbf{Step 1}: estimate latent positions $\hat{X}, \hat{Z}$ using \textit{Diffusion Maps} \citep{coifman_geometric_2005}
+    \item \textbf{Step 2}: compute dependence measures $MGC(\hat{X}, \hat{Z})$ or $dCorr(\hat{X}, \hat{Z})$.
+    \item \textbf{Step 3}: approximate the null distribution by permuting the rows of $\hat{X}$
+\end{itemize}
+\end{block}
+
+% Limitations of this approach:
+% \begin{itemize}
+%     \item \textbf{practical}: step 1 requires estimation of the latent positions
+%     \item \textbf{theoretical}: distance correlation works under the assumption that the latent positions have finite expectation
+% \end{itemize}
+\end{frame}
+
+% \begin{frame}{From the literature - RKHS}
+% Assume networks are generated as:
+% \[
+% A_{ij}\sim Bernoulli(K_{z_i,z_j}) \quad B_{ij}\sim Bernoulli(L_{x_i, x_j})
+% \]
+% for $K_{z_i,z_j}=K(z_i, z_j), L_{x_i,x_j}=L(x_i, x_j)$ and $K(\cdot, \cdot), L(\cdot, \cdot)$ kernel functions.
+% \vspace{.5em}
+
+% By Mercer's theorem we can write $K$ in its feature map representation:
+% \[
+% K(x, y) = \langle \phi(x), \phi(y) \rangle_{H} \quad \phi(x) = \{ \sqrt{\lambda_j}\psi_j(x), j=1, 2, \dots\}
+% \]
+
+% Denote as $\phi_d(x)$ the truncation of the feature map at $j=d$. Using a result in \citet{tang_universally_2013} we have that ASE 
+% can be used to estimate the $\phi_d(x)$ 
+% %with error decreasing as $O(\sqrt{\log n/ n})$ 
+% such that the kernel matrix can be estimated as $\hat{K}=\hat{\phi}_d \hat{\phi}_d^T$.
+% \end{frame}
+
+% \begin{frame}{From the literature - RKHS}
+% For $(X', Z'), (X'', Z'')$ independent copies of $(X, Z)$ \citet{wen_rkhs-based_2023} define \textit{Graph Covariance} as:
+% \[
+% gCov(A, B) = \mathbb{E}K_{XX'}L_{ZZ'} + \mathbb{E}K_{XX'}\mathbb{E}L_{YY'} - 2\mathbb{E}K_{XX'}L_{ZZ''}
+% \]
+% which is zero iff $G_1, G_2$ are independent.
+% \vspace{.5em}
+
+% A sample version can be found from the $U$-centred estimated matrices $\tilde{K}, \tilde{L}$ as:
+% \[
+% gCov_n(A, B) = \frac{1}{n(n-3)}\sum_{i\neq j} \tilde{k}_{ij} \tilde{l}_{ij}
+% \]
+% Using this measure of dependence the authors define a permutation test in the same way as for distance correlation.
+
+% \end{frame}
+
+\subsection{Quadratic Assignment Procedure}
+
+\begin{frame}{From the literature - QAP}
+QAP is a general framework to test the relationships between two networks using a double permutation strategy: 
+\begin{block}{Quadratic Assignment Procedure}
+\begin{itemize}
+\setlength{\itemsep}{.5em}
+    \item \textbf{Step 1}: compute a test statistic $W(A, B)$ 
+    \item \textbf{Step 2}: permute rows and columns of $A$ according to permutation $\pi$ and recomputing $W^\pi(A_\pi, B)$ to get the p-value
+\end{itemize}
+\end{block}
+\pause
+
+A common choice of test statistic is the Pearson correlation:
+\[
+\hat{\rho}(A, B) = \frac{\sum_{i\neq j}(A_{ij}-\bar{A})(B_{ij}-\bar{B})}{\sqrt{\sum_{i\neq i}(A_{ij}-\bar{A})^{2}\sum_{i\neq j}(B_{ij}-\bar{B})^{2}}}
+\]
+Which would be the equivalent of computing $dcorr$ using L2 distance on the observed adjacency matrix.
+\end{frame}
+
+\begin{frame}{From the literature - QAP}
+Assume now that there exists two symmetric functions $\alpha(\cdot, \cdot), \beta(\cdot, \cdot)$ such that entries of the adjacency matrices can be written as:
+\[
+A_{ij} = \alpha(Z_i, Z_j)\quad B_{ij}= \beta(X_i, X_j)
+\]
+For a general kernel $\phi$ define $\phi_0=\mathbb{E}\phi(X, X')$ and:
+\[
+\underbrace{\eta_{\phi, 1} = \mathbb{E}_X\left(\mathbb{E}_{X'}\phi(X, X')-\phi_0 \right)^2}_{\text{first order variance}} \quad \underbrace{\eta_{\phi, 2} = \mathbb{E}_{X, X'}\left(\phi(X, X')-\phi_0 \right)^2}_{\text{second order variance}}
+\]
+\citet{shi_asymptotic_2025} show that, under $H_0: Z\perp X$, the sampling distribution of $\hat{\rho}$ is:
+\[
+\sqrt{n}\hat{\rho}\to \mathcal{N}\left(0, v\right) \quad v = \frac{\eta_{1, \alpha}\eta_{1, \beta}}{\eta_{2, \alpha}\eta_{2, \beta}}
+\]
+
+\end{frame}
+
+\begin{frame}{From the literature - QAP}
+Moreover assuming that there exists two functions $\kappa_\alpha(\cdot), \kappa_\beta(\cdot),$ such that:
+\[
+|\alpha(Z, Z')| \le \kappa_\alpha(Z) + \kappa_\alpha(Z') \quad |\beta(X, X')| \le \kappa_\beta(X) + \kappa_\beta(X') 
+\]
+and that $\kappa_\alpha(\cdot), \kappa_\beta(\cdot),$ have finite fourth moment, we have:
+\[
+\lim_{n\to \infty}\sup_{t \in \mathbb{R}} |\mathcal{L}(t; \sqrt{n}\hat{\rho}^\pi) - \mathcal{L}(t; \mathcal{N}(0, v)|=0 \quad a.s.
+\]
+where $\mathcal{L}(t; \sqrt{n}\hat{\rho}^\pi)=\frac{1}{n!}\sum_{\pi\in \mathbb{S}_n} 1(\sqrt{n}\hat{\rho}^\pi \le t)$ denotes the permutation cdf of $\hat{\rho}$ computed using all $n!$ permutations
+\vspace{.5em}
+% \pause
+% \begin{itemize}
+%     \item[{\ding{226}}] \textbf{pros}: very easy to use
+%     \item[{\ding{226}}] \textbf{cons}: can detect only monotonic dependence
+% \end{itemize}
+
+\end{frame}
+
+\section{Copula perspective}
+\begin{frame}{What is a Copula?}
+Take a random vector $(X_1, X_2, \dots, X_d)$ with continuous marginals. By applying the probability integral transform to each component, the random vector:
+\[
+(U_1, U_2, \dots, U_d) = (F_1(X_1), F_2(X_2), \dots, F_d(X_d))
+\]
+has marginals that are uniform on $[0, 1]$.
+\vspace{.5em}
+
+The copula of $(X_1, \dots, X_d)$ is defined as the joint cdf of $(U_1, \dots, U_d)$:
+\[
+\begin{split}
+    C(u_1, u_2, \dots, u_d) &= \mathbb{P}[U_1 \leq u_1, U_2 \leq u_2, \dots, U_d \leq u_d] \\
+    &= \mathbb{P}[X_1 \leq F_1^{-1}(u_1), X_2 \leq F_2^{-1}(u_2), \dots, F_d^{-1}(u_d),]
+\end{split}
+\]
+$\Rightarrow$ this contains all information on the dependence structure between the components of $(X_1, X_2, \dots, X_d)$.
+\end{frame}
+
+\begin{frame}{Framework set-up}
+Assuming the pairs $(x_i, z_i)$ are iid we can write: we can write the likelihood:
+\vspace{-.5em}
+\[
+p(A_{ij}, B_{ij}) = p_A(A_{ij}|z_{i}, z_{j}) p_B(B_{ij}|x_{i}, x_{j}) \;p_{Z, X}(z_{j},x_{j})p_{Z, X}(z_{i}, x_{i})
+\]
+\vspace{-1.25em}
+
+By Sklar’s theorem \citep{sklar_fonctions_1959} any multivariate cdf can be decomposed into its \textcolor{green!50!black}{marginals} and a \textcolor{blue}{copula}\footnote{here we're assuming the density exists, for discrete distributions copula still exists but $p_{x,z}$ is more messy}:
+\[
+p_{z, x}(z_{i}, x_{i}) = {\color{green!50!black}f_z(z_{i, 1}) \dots f_z(z_{i, d}) f_x(x_{i, 1}) \cdot f_x(x_{i, d})} \cdot {\color{blue}c_{z, x}}
+\]
+where ${\color{blue}c_{z, x}}= c(F_{z_{1}}(z_{i, 1}), \dots, F_z(z_{i,d}), F_x(x_{i,1}), \dots,,F_{x_{1}}(x_{i, d}) )$ denotes the copula density (i.e. derivative of copula)
+\vspace{.5em}
+\pause
+
+If we further assume that the dimensions of the latent space are independent we get:
+\vspace{-.5em}
+\[
+p_{z, x}(z_{i}, x_{i}) = \prod_{k=1}^d {\color{green!50!black}f_z(z_{i, k})f_x(x_{i, k})}{\color{blue}c(F_z(z_{i, k}), F_x(x_{i, k}))}
+\]
+% \vspace{-1.25em}
+
+% which means we are in practice using a series of bivariate not high-dimensional copulas.
+\end{frame}
+
+
+\subsection{Copula constructions}
+\begin{frame}{Copula constructions}
+Two popular ways to construct copulas are:
+\begin{itemize}
+    \item \textbf{Elliptical copulas} which are built from well-known multivariate distributions such as the Gaussian distribution as:
+    \[
+    C_{gauss}(\mathbf{u}) = \Phi_{R}(\Phi_{1}^{-1}(F_{1}(u_1)),\dots, \Phi_{1}^{-1}(F_{d}(u_d)))
+    \]
+    for $\Phi_R$ the cdf of a multivariate Gaussian with correlation matrix $R$ and $\Phi_1$ the cdf of $\mathcal{N}(0, 1)$.
+    \item \textbf{Archimedean copulas} which are build starting from a function $\phi(\cdot)$ (called a generator) as:
+    \[
+    C_{arch}(u, v) = \phi^{[-1]}(\phi(u)+\phi(v))
+    \]
+    For $\phi(t): [0,1]\to[0, \infty)$ a strictly decreasing, continuous, and convex function with $\phi(1)=0$.
+\end{itemize}
+
+
+\vspace{.5em}
+
+\end{frame}
+
+\begin{frame}{Copula constructions}
+Different choices of $\phi(\cdot)$ allow us to model many kind of dependencies such as:
+\begin{itemize}
+    % \item \textbf{Frank} copula: symmetric with no tail dependency. Generator is $\phi(u) = - \ln \left( \frac{e^{-u\theta}-1}{e^{-\theta}-1} \right)$ for $\theta\neq 0$
+    \item \textbf{Clayton} copula: lower tail dependency. Generator is $\phi(u) = \frac{1}{\theta} (u^{-\theta}-1)$ for $\theta>0$
+    \item \textbf{Gumbel} copula: upper tail dependency. Generator is $(-\ln (u))^\theta$ for $\theta\ge 1$.
+\end{itemize}
+\vspace{.5em}
+
+Note: also that convex linear combination of copulas yield valid copulas so we can get highly non-linear relations by defining a \textbf{mixture of copulas} (e.g. mixture of Gaussian):
+\[
+C(u, v) = w_{1} C^{gauss}_{1}(u, v) + w_2C^{gauss}_{2}(u, v)
+\]
+\end{frame}
+
+\begin{frame}<1-3>[t]{Copula constructions} % <1-3> forces the slides to exist
+Different combinations of copula and marginals give us different correlation structures:
+
+\begin{tikzpicture}[remember picture, overlay]
+    % 1. Image on ALL slides (1, 2, and 3)
+    % Using yshift to nudge it down if the title blocks it
+    \node<1-> at ([yshift=-1cm]current page.center) {
+        \includegraphics[width=1\textwidth]{figures/visualise_latent.png}
+    };
+
+    % 2. Text Box ONLY on slide 2
+    \node<2> [
+        fill=white,
+        draw=black,
+        line width=1pt, 
+        inner sep=15pt,
+        rounded corners,
+        fill opacity=0.9, % Makes it slightly see-through so it looks "on top"
+        text opacity=1     % Keeps text solid
+    ] at (current page.center) {
+        \begin{minipage}{0.75\textwidth}
+            Note: for Elliptical and Archimedean copula there is a map between the copula parameter and Kendall's $\tau$:
+            \[
+            \tau_{\text{arch}} = 1+4 \int_0^1 \frac{\phi(t)}{\phi'(t)}dt 
+            \quad \tau_{\text{ellip}} = \frac{2}{\pi}\arcsin(\rho)
+            \]
+        \end{minipage}
+    };
+\end{tikzpicture}
+\end{frame}
+
+\subsection{RV coefficient}
+\begin{frame}{RV coefficient}
+Under a Gaussian copula model testing independence reduces to testing for zero correlation. This motivates the use of a "matrix version" of Pearson correlation to build a test
+
+\mydef{RV coefficient \citep{escoufier_traitement_1973, robert_unifying_1976}}{
+Suppose $Z, X\in \mathbb{R}^{n\times d}$ are matrices with centred columns. For $\Sigma_{zx} =\mathbb{E}(ZX^T), \Sigma_{zz}=\mathbb{E}(ZZ^T)$, RV coefficient is defined as:
+\[
+RV(Z, X) = \frac{Tr(\Sigma_{zx}\Sigma_{xz})}{\sqrt{Tr(\Sigma_{xx})Tr(\Sigma_{zz})}}
+\]
+}
+\end{frame}
+
+\begin{frame}{RV Coefficient}
+\vspace{0.5em}
+\citet{mordant_measuring_2021} show that the maximum value the denominator can take is $\sum_{i=1}^d \lambda_{i, x}\lambda_{i, z}$ which motivates the definition of the \textbf{adjusted RV coefficient}:
+\[
+ RV(Z, X) = \frac{Tr(\Sigma_{ZX}\Sigma_{XZ})}{\sum_{i=1}^d \lambda_{i, z}\lambda_{i, x}}
+\]
+for $\lambda_{i, z}\lambda_{i, x}$ eigenvalues of $\Sigma_{ZZ}$ and $\Sigma_{XX}$.
+\vspace{.5em}
+
+We can then find a sample version, for $\hat{Z}, \hat{X}$ matrix of estimated latent positions, as:
+\[
+RV(\hat{Z}, \hat{X}) = \frac{Tr(\hat{Z}\hat{X}^T\hat{X}\hat{Z}^T)}{\sum_{i=1}^d \lambda_{i, z}\lambda_{i, x}}
+\]
+for $\lambda_{i, z}\lambda_{i, x}$ eigenvalues of $ZZ^T$ and $XX^T$.
+\end{frame}
+
+\begin{frame}{RV Coefficient}
+\begin{block}{Testing procedure}
+\begin{enumerate}
+    \item \textbf{Step 1}: estimate the latent positions $\hat{X}, \hat{Z}$ 
+     \item \textbf{Step 2}: compute adjusted RV coefficient
+     \item \textbf{Step 3}: approximate the null distribution by permuting the rows of $\hat{X}$
+\end{enumerate} 
+\end{block}
+\end{frame}
+
+\begin{frame}{RV coefficient - when does it work?}
+Under a Gaussian copula model testing independence reduces to testing for zero correlation. 
+\vspace{.5em}
+
+Moreover, using Hoeffings covariance decomposition:
+\[
+Cov(Z, X) = \int_{-\infty}^{\infty}\int_{-\infty}^{\infty} C(F_Z(z), F_X(x)) - F_Z(z)F_X(x) dz dx
+\]
+we can show that the equivalence between testing for zero correlation and independence, holds for any copula for which:
+\begin{itemize}
+    \item strict \textbf{Positive or Negative Quadrant dependence} holds (i.e. $C(u, v) - u \cdot v$ strictly greater or smaller than zero) 
+    \item variance of the marginals exists
+\end{itemize}
+\vspace{.5em}
+
+Examples of this include one parameter Archimedean Copulas and elliptical copulas
+%TODO make this more general using multivariate Hoeffding lemma Block & Fang (1988) 
+\end{frame}
+
+\section{Possible extensions}
+\begin{frame}{Desiderata}
+We have that:
+\begin{itemize}
+    \item QAP is easy to use but cannot detect all forms of dependence
+    \item distance correlation is able to detect all types of dependence but requires embedding the network
+\end{itemize}
+\vspace{.5em}
+
+We are then missing something that:
+\begin{itemize}
+    \item can be applied "out-of-the box"
+    \item requires minimal effort to choose hyper-parameters
+    \item can detect all forms of correlation
+\end{itemize}
+\end{frame}
+
+\subsection{Cramer Von Mises}
+\begin{frame}{Cramer Von Mises}
+\mydef{Cramer Von Mises \citep{jing_blum-kiefer-rosenblatt_1996}}{
+For $F_X(\cdot), F_Z(\cdot)$ cdf of $X, Z$ and $F_{Z, X}(\cdot, \cdot)$ define:
+\vspace{-.5em}
+\[
+T(Z, X)=\int (F_{Z, X}(z, x) - F_Z(z)F_X(x))^2 dzdx
+\]
+\vspace{-1.5em}
+
+This is zero if and only if $Z, X$ are independent.
+}
+
+\pause 
+
+Note that we can't apply this to latent positions because of rotational invariance.
+\vspace{.5em}
+
+However we can define a joint distribution on the \textbf{inner products} $P_{ij}^A=z_i^T z_j=\mathbb{E}(A_{ij})$ and apply CvM on these:
+\[
+T_n(A, B)=\int \Big(F_{A, B}(P_{ij}^A, P_{ij}^B) - F_A(P_{ij}^A)F_B(P_{ij}^B)\Big)^2 \, dF_AdF_B
+\]
+% $\Rightarrow$ the issue with applying this approach to latent variables is the orthogonal invariance if $d>2$.
+\end{frame}
+
+\begin{frame}{Cramer Von Mises}
+For $F_n(\cdot)$ the empirical cdf of $P_{ij}$ we can get a plug-in estimator as:
+\[
+T_n(A, B) =\frac{1}{n(n-1)} \sum_{i\neq j} \Big(F_{n}(P_{ij}^A, P_{ij}^B) - F_{n}(P_{ij}^A)F_{n}(P_{ij}^B)\Big)^2
+\]
+Now defining as $U^A_{ij},U^B_{ij}$ the ranks of $P^A_{ij}, P^B_{ij}$ (i.e. ordering) we can get a copula version that strips the effect of the marginals as:
+\[
+T_n(A, B) =\frac{1}{n(n-1)} \sum_{i\neq j} \Big(\hat{C}_n(U^A_{ij}, U^B_{ij}) - U^A_{ij}U^B_{ij}\Big)^2
+\]
+for $\hat{C}(u^A, u^B) = \frac{1}{n(n-1)}\sum_{i\neq j}1(U^A_{ij}\le u^A, U^B_{ij}\le u^B)$ the empirical copula.
+
+\end{frame}
+
+% \begin{frame}{Cramer Von Mises}
+% We can define a joint distribution on the \textbf{inner products} $z_i^T z_j=\mathbb{E}(A_{ij})$ and apply CvM on these:
+% \[
+% T_n(A, B)=\int \Big(F_{Z, X}(z_i^T z_j, x_i^T x_j) - F_Z(z_i^T z_j)F_X(x_i^T x_j)\Big)^2 \, dF_AdF_B
+% \]
+% For $F_n(\cdot)$ the empirical cdf of $P_{ij}$ we can get a plug-in estimator as:
+% \[
+% T_n(A, B) =\frac{1}{n(n-1)} \sum_{i\neq j} \Big(F_{n}(P_{ij}^A, P_{ij}^B) - F_{n}(P_{ij}^A)F_{n}(P_{ij}^B)\Big)^2
+% \]
+% Now defining as $U^A_{ij},U^B_{ij}$ the ranks of $P^A_{ij}, P^B_{ij}$ (i.e. ordering) we can get a copula version that strips the effect of the marginals as:
+% \[
+% T_n(A, B) =\frac{1}{n(n-1)} \sum_{i\neq j} \Big(\hat{C}_n(U^A_{ij}, U^B_{ij}) - U^A_{ij}U^B_{ij}\Big)^2
+% \]
+% for $\hat{C}(u^A, u^B) = \frac{1}{n(n-1)}\sum_{i\neq j}1(U^A_{ij}\le u^A, U^B_{ij}\le u^B)$ the empirical copula.
+
+% \end{frame}
+
+\begin{frame}{Ranking estimation - Weighted network}
+
+Note that we don't need to estimate $P_{ij}$ but only their \textbf{ranks}. 
+Take a weighted network:
+\[
+A_{ij} \overset{iid}{\sim}\mathcal{N}(z_i^T z_j, \sigma^2)
+\]
+or a RDPG model:
+\[
+A_{ij}\sim Bernoulli(z_i^T z_j) \quad z_i
+\sim F \; s.t. \; z_i^T z_j\in [0, 1]
+\]
+Define $A^2= A\cdot A$, estimation of the ranks is simplified by the observation:
+\[
+\frac{1}{n}\mathbb{E}((A^2)_{ij}|Z) = \frac{1}{n}\sum_{k=1}^n z_i^T z_k z_k^T z_j = z_i^T \frac{\left(\sum_{k=1}^{n}z_{k}z_{k}^{T}\right)}{n}z_{j} = z_{i}^{T} \hat{\Sigma}_Z z_{j}
+\]
+Then finding the ranks of $(A^2)_{ij}$ we can find the ranks of $P_{ij}=z_i^T z_j$.
+\end{frame}
+
+% \begin{frame}{Rank estimation - weighted network}
+% When does this work ? We need the matrix $\hat{\Sigma}$ to preserve the ordering, necessary conditions would be:
+% \begin{itemize}
+%     \item $\hat{\Sigma}$ is full rank. If one of the eigenvalues is zero one dimension would be "collapsed" and become irrelevant for the ordering.
+% \end{itemize}
+
+% \begin{itemize}
+%     \item when the covariance matrix is diagonal such that $\hat{\Sigma}\to cI$ 
+%     \item in simulation works also when $\Sigma$ is supposed to disto
+% \end{itemize}
+% \vspace{.5em}
+% \end{frame}
+
+% \begin{frame}{Ranking estimation - Binary network}
+% For a RDPG model where $z_i\sim F$ such that $z_i^T z_j\in [0, 1]$: 
+% \[
+% A_{ij}\sim Bernoulli(z_i^T z_j)
+% \]
+% we have the same decomposition as before.
+% \vspace{.5em}
+
+% If we instead assume a inner product model with a link function $f$ we would have:
+% \[
+% \frac{1}{n}\mathbb{E}(A^2_{ij}) = \frac{1}{n}\sum_k f(x_i^T x_k) f(x_j^Tx_k)
+% \]
+% % This seems to work in practice. 
+
+% % There may also be a connection with graphon distance as defined by \citet{zhang_estimating_2017}:
+% % \[
+% % d(i, j) = \max_{k\neq i,j} |\langle A_i-A_{j}, A_k\rangle|
+% % \]
+% \end{frame}
+
+\section{Simulation results}
+
+\begin{frame}{Simulations setup}
+The model is made of 3 components:
+\[
+p(A, B) = \underbrace{p(A|Z) p(B|X)}_{\textbf{\color{red}likelihood}} \; \underbrace{p(Z) p(X)}_{\textbf{\color{green!50!black}marginals}} \; \underbrace{c(X, Z)}_{\textbf{\color{blue}copula}}
+\]
+The setup tested are:
+\begin{itemize}
+\item {\color{red}Likelihood}: Gaussian $A_{ij}\sim \mathcal{N}(z_i^T z_j, \sigma)$
+\item {\color{green!50!black}Marginals}: $\mathcal{N}(0, 1)$, $t_5$ (df=5), $\chi^2_5$ (df=5), $Unif(-1, 1)$, Cauchy
+\item {\color{blue}Copula}: Gaussian, Clayton, Gumbel, Student t (df=5), mixture of Gaussians
+\end{itemize}
+Results for archimedean and elliptical copulas are for $\rho=0.2$. Results for mixture of Gaussian are for $\rho=0.5$.
+\end{frame}
+
+
+\begin{frame}{Simulation Setup}
+Models tested are:
+\begin{itemize}
+    \item Quadratic Assignment Procedure permutation test (QAP)
+    \item Distance Correlation permutation test using MGC (DC)
+    \item RV coefficient permutation test (RV)
+    \item CvM permutation test (CVM)
+\end{itemize}
+
+\vspace{.5em}
+For the methods requiring it, latent positions are estimated using:
+\begin{itemize}
+    \item \textit{Projected gradient descent} \citep{ma_universal_2020} for binary networks
+    \item \textit{Adjacency Spectral Embedding} (ASE) for weighted networks
+\end{itemize}
+These algorithms are run using the "true" dimension $d$ (i.e. the $d$ used to generate the data).
+\vspace{.5em}
+
+% Note that in their work on Distance Correlation \citet{lee_network_2019} use diffusion maps to estimate latent positions. Here however we use the same estimator for every model to isolate the effect of the dependence metric choice.
+\end{frame}
+
+\begin{frame}{Type I error - Weighted network}
+\vspace{-.5em}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=.6\linewidth]{figures/false_rejection_rate_weighted_network.png}
+    \label{fig:placeholder}
+\end{figure}
+\vspace{-3em}
+\end{frame}
+
+% \begin{frame}{Power analysis}
+% \begin{figure}
+%     \centering
+%     \includegraphics[width=\linewidth]{figures/blank_part1.png}
+%     \label{fig:placeholder}
+% \end{figure}
+% \vspace{-2em}
+
+% \begin{figure}
+%     \centering
+%     \includegraphics[width=0.9\linewidth]{figures/blank_part2.png}
+%     \label{fig:placeholder}
+% \end{figure}
+% \end{frame}
+
+% \begin{frame}{Power analysis - Weighted network}
+% Results for $n=300, d=3, \sigma=3$.
+% \begin{figure}
+%     \centering
+%     \includegraphics[width=\linewidth]{figures/first_piece.png}
+%     \label{fig:placeholder}
+% \end{figure}
+% \vspace{-2em}
+
+% \end{frame}
+
+\begin{frame}{Power analysis - Weighted network}
+Results for $n=300, d=3, \sigma=3$.
+\begin{figure}
+    \centering
+    \includegraphics[width=\linewidth]{figures/second_piece.png}
+    \label{fig:placeholder}
+\end{figure}
+\vspace{-2em}
+
+\end{frame}
+
+\begin{frame}{Power analysis - Weighted network}
+Results for $n=300, d=3, \sigma=3$.
+\begin{figure}
+    \centering
+    \includegraphics[width=\linewidth]{figures/third_piece.png}
+    \label{fig:placeholder}
+\end{figure}
+\vspace{-2em}
+
+\end{frame}
+
+\begin{frame}{Power analysis - Weighted network}
+Results for $n=300, d=3, \sigma=3$.
+\begin{figure}
+    \centering
+    \includegraphics[width=\linewidth]{figures/fourth_piece.png}
+    \label{fig:placeholder}
+\end{figure}
+\vspace{-2em}
+
+\end{frame}
+
+
+
+
+\begin{frame}
+\vfill
+\centering
+{\Huge Thank you :)}
+
+\vspace{0.5cm}
+{\Large Questions?}
+\vfill
+\end{frame}
+
+\begin{frame}[allowframebreaks]{Bibliography}    
+\bibliography{references}
+\end{frame}
+
+\section{Appendix}
+\subsection{More non-linear dependence}
+\begin{frame}{More non-linear correlations from \citet{shen_distance_2020}}
+To better visualise the issues in detecting non-linear dependency we use simulations settings from \citet{shen_distance_2020} who run comprehensive experiments aggregating 20 dependences from the literature (shown in the next slides). 
+\vspace{.5em}
+
+We then generate $X, Z$ and $A_{ij}\sim \mathcal{N}(z_i^T z_j, 1), B_{ij}\sim \mathcal{N}(x_i^T x_j, 1)$ for $z_i, x_i\in \mathbb{R}$. Latent positions era estimated using ASE.
+% \begin{itemize}
+%     \item \textbf{Weighted network}: $A_{ij}\sim \mathcal{N}(x_i^T x_j, 1)$ for $x_i\in \mathbb{R}$
+%     \item \textbf{RDPG}: following \citet{lee_network_2019} 
+%     \begin{enumerate}
+%         \item generate $x_i\in \mathbb{R}$
+%         \item normalise as $\tilde{x}_i= \frac{x_i - \min(x_i)}{\max x_i - \min x_i}$
+%         \item draw $A_{ij}\sim Bern(x_i^T x_j)$
+%     \end{enumerate}
+% \end{itemize}
+\end{frame}
+
+\begin{frame}{Weighted network}
+First 4 are monotonic relationships, here QAP and RV coefficient should work best.
+\begin{figure}
+\centering
+\includegraphics[width=0.75\linewidth]{figures/visualise_latent_rdpg_part1.png}
+\end{figure}
+\vspace{-1.5em}
+
+\begin{figure}
+\centering
+\includegraphics[width=\linewidth]{figures/power_weighted_latent_sim_first_batch_highlighted.png}
+\end{figure}
+\end{frame}
+
+\begin{frame}[noframenumbering]{Weighted network}
+First 4 are monotonic relationships, here QAP and RVcoefficient should work best.
+\begin{figure}
+\centering
+\includegraphics[width=0.75\linewidth]{figures/visualise_latent_rdpg_part1.png}
+\end{figure}
+\vspace{-1.5em}
+
+\begin{figure}
+\centering
+\includegraphics[width=\linewidth]{figures/power_weighted_latent_sim_first_batch.png}
+\end{figure}
+\end{frame}
+
+
+\begin{frame}{Weighted network}
+For small $n$ we see some methods working better than others 
+\begin{figure}
+\centering
+\includegraphics[width=0.75\linewidth]{figures/visualise_latent_rdpg_part2.png}
+\end{figure}
+\vspace{-1.5em}
+
+\begin{figure}
+\centering
+\includegraphics[width=\linewidth]{figures/power_weighted_latent_sim_second_batch.png}
+\end{figure}
+\end{frame}
+
+\begin{frame}{Weighted network}
+At $n=300$ we have clear separation between method that work and don't work for different scenarios.
+\begin{figure}
+\centering
+\includegraphics[width=\linewidth]{figures/power_weighted_latent_sim_first_batch_n300.png}
+\end{figure}
+\vspace{-1.5em}
+
+\begin{figure}
+\centering
+\includegraphics[width=\linewidth]{figures/power_weighted_latent_sim_second_batch_n300.png}
+\end{figure}
+\end{frame}
+
+\begin{frame}{Future directions}
+Future directions:
+\begin{itemize}
+\item formalise when CVM works and when it does not
+\item formalise the binary case
+\item possibly extend to more than two graphs to test a sort of "global null" 
+\end{itemize}
+\end{frame}
+
+\subsection{Binary network simulations}
+\begin{frame}{Type I error}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=1.05\linewidth]{figures/false_rejection_rate_binary_network.png}
+    \label{fig:placeholder}
+\end{figure}
+    
+\end{frame}
+
+\begin{frame}{Power analysis - Binary network}
+Results for $A_{ij}\sim Bern(f(x_i^T x_j)$ ($f(\cdot)$ logistic function) with $n=300, d=3$
+\begin{figure}
+    \centering
+    \includegraphics[width=\linewidth]{figures/power_binary_part_1.png}
+    \label{fig:placeholder}
+\end{figure}
+\vspace{-2em}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=\linewidth]{figures/power_binary_part_2.png}
+    \label{fig:placeholder}
+\end{figure}
+\end{frame}
+
+\subsection{RDPG simulations}
+
+\begin{frame}{Random Dot Product Graph}
+First 4 are monotonic relationships, here QAP and RVcoefficient should work best.
+\begin{figure}
+\centering
+\includegraphics[width=0.75\linewidth]{figures/visualise_latent_rdpg_part1.png}
+\end{figure}
+\vspace{-1.5em}
+
+\begin{figure}
+\centering
+\includegraphics[width=\linewidth]{figures/power_binary_latent_sim_first_batch.png}
+\end{figure}
+\end{frame}
+
+\begin{frame}{Random Dot Product Graph}
+\begin{figure}
+\centering
+\includegraphics[width=0.75\linewidth]{figures/visualise_latent_rdpg_part2.png}
+\end{figure}
+\vspace{-1.5em}
+
+\begin{figure}
+\centering
+\includegraphics[width=\linewidth]{figures/power_binary_latent_sim_second_batch.png}
+\end{figure}
+\end{frame}
+
+\begin{frame}{Random Dot Product Graph}
+At $n=300$ we have clear separation between method that work and don't work for different scenarios.
+\begin{figure}
+\centering
+\includegraphics[width=\linewidth]{figures/power_binary_latent_sim_first_batch_n300.png}
+\end{figure}
+\vspace{-1.5em}
+
+\begin{figure}
+\centering
+\includegraphics[width=\linewidth]{figures/power_binary_latent_sim_second_batch_n300.png}
+\end{figure}
+\end{frame}
+
+
+\begin{frame}{Why CVM does not work ?}
+For both weighted and RDPG models we are using:
+\[
+\frac{1}{n}\mathbb{E}(A^{2}_{ij}|Z) = z_{i}^{T} \hat{\Sigma}_Z z_{j}
+\]
+The difference is that for RDPG we need to normalise latent positions to be in $[0, 1]$. This considerably reduces the tails making the ordering harder to recover. 
+\end{frame}
+
+\begin{frame}{Distortion - weighted case}
+
+\begin{figure}
+\centering
+\includegraphics[width=\linewidth]{figures/visualise_latent_rdpg_gaussian.png}
+\end{figure}
+    
+\end{frame}
+
+\begin{frame}{Distortion - RDPG case}
+
+\begin{figure}
+\centering
+\includegraphics[width=\linewidth]{figures/visualise_latent_rdpg_bernoulli.png}
+\end{figure}
+    
+\end{frame}
+\subsection{Differnt condition number}
+\begin{frame}{Different condition number}
+Weighted network, $n=300, d=3, \sigma=1$. Rows show different condition number of $\Sigma_{X}$.
+\begin{figure}
+\centering
+\includegraphics[width=.9\linewidth]{figures/power_diff_variance.png}
+\end{figure}
+    
+\end{frame}
+
+\subsection{True vs estimated latent}
+\begin{frame}{True vs estimated latent}
+Weighted network, $n=100, d=3, \sigma=1$. 
+\begin{figure}
+\centering
+\includegraphics[width=\linewidth]{figures/power_true_latent_1.png}
+\end{figure}
+\vspace{-1.5em}
+
+\begin{figure}
+\centering
+\includegraphics[width=\linewidth]{figures/power_true_latent_2.png}
+\end{figure}
+    
+\end{frame}
+
+\end{document}
