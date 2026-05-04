@@ -37,7 +37,13 @@ def run_scenario(metrics, args, seed, method_params=None):
         solver = ... # i don't which placeholder value to use
 
     method = args["method"]
-    method = method(**args)
+    force_k = args.get("force_k", None)
+    if force_k is not None:
+        args['true_k'] = args['k']
+        args['k'] = force_k
+        method = method(k=force_k, **args)
+    else:
+        method = method(**args)
     
     args['method_name'] = method.get_name()
 

@@ -1,15 +1,15 @@
 # =============================================================================
-# Config: Observed CVM Degree Sweep
-# A focused pilot/debugging study (nsim=1) that benchmarks ObservedCVM
-# across polynomial degrees 1, 2, and 3. Strong mixture correlations
-# (±0.98) are used to stress-test the test functions.
+# Simulation Configuration
 # =============================================================================
+# All hard-coded parameters are defined here.
+# Callables are referenced by string identifiers and resolved in the loader (see load_config.py).
+# =============================================================================
+# Simulation testing CvM statistic with different degrees
+
 
 
 # -----------------------------------------------------------------------------
 # Simulation Control
-# NOTE: nsim=1 — this is intended as a quick pilot / sanity-check run.
-# Increase nsim for a proper power study.
 # -----------------------------------------------------------------------------
 simulation:
   nsim: 100
@@ -30,7 +30,6 @@ simulation:
 
 # -----------------------------------------------------------------------------
 # Testing Methods
-# Only ObservedCVM variants are benchmarked here, across three polynomial degrees.
 # -----------------------------------------------------------------------------
 methods:
   npermutations: [50]           # Reduced permutations — appropriate for nsim=1 pilots
@@ -54,7 +53,6 @@ methods:
 
 # -----------------------------------------------------------------------------
 # DGP & Solver Setups (H1: rho > 0)
-# Uses high mixture correlations (±0.98) to create a strongly bimodal copula.
 # -----------------------------------------------------------------------------
 setups:
   # --- Gaussian networks ---
@@ -78,7 +76,7 @@ setups:
   - dgp: GaussianNetwork
     copula_model: mixture_uniform
     weights: [0.5, 0.5]
-    correlations: [0.98, -0.98]   # Strong positive/negative mix (vs ±0.5 in main study)
+    correlations: [0.5, -0.5]   
     solver: ASE
 
   # --- Bernoulli networks ---
@@ -102,13 +100,12 @@ setups:
   - dgp: BernoulliNetwork
     copula_model: mixture_uniform
     weights: [0.5, 0.5]
-    correlations: [0.98, -0.98]
+    correlations: [0.5, -0.5]
     solver: pgd_fit_wrapper
 
 
 # -----------------------------------------------------------------------------
 # Null Hypothesis Setups (H0: rho = 0)
-# Only Gaussian copula variants run under the null.
 # -----------------------------------------------------------------------------
 null_setups:
   rho: [0.0]

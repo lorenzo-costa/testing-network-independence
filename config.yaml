@@ -4,10 +4,21 @@
 # All hard-coded parameters are defined here.
 # Callables are referenced by string identifiers and resolved in the loader (see load_config.py).
 # =============================================================================
- 
+# Base configuration setup
+# - number of simulations: 100
+# - number of nodes: 100, 200, 300
+# - number of latent dimensions: 3
+# - egde weight variance: 1 (for Gaussian networks)
+# - correlation under H1: 0.2
+# - using both true and estimated latent positions for testing methods
+# - marginals: Gaussian, uniform, cauchy, t, chi-squared
+# - copula models: gaussian, clayton, gumbel, student_t, mixture_uniform
+# - testing methods: RVPermutationTest, QAP, DiffusionCorrelation, ObservedCVM (degree 1 and 2)
+# - DGPs: GaussianNetwork, BernoulliNetwork
+# - Solvers: ASE for Gaussian, pgd_fit_wrapper for Bernoulli
+
 # -----------------------------------------------------------------------------
-# Simulation Control
-# Controls the core scale and statistical settings of the experiment.
+# Simulation Setup
 # -----------------------------------------------------------------------------
 simulation:
   nsim: 100            # Number of Monte Carlo repetitions per parameter combination
@@ -30,13 +41,10 @@ simulation:
  
 # -----------------------------------------------------------------------------
 # Testing Methods
-# Each entry is a string identifier resolved to a callable in load_config.py.
-# Parameterized methods use the 'name' + 'kwargs' pattern.
 # -----------------------------------------------------------------------------
 methods:
   npermutations: [200]      # Number of permutations used in permutation-based tests
   df: [3]                   # Degrees of freedom (used in Student-t approximations)
-  approximation: ["F-distr"] # Distribution used to approximate the null (e.g. 'F-distr')
   use_true_latent: [False, True]  # Whether to use true latent positions (oracle) vs estimated ones
  
   # List of test methods to benchmark. 'kwargs' are passed to the method constructor.
@@ -137,14 +145,7 @@ null_setups:
 # Controls which performance metrics are computed over simulation runs.
 # -----------------------------------------------------------------------------
 metrics:
-  compute_all: true   # If true, uses ComputeAll() which computes Rejection, FalseRejection,
-                      # TrueRejection, FalseAcceptance, TrueAcceptance, RelativeFrobeniusNorm
+  compute_all: true   
  
- 
-# -----------------------------------------------------------------------------
-# Output
-# Controls where results are saved.
-# -----------------------------------------------------------------------------
 output:
-  results_dir: results   # Directory where CSV result files are written
-                         # Files are named: simulation_results_<YYYYMMDD_HHMM>.csv
+  results_dir: results   # Files are named: simulation_results_<YYYYMMDD_HHMM>.csv

@@ -1,9 +1,17 @@
 # =============================================================================
-# Config: Stochastic Block Model (SBM) Study
-# Evaluates methods under misspecification: networks have community structure
-# (SBM) rather than a smooth latent space. No copula model or use_true_latent
-# sweep — the focus is on SBM-specific structural parameters.
+# Simulation Configuration
 # =============================================================================
+# All hard-coded parameters are defined here.
+# Callables are referenced by string identifiers and resolved in the loader (see load_config.py).
+# =============================================================================
+# Evaluates methods under SBM setup with:
+# - different degree of assortativity. Positive = assortative, negative = disassortative
+# - different levels of sparsity (higher = more sparse)
+# - different levels of community alignment. prob_switch regulates the prob of the node
+# in the second network switching community
+# - different levels of correlation between block assignments across networks (assignment_mode).
+# if random prob_switch is ignored
+# - different block probability structures (random vs identical)
 
 
 # -----------------------------------------------------------------------------
@@ -29,7 +37,6 @@ simulation:
 # -----------------------------------------------------------------------------
 methods:
   npermutations: [200]
-  # NOTE: df and approximation are not parameters in the SBM experiment
 
   list:
     - name: RVPermutationTest
@@ -71,15 +78,10 @@ setups:
 # These parameters control the block structure and are swept in the factorial design.
 # -----------------------------------------------------------------------------
 sbm:
-  # Assortativity: negative = disassortative (cross-block edges more likely),
-  # positive = assortative (within-block edges more likely)
   assortativity: [-0.8, -0.5, 0.5, 0.8]
 
-  # sparsity_bias: controls overall edge density (lower = sparser)
   sparsity_bias: [0.3, 0.7]
 
-  # prob_switch: probability that a node is assigned to a different block
-  # between the two networks (controls cross-network community alignment)
   prob_switch: [0.2, 0.5]
 
   # assignment_mode:
