@@ -1,0 +1,42 @@
+#!/bin/bash
+
+#SBATCH --job-name=sim_full
+#SBATCH --output=logs/sim_full_%j.out
+#SBATCH --error=logs/sim_full_%j.err
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=32
+#SBATCH --mem=10G
+#SBATCH --time=04:00:00
+
+#SBATCH --account=stats_dept1
+#SBATCH --partition=standard
+
+# ── Notifications (optional — set your email here) ────────────────────────────
+#SBATCH --mail-type=BEGIN,END,FAIL
+#SBATCH --mail-user=lrcosta@umich.edu
+
+# Capture the input argument, used to provide experiment config
+CONFIG_FILE=$1
+
+if [ -z "$CONFIG_FILE" ]; then
+    echo "Error: No configuration file provided."
+    echo "Usage: sbatch your_script.sh my_config.yaml"
+    exit 1
+fi
+
+module load python
+source .venv/bin/activate
+
+# Ensure directories exist
+mkdir -p results logs
+
+# Parallelism settings
+export OMP_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+
+# 3. Use the variable in the command
+echo "Running simulation with config: $CONFIG_FILE"
+python -m src.run_simulation_script --config "$CONFIG_FILE"
+
+echo "End time: $(date)"
