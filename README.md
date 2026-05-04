@@ -1,3 +1,6 @@
+# TODO: update this
+
+
 # Network Independence Testing via Latent Position Models
 
 A simulation framework for testing statistical independence between two networks by exploiting their shared latent position structure. The project supports both **Gaussian (weighted)** and **Bernoulli (binary)** random dot product graph models, a range of copula dependency structures, and several test statistics — including a novel observed-graph Cramér–von Mises (CvM) test that avoids explicit latent-position estimation.

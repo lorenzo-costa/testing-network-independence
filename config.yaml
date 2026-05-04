@@ -10,10 +10,10 @@
 # Controls the core scale and statistical settings of the experiment.
 # -----------------------------------------------------------------------------
 simulation:
-  nsim: 2              # Number of Monte Carlo repetitions per parameter combination
+  nsim: 100            # Number of Monte Carlo repetitions per parameter combination
   seed: 2                 # Master RNG seed for reproducibility (passed to np.random.default_rng)
  
-  n: [50]      # Sample sizes (number of nodes)
+  n: [100, 200, 300]      # Sample sizes (number of nodes)
   k: [3]                  # Number of latent dimensions for the network embedding
   rho: [0.2]              # Correlation parameter under H1 (signal strength); 0.0 = null hypothesis
   alpha: [0.05]           # Nominal significance level(s) for hypothesis tests

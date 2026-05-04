@@ -1,153 +1,380 @@
 """
 load_config.py
 --------------
-Loads config.yaml and resolves string identifiers back into Python callables.
+Universal config loader for all simulation experiments.
 
-Usage in run_simulation_script.py:
-    from load_config import load_config
-    cfg = load_config("config.yaml")
+Supports four experiment types, auto-detected from YAML structure:
+  - "standard"       -> main study + observed CVM sweep (same structure, different values)
+  - "lee2019"        -> latent functional-relationship study (Lee et al. 2019)
+  - "diff_marginals" -> asymmetric per-network marginal distributions
+  - "sbm"            -> stochastic block model misspecification study
+
+Public API
+----------
+    cfg          = load_config("config.yaml")      # auto-detects type
+    h1, h0       = build_factorial_design(cfg)     # h0 is None for lee2019 / sbm
+    df           = flatten_args_columns(df)        # common post-processing
 """
 
 import yaml
+import numpy as np
 from functools import partial
+from itertools import product as iproduct
 
-# ── DGP classes ──────────────────────────────────────────────────────────────
+# -- DGP classes --------------------------------------------------------------
 from src.dgp import GaussianNetwork, BernoulliNetwork
 
-# ── Solver functions ──────────────────────────────────────────────────────────
+# -- Solvers ------------------------------------------------------------------
 from src.solvers.weighted_network import ASE
 from src.solvers.MaMa_uuuuu import pgd_fit_wrapper
 
-# ── Test methods ──────────────────────────────────────────────────────────────
+# -- Test methods -------------------------------------------------------------
 from src.methods import RVPermutationTest, QAP, DiffusionCorrelation, ObservedCVM
 from src.helper_functions._metrics_helper import observed_cvm_dependency
 
-# ── Metrics ───────────────────────────────────────────────────────────────────
+# -- Metrics ------------------------------------------------------------------
 from src.metrics import ComputeAll
 
 
-# ---------------------------------------------------------------------------
-# Registry: maps YAML string identifiers → Python objects / factories
-# Add new DGPs, solvers, or methods here as your project grows.
-# ---------------------------------------------------------------------------
+# =============================================================================
+# Registries  --  extend here when adding new DGPs / solvers / methods
+# =============================================================================
 
 DGP_REGISTRY = {
-    "GaussianNetwork": GaussianNetwork,
-    "BernoulliNetwork": BernoulliNetwork,
+    "GaussianNetwork":    GaussianNetwork,
+    "BernoulliNetwork":   BernoulliNetwork,
 }
 
 SOLVER_REGISTRY = {
-    "ASE": ASE,
+    "ASE":             ASE,
     "pgd_fit_wrapper": pgd_fit_wrapper,
 }
 
 METHOD_REGISTRY = {
-    "RVPermutationTest": RVPermutationTest,
-    "QAP": QAP,
+    "RVPermutationTest":    RVPermutationTest,
+    "QAP":                  QAP,
     "DiffusionCorrelation": DiffusionCorrelation,
-    "ObservedCVM": ObservedCVM,
+    "ObservedCVM":          ObservedCVM,
 }
 
+# Latent-sim shapes that do NOT accept sim_kwargs={'noise': True}
+_NO_NOISE_SIMS = {"multimodal_independence"}
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
 
-def _resolve_dgp(entry: dict):
-    """
-    Turn a setup entry from YAML into a (partial(DGP, ...), Solver) tuple,
-    matching the original `setup` list format.
-    """
-    dgp_cls = DGP_REGISTRY[entry["dgp"]]
-    solver = SOLVER_REGISTRY[entry["solver"]]
-
-    # Build kwargs for the DGP constructor (everything except 'dgp' and 'solver')
-    dgp_kwargs = {
-        k: v for k, v in entry.items()
-        if k not in ("dgp", "solver")
-    }
-    return (partial(dgp_cls, **dgp_kwargs), solver)
-
+# =============================================================================
+# Internal resolvers
+# =============================================================================
 
 def _resolve_method(entry: dict):
     """
-    Turn a method entry from YAML into a callable (or partial).
-    Handles the special case of ObservedCVM which wraps observed_cvm_dependency.
+    Convert a YAML method entry into a callable (or partial).
+    ObservedCVM is special-cased because it wraps observed_cvm_dependency.
     """
-    name = entry["name"]
-    kwargs = entry.get("kwargs", {}) or {}
-    cls = METHOD_REGISTRY[name]
+    name   = entry["name"]
+    kwargs = entry.get("kwargs") or {}
+    cls    = METHOD_REGISTRY[name]
 
     if name == "ObservedCVM":
         degree = kwargs.get("degree", 2)
         return partial(cls, test_function=partial(observed_cvm_dependency, degree=degree))
 
-    if kwargs:
-        return partial(cls, **kwargs)
-
-    return cls
+    return partial(cls, **kwargs) if kwargs else cls
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
+def _resolve_standard_setup(entry: dict):
+    """
+    Resolve one copula-based setup entry into a (partial(DGP, ...), Solver) tuple.
+    Used by: standard, observed, diff_marginals experiments.
+    """
+    dgp_cls    = DGP_REGISTRY[entry["dgp"]]
+    solver     = SOLVER_REGISTRY[entry["solver"]]
+    dgp_kwargs = {k: v for k, v in entry.items() if k not in ("dgp", "solver")}
+    return (partial(dgp_cls, **dgp_kwargs), solver)
+
+
+def _resolve_lee2019_setups(setups_cfg: dict) -> list:
+    """
+    Expand gaussian_latent_sims / bernoulli_latent_sims name-lists into
+    (partial(DGP, latent_sim=...), partial(ASE, k=...)) tuples.
+    multimodal_independence is special-cased: it receives no sim_kwargs.
+    """
+    ase_k  = setups_cfg.get("ase_k", 2)
+    solver = partial(ASE, k=ase_k)
+    rdpg   = setups_cfg.get("bernoulli_rdpg", "minmax")
+    result = []
+
+    for sim_name in setups_cfg["gaussian_latent_sims"]:
+        if sim_name in _NO_NOISE_SIMS:
+            dgp = partial(GaussianNetwork, latent_sim=sim_name)
+        else:
+            dgp = partial(GaussianNetwork, latent_sim=sim_name, sim_kwargs={"noise": True})
+        result.append((dgp, solver))
+
+    for sim_name in setups_cfg["bernoulli_latent_sims"]:
+        if sim_name in _NO_NOISE_SIMS:
+            dgp = partial(BernoulliNetwork, rdpg=rdpg, latent_sim=sim_name)
+        else:
+            dgp = partial(BernoulliNetwork, rdpg=rdpg, latent_sim=sim_name, sim_kwargs={"noise": True})
+        result.append((dgp, solver))
+
+    return result
+
+
+def _resolve_sbm_setups(setups_list: list) -> list:
+    """
+    Resolve SBM setups: sbm=True is injected automatically; no copula params.
+    """
+    return [
+        (partial(DGP_REGISTRY[e["dgp"]], sbm=True), SOLVER_REGISTRY[e["solver"]])
+        for e in setups_list
+    ]
+
+
+def _resolve_methods_block(methods_cfg: dict) -> dict:
+    """Parse the YAML methods block into a normalised dict for product sweeps."""
+    return {
+        "list":            [_resolve_method(m) for m in methods_cfg["list"]],
+        "npermutations":   methods_cfg.get("npermutations", [200]),
+        "df":              methods_cfg.get("df", [3]),
+        "approximation":   methods_cfg.get("approximation", ["F-distr"]),
+        "use_true_latent": methods_cfg.get("use_true_latent"),  # None when absent
+    }
+
+
+# =============================================================================
+# Experiment-type detection
+# =============================================================================
+
+def _detect_experiment_type(raw: dict) -> str:
+    """
+    Infer experiment type from YAML structure (no explicit tag required).
+
+    Detection priority (most specific first):
+      1. "sbm"           -- top-level `sbm:` key is present
+      2. "lee2019"       -- `setups` is a dict with a `gaussian_latent_sims` key
+      3. "diff_marginals"-- first marginals entry is a dict (has 'x'/'y' keys)
+      4. "standard"      -- everything else (main study + observed CVM sweep)
+    """
+    if "sbm" in raw:
+        return "sbm"
+
+    setups_raw = raw.get("setups", {})
+    if isinstance(setups_raw, dict) and "gaussian_latent_sims" in setups_raw:
+        return "lee2019"
+
+    marginals = raw.get("simulation", {}).get("marginals", [])
+    if marginals and isinstance(marginals[0], dict):
+        return "diff_marginals"
+
+    return "standard"
+
+
+# =============================================================================
+# Public: load_config
+# =============================================================================
 
 def load_config(path: str = "config.yaml") -> dict:
     """
-    Load config.yaml and return a fully resolved config dict ready for use
-    in run_simulation_script.py.
+    Load a YAML config file and return a fully resolved config dict.
 
-    Resolved keys
+    Returned keys
     -------------
-    cfg["simulation"]   – scalar/list simulation params (nsim, n, k, …)
-    cfg["methods"]      – resolved list of callables + permutation/df/approx params
-    cfg["setups"]       – list of (partial(DGP), Solver) tuples  (H1)
-    cfg["null_setups"]  – same format, for H0 runs
-    cfg["metrics"]      – list of metric objects
-    cfg["output"]       – output directory string
-    cfg["rng"]          – np.random.Generator seeded from config
+    experiment_type : str
+        One of "standard", "lee2019", "diff_marginals", "sbm".
+    simulation : dict
+        Raw simulation block: nsim, n, k, rho, alpha, edge_var, marginals, seed.
+    rng : np.random.Generator
+        Seeded RNG ready for use.
+    methods : dict
+        list           -- resolved callables
+        npermutations  -- list of ints
+        df             -- list of ints (None for sbm)
+        approximation  -- list of strings (None for sbm)
+        use_true_latent -- list of bools or None when not applicable
+    setups : list
+        (partial(DGP, ...), Solver) tuples for the H1 run.
+    null_setups : dict | None
+        {"rho": [...], "setups": [...]} for H0 runs, or None.
+    extra_params : dict
+        lee2019 -> {"sparsity": {"make_sparse": [...], "sparsity_bias": [...]}}
+        sbm     -> {"sbm": {"assortativity": [...], "sparsity_bias": [...], ...}}
+        others  -> {}
+    metrics : list
+    output : dict
+        results_dir, file_prefix
     """
-    import numpy as np
-
     with open(path, "r") as f:
         raw = yaml.safe_load(f)
 
-    # ── Simulation scalars / lists ────────────────────────────────────────
-    sim = raw["simulation"]
+    exp_type = _detect_experiment_type(raw)
+    sim_raw  = raw["simulation"]
+    methods  = _resolve_methods_block(raw["methods"])
+    metrics  = [ComputeAll()] if raw.get("metrics", {}).get("compute_all") else []
+    rng      = np.random.default_rng(sim_raw["seed"])
 
-    # ── Methods ───────────────────────────────────────────────────────────
-    methods_cfg = raw["methods"]
-    resolved_methods = [_resolve_method(m) for m in methods_cfg["list"]]
+    # -- Resolve setups -------------------------------------------------------
+    if exp_type == "lee2019":
+        setups = _resolve_lee2019_setups(raw["setups"])
+    elif exp_type == "sbm":
+        setups = _resolve_sbm_setups(raw["setups"])
+    else:
+        setups = [_resolve_standard_setup(e) for e in raw["setups"]]
 
-    # ── Setups (H1) ───────────────────────────────────────────────────────
-    resolved_setups = [_resolve_dgp(s) for s in raw["setups"]]
+    # -- Resolve null setups (standard-family experiments only) ---------------
+    null_setups = None
+    if "null_setups" in raw:
+        nc = raw["null_setups"]
+        null_setups = {
+            "rho":    nc["rho"],
+            "setups": [_resolve_standard_setup(e) for e in nc["setups"]],
+        }
 
-    # ── Null setups (H0) ──────────────────────────────────────────────────
-    null_cfg = raw["null_setups"]
-    resolved_null_setups = [_resolve_dgp(s) for s in null_cfg["setups"]]
-
-    # ── Metrics ───────────────────────────────────────────────────────────
-    metrics_cfg = raw["metrics"]
-    metrics = [ComputeAll()] if metrics_cfg.get("compute_all") else []
-
-    # ── RNG ───────────────────────────────────────────────────────────────
-    rng = np.random.default_rng(sim["seed"])
+    # -- Experiment-specific extra params -------------------------------------
+    extra_params = {}
+    if exp_type == "lee2019":
+        sp = raw["sparsity"]
+        extra_params["sparsity"] = {
+            "make_sparse":   sp["make_sparse"],
+            "sparsity_bias": sp["sparsity_bias"],
+        }
+    elif exp_type == "sbm":
+        sbm = raw["sbm"]
+        extra_params["sbm"] = {
+            "assortativity":    sbm["assortativity"],
+            "sparsity_bias":    sbm["sparsity_bias"],
+            "prob_switch":      sbm["prob_switch"],
+            "assignment_mode":  sbm["assignment_mode"],
+            "block_probs_type": sbm["block_probs_type"],
+        }
 
     return {
-        "simulation": sim,
-        "rng": rng,
-        "methods": {
-            "list": resolved_methods,
-            "npermutations": methods_cfg["npermutations"],
-            "df": methods_cfg["df"],
-            "approximation": methods_cfg["approximation"],
-            "use_true_latent": methods_cfg["use_true_latent"],
-        },
-        "setups": resolved_setups,
-        "null_setups": {
-            "rho": null_cfg["rho"],
-            "setups": resolved_null_setups,
-        },
-        "metrics": metrics,
-        "output": raw["output"],
+        "experiment_type": exp_type,
+        "simulation":      sim_raw,
+        "rng":             rng,
+        "methods":         methods,
+        "setups":          setups,
+        "null_setups":     null_setups,
+        "extra_params":    extra_params,
+        "metrics":         metrics,
+        "output":          raw["output"],
     }
+
+
+# =============================================================================
+# Public: build_factorial_design
+# =============================================================================
+
+def build_factorial_design(cfg: dict) -> tuple:
+    """
+    Build the parameter grid for a loaded config.
+
+    Returns
+    -------
+    (factorial_h1, factorial_h0)
+        Both are lists of dicts for run_simulation(factorial_design=...).
+        factorial_h0 is None for lee2019 and sbm (no null/H0 run).
+    """
+    exp  = cfg["experiment_type"]
+    sim  = cfg["simulation"]
+    mth  = cfg["methods"]
+    sets = cfg["setups"]
+
+    # Helper: build standard-family factorial for a given setup list and rho
+    def _standard_rows(setups_list, rho_list):
+        names = [
+            "setup", "method", "n", "k", "alpha", "marginals",
+            "rho", "edge_var", "approximation", "npermutations", "df",
+        ]
+        vals = [
+            setups_list, mth["list"], sim["n"], sim["k"], sim["alpha"],
+            sim["marginals"], rho_list, sim["edge_var"],
+            mth["approximation"], mth["npermutations"], mth["df"],
+        ]
+        if mth["use_true_latent"] is not None:
+            names.append("use_true_latent")
+            vals.append(mth["use_true_latent"])
+        return [dict(zip(names, v)) for v in iproduct(*vals)]
+
+    # -- Lee 2019 -------------------------------------------------------------
+    if exp == "lee2019":
+        sp    = cfg["extra_params"]["sparsity"]
+        names = [
+            "setup", "method", "n", "k", "alpha", "marginals",
+            "rho", "edge_var", "approximation", "npermutations", "df",
+            "make_sparse", "sparsity_bias",
+        ]
+        vals = [
+            sets, mth["list"], sim["n"], sim["k"], sim["alpha"],
+            sim["marginals"], sim["rho"], sim["edge_var"],
+            mth["approximation"], mth["npermutations"], mth["df"],
+            sp["make_sparse"], sp["sparsity_bias"],
+        ]
+        return [dict(zip(names, v)) for v in iproduct(*vals)], None
+
+    # -- SBM ------------------------------------------------------------------
+    if exp == "sbm":
+        sbm   = cfg["extra_params"]["sbm"]
+        names = [
+            "setup", "method", "n", "k", "alpha", "marginals",
+            "rho", "edge_var", "npermutations",
+            "sparsity_bias", "prob_switch", "assignment_mode",
+            "block_probs_type", "assortativity",
+        ]
+        vals = [
+            sets, mth["list"], sim["n"], sim["k"], sim["alpha"],
+            sim["marginals"], sim["rho"], sim["edge_var"],
+            mth["npermutations"],
+            sbm["sparsity_bias"], sbm["prob_switch"],
+            sbm["assignment_mode"], sbm["block_probs_type"],
+            sbm["assortativity"],
+        ]
+        return [dict(zip(names, v)) for v in iproduct(*vals)], None
+
+    # -- Standard / observed / diff_marginals ---------------------------------
+    h1 = _standard_rows(sets, sim["rho"])
+
+    h0 = None
+    if cfg["null_setups"]:
+        null = cfg["null_setups"]
+        h0   = _standard_rows(null["setups"], null["rho"])
+
+    return h1, h0
+
+
+# =============================================================================
+# Public: flatten_args_columns
+# =============================================================================
+
+def flatten_args_columns(df, extra_cols: dict = None):
+    """
+    Extract the nested 'args' dict into flat DataFrame columns in-place.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Output from run_simulation; must have an 'args' column.
+    extra_cols : dict, optional
+        {column_name: extractor_fn} for experiment-specific columns.
+        Each extractor receives one args dict and returns a scalar.
+
+    Returns
+    -------
+    df : pd.DataFrame  (modified in-place; also returned for chaining)
+    """
+    df["n"]             = df["args"].apply(lambda x: x["n"])
+    df["k"]             = df["args"].apply(lambda x: x["k"])
+    df["edge_var"]      = df["args"].apply(lambda x: x.get("edge_var", "NA"))
+    df["approximation"] = df["args"].apply(lambda x: x.get("approximation", "NA"))
+    df["dgp"]           = df["args"].apply(lambda x: x.get("dgp_name", "NA"))
+    df["solver"]        = df["args"].apply(lambda x: x.get("solver", "NA"))
+    df["rho"]           = df["args"].apply(lambda x: x.get("rho", "NA"))
+    df["method"]        = df["args"].apply(lambda x: x.get("method_name", "NA"))
+    df["marginals"]     = df["args"].apply(
+        lambda x: x.get("marginals").name if hasattr(x.get("marginals"), "name") else "NA"
+    )
+
+    if extra_cols:
+        for col, fn in extra_cols.items():
+            df[col] = df["args"].apply(fn)
+
+    return df

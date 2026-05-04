@@ -9,3 +9,4 @@ __pycache__/
 *.jpeg
 *.h5
 *.DS_Store
+notebooks/
