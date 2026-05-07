@@ -47,9 +47,10 @@ methods:
   use_true_latent: [False]     # Oracle latent positions not used in this study
 
   list:
-    - name: RVPermutationTest
+    - name: RVtest
       kwargs:
         permutation_type: latent
+        approximation: permutation
 
     - name: QAP
       kwargs: {}

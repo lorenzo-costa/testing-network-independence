@@ -1,0 +1,128 @@
+# =============================================================================
+# Simulation Configuration
+# =============================================================================
+# All hard-coded parameters are defined here.
+# Callables are referenced by string identifiers and resolved in the loader (see load_config.py).
+# =============================================================================
+# Base configuration setup
+# - number of simulations: 100
+# - number of nodes: 100, 200, 300
+# - number of latent dimensions: 3
+# - egde weight variance: 1 (for Gaussian networks)
+# - correlation under H1: 0.2
+# - using both true and estimated latent positions for testing methods
+# - marginals: Gaussian, uniform, cauchy, t, chi-squared
+# - copula models: gaussian, clayton, gumbel, student_t, mixture_uniform
+# - testing methods: RVPermutationTest, QAP, DiffusionCorrelation, ObservedCVM (degree 1 and 2)
+# - DGPs: GaussianNetwork, BernoulliNetwork
+# - Solvers: ASE for Gaussian, pgd_fit_wrapper for Bernoulli
+
+# -----------------------------------------------------------------------------
+# Simulation Setup
+# -----------------------------------------------------------------------------
+simulation:
+  nsim: 50            # Number of Monte Carlo repetitions per parameter combination
+  seed: 2                 # Master RNG seed for reproducibility (passed to np.random.default_rng)
+ 
+  n: [100, 200, 300]      # Sample sizes (number of nodes)
+  k: [3]                  # Number of latent dimensions for the network embedding
+  rho: [0.2]              # Correlation parameter under H1 (signal strength); 0.0 = null hypothesis
+  alpha: [0.05]           # Nominal significance level(s) for hypothesis tests
+  edge_var: [3]           # Edge weight variance (used in Gaussian networks)
+ 
+  # Marginal distributions applied to the latent variables.
+  marginals:
+    - gaussian
+    - "uniform -1 1"
+    - cauchy
+    - "t 5"
+    - "chi 5"
+ 
+ 
+# -----------------------------------------------------------------------------
+# Testing Methods
+# -----------------------------------------------------------------------------
+methods:
+  npermutations: [200]      # Number of permutations used in permutation-based tests
+  df: [3]                   # Degrees of freedom (used in Student-t approximations)
+  use_true_latent: [False, True]  # Whether to use true latent positions (oracle) vs estimated ones
+ 
+  # List of test methods to benchmark. 'kwargs' are passed to the method constructor.
+  list:
+    - name: RVtest
+      kwargs:
+        approximation: permutation
+    - name: RVtest
+      kwargs:
+        approximation: asymptotic            
+ 
+# -----------------------------------------------------------------------------
+# DGP & Solver Setups (H1: rho > 0)
+# Each entry pairs a data-generating process (network type + copula) with a solver.
+# 'dgp' and 'solver' are string identifiers resolved in load_config.py.
+# -----------------------------------------------------------------------------
+setups:
+  # --- Gaussian (continuous-weight) networks ---
+  - dgp: GaussianNetwork
+    copula_model: gaussian
+    solver: ASE
+ 
+  - dgp: GaussianNetwork
+    copula_model: clayton          # Lower-tail dependent copula
+    solver: ASE
+ 
+  - dgp: GaussianNetwork
+    copula_model: gumbel           # Upper-tail dependent copula
+    solver: ASE
+ 
+  - dgp: GaussianNetwork
+    copula_model: student_t
+    df: 3                          # Degrees of freedom for the Student-t copula
+    solver: ASE
+ 
+  # --- Bernoulli (binary-edge) networks ---
+  - dgp: BernoulliNetwork
+    copula_model: gaussian
+    solver: pgd_fit_wrapper
+ 
+  - dgp: BernoulliNetwork
+    copula_model: clayton
+    solver: pgd_fit_wrapper
+ 
+  - dgp: BernoulliNetwork
+    copula_model: gumbel
+    solver: pgd_fit_wrapper
+ 
+  - dgp: BernoulliNetwork
+    copula_model: student_t
+    df: 3
+    solver: pgd_fit_wrapper
+ 
+ 
+# -----------------------------------------------------------------------------
+# Null Hypothesis Setups (H0: rho = 0)
+# A restricted subset of setups run under the null to measure Type I error.
+# -----------------------------------------------------------------------------
+null_setups:
+  rho: [0.0]    # Null correlation — no dependence between networks
+ 
+  # Only the Gaussian copula variants are run under H0
+  setups:
+    - dgp: GaussianNetwork
+      copula_model: gaussian
+      solver: ASE
+ 
+    - dgp: BernoulliNetwork
+      copula_model: gaussian
+      solver: pgd_fit_wrapper
+ 
+ 
+# -----------------------------------------------------------------------------
+# Metrics
+# Controls which performance metrics are computed over simulation runs.
+# -----------------------------------------------------------------------------
+metrics:
+  compute_all: true   
+ 
+output:
+  results_dir: results   # Files are named: simulation_results_<YYYYMMDD_HHMM>.csv

@@ -49,9 +49,10 @@ methods:
  
   # List of test methods to benchmark. 'kwargs' are passed to the method constructor.
   list:
-    - name: RVPermutationTest
+    - name: RVtest
       kwargs:
         permutation_type: latent  
+        approximation: permutation
  
     - name: QAP
       kwargs: {}                   

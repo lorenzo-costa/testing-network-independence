@@ -30,7 +30,7 @@ from src.solvers.weighted_network import ASE
 from src.solvers.MaMa_uuuuu import pgd_fit_wrapper
 
 # -- Test methods -------------------------------------------------------------
-from src.methods import RVPermutationTest, QAP, DiffusionCorrelation, ObservedCVM
+from src.methods import RVtest, QAP, DiffusionCorrelation, ObservedCVM
 from src.helper_functions._metrics_helper import observed_cvm_dependency
 
 # -- Metrics ------------------------------------------------------------------
@@ -52,7 +52,7 @@ SOLVER_REGISTRY = {
 }
 
 METHOD_REGISTRY = {
-    "RVPermutationTest":    RVPermutationTest,
+    "RVtest":               RVtest,
     "QAP":                  QAP,
     "DiffusionCorrelation": DiffusionCorrelation,
     "ObservedCVM":          ObservedCVM,

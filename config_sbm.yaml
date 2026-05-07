@@ -39,9 +39,10 @@ methods:
   npermutations: [200]
 
   list:
-    - name: RVPermutationTest
+    - name: RVtest
       kwargs:
         permutation_type: latent
+        approximation: permutation
 
     - name: QAP
       kwargs: {}

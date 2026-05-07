@@ -1,5 +1,7 @@
 import numpy as np
 from .helper_functions._metrics_helper import rv_coefficient_adjusted
+from .helper_functions.imhof import imhof
+
 import sys
 import os
 from scipy import stats, linalg
@@ -100,7 +102,7 @@ class FitIndependent(BaseMethod):
         }
         return results
 
-class PermutationTest(BaseMethod):
+class RVtest(BaseMethod):
     """Perform RV permutation test for network independence.
 
     Parameters
@@ -128,6 +130,7 @@ class PermutationTest(BaseMethod):
     def __init__(
         self,
         rho,
+        approximation="permutation",
         npermutations=100,
         alpha=0.05,
         rng=None,
@@ -140,11 +143,13 @@ class PermutationTest(BaseMethod):
     ):
         super().__init__()
 
-        self.rho= rho
+        self.rho = rho
         if rho== 0:
             self.null = True
         else:
             self.null = False
+            
+        self.approximation = approximation
 
         self.permutation_distribution = []
 
@@ -160,12 +165,9 @@ class PermutationTest(BaseMethod):
         self.test_function = test_function
         self.permutation_type = permutation_type
         self.use_true_latent = use_true_latent
-
+    
     def fit(self, data, **kwargs):
-        """Get null distribution of RV coefficient with permutations
-
-        The function estimates the latent position of the networks independently,
-        computes the RV coefficient and obtains the p-value by permutation.
+        """Compute test statistic and p-value
 
         Parameters
         ----------
@@ -173,24 +175,113 @@ class PermutationTest(BaseMethod):
             A dictionary containing keys 'A', 'B', 'X', 'Z' where 'A' and 'B' are adjacency matrices
             and 'X' and 'Z' are latent positions.
         """
+        
+        self._process_input(data)
+        
+        if self.approximation == "permutation":
+            self._fit_permutation()
+        elif self.approximation == "asymptotic":
+            self._fit_asymptotic()
+        else:
+            raise ValueError("Invalid approximation method. Choose 'permutation' or 'asymptotic'.")
+        
+        
+        self.reject_null = bool(self.pvalue < self.alpha)
 
+        return
+
+    def get_estimated(self):
+        """Get fit results
+
+        Returns
+        -------
+        A dictionary with 'estimated_latent', 'true_latent', 'p-value', 'reject_null', and 'null' keys.
+        """
+        results = {
+            "estimated_latent": (self.Xhat, self.Zhat),
+            "true_latent": (self.X, self.Z),
+            "p-value": self.pvalue,
+            "reject_null": self.reject_null,
+            "null": self.null,
+        }
+        return results
+    
+    def _fit_asymptotic(self):
+        Zhat = self.Zhat.copy()
+        Xhat = self.Xhat.copy()
+        Zhat = Zhat - Zhat.mean(axis=0)
+        Xhat = Xhat - Xhat.mean(axis=0)
+        
+        n, k = Zhat.shape
+        
+        rv = self.test_function(Zhat, Xhat)
+        
+        SigmaXX = 1/(n-1) * Xhat.T @ Xhat
+        SigmaZZ = 1/(n-1) * Zhat.T @ Zhat
+        
+        eigenvalues_X = np.linalg.eigvalsh(SigmaXX)
+        eigenvalues_X = np.sort(eigenvalues_X)[::-1]  # sort in descending order
+        eigenvalues_Z = np.linalg.eigvalsh(SigmaZZ)
+        eigenvalues_Z = np.sort(eigenvalues_Z)[::-1]  # sort in descending order
+
+        den = np.sqrt(np.trace(SigmaXX @ SigmaXX) * np.trace(SigmaZZ @ SigmaZZ))
+        
+        weights = np.outer(eigenvalues_X, eigenvalues_Z).flatten() / den
+
+        self.pvalue = imhof(n * rv, weights)['Qq']
+        
+    
+    def _fit_permutation(self):
+        """Get pvalue using permutation test"""
+        # A technically not needed but look cleaner
+        A, B, Zhat, Xhat = self.A, self.B, self.Zhat, self.Xhat 
+        
+        test_stat_estimate = self.test_function(Zhat, Xhat)
+        self.test_stat_estimate = test_stat_estimate
+        
+        if self.permutation_type == "observed":
+            for _ in range(self.npermutations):
+                perm = self.rng.permutation(B.shape[0])
+                # permute only one of the two
+                B_perm = B[perm][:, perm]
+                
+                Xhat_perm = self.solver(B_perm, k=self.k, rng=self.rng)[0]
+                test_stat_perm = self.test_function(Zhat, Xhat_perm)
+                self.permutation_distribution.append(test_stat_perm)
+                
+        # estimate latent positions once, permute them and compute rv_coefficient
+        elif self.permutation_type == "latent":
+            for _ in range(self.npermutations):
+                perm = self.rng.permutation(Zhat.shape[0])
+                Xhat_perm = Xhat[perm, :]
+                test_stat_perm = self.test_function(Zhat, Xhat_perm)
+                self.permutation_distribution.append(test_stat_perm)
+        
+        # get and store pvalue
+        self.pvalue = np.mean(np.abs(self.permutation_distribution) >= np.abs(self.test_stat_estimate))
+    
+    def _process_input(self, data):
+        """Utility function to extract and process input data, estimate latent 
+        positions if needed, and store results in the object."""
+        
         if not isinstance(data, dict):
             raise ValueError(
                 "Invalid data format. Expected a dictionary with keys 'A', 'B'."
             )
-
         if self.use_true_latent:
             if 'X' not in data.keys() or 'Z' not in data.keys():
                 raise ValueError("True latent positions must be provided when use_true_latent is True.")
             X = data['X']
             Z = data['Z']
+            A = data.get("A", None)
+            B = data.get("B", None)
             Xhat = X.copy()
             Zhat = Z.copy()
         else:
             if 'estimated_X' not in data.keys():
                 # need to estimate latent positions
-                A = data.get("A")
-                B = data.get("B")
+                A = data.get("A", None)
+                B = data.get("B", None)
                 self.A = A
                 self.B = B
                 # true latent positions may not be provided
@@ -216,63 +307,18 @@ class PermutationTest(BaseMethod):
                 Xhat = data.get("estimated_X")
                 Z = data.get("Z", None)
                 X = data.get("X", None)
-            
+                A = data.get("A", None)
+                B = data.get("B", None)
+                
+        self.A = A
+        self.B = B
         self.X = X
         self.Z = Z
-        self.Xhat = Xhat
         self.Zhat = Zhat
-
-        test_stat_estimate = self.test_function(Zhat, Xhat)
-        self.test_stat_estimate = test_stat_estimate
-        # permute one of the observe networks, re-estimate latent positions and compute RV coefficient
-        if self.permutation_type == "observed":
-            for _ in range(self.npermutations):
-                perm = self.rng.permutation(B.shape[0])
-                B_perm = B[perm][:, perm]
-                
-                Xhat_perm = self.solver(B_perm, k=self.k, rng=self.rng)[0]
-                test_stat_perm = self.test_function(Zhat, Xhat_perm)
-                self.permutation_distribution.append(test_stat_perm)
-        # estimate latent positions once, permute them and compute rv_coefficient
-        elif self.permutation_type == "latent":
-            for _ in range(self.npermutations):
-                perm = self.rng.permutation(Zhat.shape[0])
-                Xhat_perm = Xhat[perm, :]
-                test_stat_perm = self.test_function(Zhat, Xhat_perm)
-                self.permutation_distribution.append(test_stat_perm)
-
-        # compute pvalue
-        self.pvalue = np.mean(np.abs(self.permutation_distribution) >= np.abs(self.test_stat_estimate))
-        
-        self.reject_null = bool(self.pvalue < self.alpha)
-
-        return
-
-    def get_estimated(self):
-        """Get fit results
-
-        Returns
-        -------
-        A dictionary with 'estimated_latent', 'true_latent', 'p-value', 'reject_null', and 'null' keys.
-        """
-        results = {
-            "estimated_latent": (self.Xhat, self.Zhat),
-            "true_latent": (self.X, self.Z),
-            "p-value": self.pvalue,
-            "reject_null": self.reject_null,
-            "null": self.null,
-        }
-        return results
+        self.Xhat = Xhat
 
     def get_name(self):
-        return "PermutationTest_" + self.permutation_type
-
-class RVPermutationTest(PermutationTest):
-    def __init__(self, **kwargs):
-        super().__init__(test_function=rv_coefficient_adjusted, **kwargs)
-        
-    def get_name(self):
-        return "RVPermutationTest_" + self.permutation_type
+        return "PermutationTest_" + self.approximation + "_" + self.permutation_type
 
 class ObservedCVM(BaseMethod):
     def __init__(

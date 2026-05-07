@@ -11,11 +11,12 @@
 # Controls the core scale and statistical settings of the experiment.
 # -----------------------------------------------------------------------------
 simulation:
-  nsim: 100            # Number of Monte Carlo repetitions per parameter combination
+  nsim: 2           # Number of Monte Carlo repetitions per parameter combination
   seed: 2                 # Master RNG seed for reproducibility (passed to np.random.default_rng)
  
-  n: [100, 200, 300]      # Sample sizes (number of nodes)
+  n: [100]      # Sample sizes (number of nodes)
   k: [3]                  # Number of latent dimensions for the network embedding
+  force_k : [1, 5]     # If specified, forces the solver to use this embedding dimension (overriding k)
   rho: [0.2]              # Correlation parameter under H1 (signal strength); 0.0 = null hypothesis
   alpha: [0.05]           # Nominal significance level(s) for hypothesis tests
   edge_var: [1]           # Edge weight variance (used in Gaussian networks)
@@ -42,9 +43,10 @@ methods:
  
   # List of test methods to benchmark. 'kwargs' are passed to the method constructor.
   list:
-    - name: RVPermutationTest
+    - name: RVtest
       kwargs:
         permutation_type: latent  
+        approximaton: permutation
  
     - name: QAP
       kwargs: {}                   
