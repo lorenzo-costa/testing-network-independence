@@ -19,26 +19,34 @@ if __name__ == "__main__":
     cfg            = load_config(args.config)
     sim            = cfg["simulation"]
     factorial_h1, factorial_h0 = build_factorial_design(cfg)
+    
+    start = datetime.now()
  
     # -- H1 run ---------------------------------------------------------------
-    out = pd.DataFrame(run_simulation(
+    out = run_simulation(
         nsim=sim["nsim"],
         metrics=cfg["metrics"],
         factorial_design=factorial_h1,
         rng=cfg["rng"],
         parallel=True,
-    ))
- 
+    )
+    
+    out = pd.DataFrame(out)
+    print(f"Completed H1 simulations in: {datetime.now() - start}")
+    
     # -- H0 run ---------------------------------------------------------------
     rng_null = __import__("numpy").random.default_rng(sim["seed"])
-    out0 = pd.DataFrame(run_simulation(
+    out0 = run_simulation(
         nsim=sim["nsim"],
         metrics=cfg["metrics"],
         factorial_design=factorial_h0,
         rng=rng_null,
-        parallel=True,
-    ))
- 
+        parallel=True,)
+    
+    out0 = pd.DataFrame(out0)
+    
+    print(f"Total simulation time: {datetime.now() - start}")
+    
     results = pd.concat([out, out0], ignore_index=True)
  
     # -- Save raw first (guard against column-extraction errors) --------------
