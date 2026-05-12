@@ -18,10 +18,13 @@ from scipy.integrate import quad
 # Core math helpers (fully vectorised over the lambda/h/delta2 axes)
 # ---------------------------------------------------------------------------
 
-def _theta(u: float, lam: np.ndarray, h: np.ndarray, x: float, delta2: np.ndarray) -> float:
+
+def _theta(
+    u: float, lam: np.ndarray, h: np.ndarray, x: float, delta2: np.ndarray
+) -> float:
     """Phase function θ(u) — eq. (3.2), Imhof 1961 p. 423."""
     lu = lam * u
-    lu2 = lu ** 2
+    lu2 = lu**2
     s = np.sum(h * np.arctan(lu) + delta2 * lu / (1.0 + lu2))
     return 0.5 * s - 0.5 * x * u
 
@@ -30,13 +33,15 @@ def _rho(u: float, lam: np.ndarray, h: np.ndarray, delta2: np.ndarray) -> float:
     """Amplitude function ρ(u) — eq. (3.2), Imhof 1961 p. 423."""
     lu2 = (lam * u) ** 2
     log_rho = np.sum(
-        0.25 * h * np.log1p(lu2)          # (1 + (λu)²)^(h/4)
+        0.25 * h * np.log1p(lu2)  # (1 + (λu)²)^(h/4)
         + 0.5 * delta2 * lu2 / (1.0 + lu2)  # exp(…)
     )
     return np.exp(log_rho)
 
 
-def _integrand(u: float, lam: np.ndarray, h: np.ndarray, x: float, delta2: np.ndarray) -> float:
+def _integrand(
+    u: float, lam: np.ndarray, h: np.ndarray, x: float, delta2: np.ndarray
+) -> float:
     """Integrand sin(θ(u)) / (u · ρ(u)) of eq. (3.2)."""
     return np.sin(_theta(u, lam, h, x, delta2)) / (u * _rho(u, lam, h, delta2))
 
@@ -44,6 +49,7 @@ def _integrand(u: float, lam: np.ndarray, h: np.ndarray, x: float, delta2: np.nd
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def imhof(
     q,
@@ -140,7 +146,7 @@ if __name__ == "__main__":
         expected = 1.0 - chi2.cdf(x, df=k)
         print(
             f"χ²({k}) > {x}: imhof={res['Qq']:.6f}, "
-            f"scipy={expected:.6f}, Δ={abs(res['Qq']-expected):.2e}"
+            f"scipy={expected:.6f}, Δ={abs(res['Qq'] - expected):.2e}"
         )
 
     # --- Test 2: scaled chi-squared (eigenvalues = [2, 3]) -----------------
@@ -149,7 +155,9 @@ if __name__ == "__main__":
     lam = np.array([2.0, 3.0])
     for x in [3.0, 7.0, 12.0]:
         res = imhof(x, lam)
-        print(f"2χ²(1)+3χ²(1) > {x:5.1f}: Qq={res['Qq']:.6f}  (abserr={res['abserr']:.1e})")
+        print(
+            f"2χ²(1)+3χ²(1) > {x:5.1f}: Qq={res['Qq']:.6f}  (abserr={res['abserr']:.1e})"
+        )
 
     # --- Test 3: vector input -----------------------------------------------
     print()

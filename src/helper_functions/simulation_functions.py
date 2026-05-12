@@ -7,6 +7,7 @@ from multiprocessing import Pool, cpu_count
 # (it has a specific name i don't remember not)
 # - add intermediate save
 
+
 def run_scenario(metrics, args, seed, method_params=None):
     """Run a single scenario of the simulation.
 
@@ -24,40 +25,41 @@ def run_scenario(metrics, args, seed, method_params=None):
         Dictionary containing the computed metrics.
     """
     rng = np.random.default_rng(seed)
-    args['rng'] = rng
-    
+    args["rng"] = rng
+
     if args.get("data") is None:
         dgp, solver = args["setup"]
-        args['solver'] = solver
+        args["solver"] = solver
         dgp = dgp(**args)
         data = dgp.generate()
-        args['dgp_name'] = dgp.get_name()
+        args["dgp_name"] = dgp.get_name()
     else:
         data = args["data"]
-        solver = ... # i don't which placeholder value to use
+        solver = ...  # i don't which placeholder value to use
 
     method = args["method"]
     force_k = args.get("force_k", None)
     if force_k is not None:
-        args['true_k'] = args['k']
-        args['k'] = force_k
+        args["true_k"] = args["k"]
+        args["k"] = force_k
         method = method(k=force_k, **args)
     else:
         method = method(**args)
-    
-    args['method_name'] = method.get_name()
+
+    args["method_name"] = method.get_name()
 
     method.fit(data, **(method_params if method_params else {}))
     results = method.get_estimated()
-    
-    density_A = (data['A']==0).sum()/data['A'].size
-    density_B = (data['B']==0).sum()/data['B'].size
+
+    density_A = (data["A"] == 0).sum() / data["A"].size
+    density_B = (data["B"] == 0).sum() / data["B"].size
 
     out_metrics = {metric.get_name(): metric(results) for metric in metrics}
 
     out_metrics["args"] = args
-    out_metrics['density'] = (density_A, density_B)
+    out_metrics["density"] = (density_A, density_B)
     return out_metrics
+
 
 def run_scenario_wrapper(args):
     """Wrapper to unpack args for pool.map"""
@@ -76,21 +78,20 @@ def run_simulation_parallel(
 
     if n_jobs is None:
         n_jobs = cpu_count()
-        
+
     # Create all scenario arguments upfront (flattened structure)
     all_scenarios = [
         (args, metrics, method_params) for i in range(nsim) for args in factorial_design
     ]
 
-    
     total_scenarios = len(all_scenarios)
-    
+
     child_seeds = rng.spawn(total_scenarios)
-    
+
     all_scenarios_seed = [
         (*scenario, seed) for scenario, seed in zip(all_scenarios, child_seeds)
     ]
-    
+
     # Shuffle scenarios for better parallelisation
     rng.shuffle(all_scenarios_seed)
 
@@ -138,7 +139,7 @@ def run_simulation(
     n_jobs : _type_, optional
         _description_, by default None
     data : dict, optional
-       Dictionary containing keys 'estimate_latent_x', 'estimate_latent_y', 
+       Dictionary containing keys 'estimate_latent_x', 'estimate_latent_y',
        'true_latent_x', and 'true_latent_y'.
 
     Returns
@@ -160,19 +161,20 @@ def run_simulation(
         rng = np.random.default_rng()
 
     results = []
-    
-    
+
     # for i in range(nsim):
     #     print(f"Simulation {i + 1} of {nsim}")
     #     for args in tqdm(factorial_design, desc="Running scenarios"):
     #         scenario_out = run_scenario(metrics, args, method_params=method_params)
     #         results.append(scenario_out)
-    
+
     for i in range(nsim):
         sim_seeds = rng.spawn(len(factorial_design))
 
         for args, seed in zip(tqdm(factorial_design), sim_seeds):
-            scenario_out = run_scenario(metrics, args, method_params=method_params, seed=seed)
+            scenario_out = run_scenario(
+                metrics, args, method_params=method_params, seed=seed
+            )
             results.append(scenario_out)
 
     return results

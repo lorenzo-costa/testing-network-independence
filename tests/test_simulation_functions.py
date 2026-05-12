@@ -10,9 +10,8 @@ from src.dgp import GaussianNetwork, BernoulliNetwork
 from src.methods import RVPermutationTest, LLKRatioTest, QAP
 from itertools import product
 
-@pytest.mark.parametrize(
-    'parallel', [True, False]
-)
+
+@pytest.mark.parametrize("parallel", [True, False])
 def test_simulation_run(parallel):
     # test only that simulation function actually runs
     nsim = 2
@@ -47,11 +46,20 @@ def test_simulation_run(parallel):
         "marginals",
         "edge_var",
         "approximation",
-        "npermutations"
+        "npermutations",
     ]
 
     param_values = product(
-        setup, method, n, k, rho, alpha, marginals, edge_var, approximation, npermutations
+        setup,
+        method,
+        n,
+        k,
+        rho,
+        alpha,
+        marginals,
+        edge_var,
+        approximation,
+        npermutations,
     )
 
     factorial_design = [dict(zip(param_names, v)) for v in param_values]

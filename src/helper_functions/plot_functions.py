@@ -10,16 +10,19 @@ import re
 # Suppress weird matplotlib category warning for boxplots
 logging.getLogger("matplotlib.category").setLevel(logging.ERROR)
 
-def visualise_latent(X_list, 
-                    Z_list, 
-                    titles='Latent Positions Scatterplot', 
-                    figsize=(18, 6),
-                    sharex=False, 
-                    sharey=False,
-                    kdplot=True,
-                    shape=None,
-                    save_path=None,
-                    k=0):
+
+def visualise_latent(
+    X_list,
+    Z_list,
+    titles="Latent Positions Scatterplot",
+    figsize=(18, 6),
+    sharex=False,
+    sharey=False,
+    kdplot=True,
+    shape=None,
+    save_path=None,
+    k=0,
+):
     """Visualise correlaton structure of latent positions
 
     Parameters
@@ -43,43 +46,47 @@ def visualise_latent(X_list,
     """
 
     if shape is None:
-        fig, axes = plt.subplots(1, len(X_list), figsize=figsize, sharex=sharex, sharey=sharey)
+        fig, axes = plt.subplots(
+            1, len(X_list), figsize=figsize, sharex=sharex, sharey=sharey
+        )
     else:
-        fig, axes = plt.subplots(shape[0], shape[1], figsize=figsize, sharex=sharex, sharey=sharey)
+        fig, axes = plt.subplots(
+            shape[0], shape[1], figsize=figsize, sharex=sharex, sharey=sharey
+        )
         axes = axes.flatten()
 
     for ax, i in zip(axes, range(len(X_list))):
         z, x = X_list[i][:, k], Z_list[i][:, k]
 
-        ax.scatter(z, x, alpha=0.4, s=10, color='royalblue', label='Samples')
-        
+        ax.scatter(z, x, alpha=0.4, s=10, color="royalblue", label="Samples")
+
         # countour density may make more clear
         if kdplot:
-            sns.kdeplot(x=z, y=x, ax=ax, levels=5, color='black', linewidths=1.5)
-        
+            sns.kdeplot(x=z, y=x, ax=ax, levels=5, color="black", linewidths=1.5)
+
         if isinstance(titles, list):
             title = titles[i]
         else:
             title = titles
-        ax.set_title(title, fontsize=14, weight='bold')
+        ax.set_title(title, fontsize=14, weight="bold")
         # ax.set_xlim(-4, 4)
         # ax.set_ylim(-4, 4)
         ax.set_xlabel("Latent Z", fontsize=12)
-        ax.grid(True, linestyle='--', alpha=0.5)
-        
+        ax.grid(True, linestyle="--", alpha=0.5)
+
         # diagonal perfect correlation line
-        #ax.plot([-4, 4], [-4, 4], 'r--', alpha=0.5, label='Perfect Correlation')
-        
+        # ax.plot([-4, 4], [-4, 4], 'r--', alpha=0.5, label='Perfect Correlation')
+
         ax.set_ylabel("Latent X", fontsize=12)
 
-    #axes[0].set_ylabel("Latent X", fontsize=12)
+    # axes[0].set_ylabel("Latent X", fontsize=12)
     plt.tight_layout()
     if save_path is not None:
         plt.savefig(save_path + ".png", dpi=300, bbox_inches="tight")
         plt.savefig(save_path + ".pdf", dpi=300, bbox_inches="tight")
     else:
         plt.show()
-    plt.close() 
+    plt.close()
 
 
 def create_dashed_boxed_message(message):
@@ -171,22 +178,22 @@ def plot_with_bands(x_axis, y_axis, **kwargs):
                 alpha=0.2,
                 color=color,
             )
-    
+
     if hline is not None:
-        ax.axhline(hline, color='black', linestyle='-', label=hline_name)
-        
-        
+        ax.axhline(hline, color="black", linestyle="-", label=hline_name)
+
+
 def plot_scatter_markers(x_axis, y_axis, **kwargs):
     """Plot scatter points with per-method marker styles and hollow/solid rendering.
- 
+
     Designed to be passed as ``plotting_function`` to :func:`plot_grid`, but can
     also be called standalone via ``plt.gca()``.
- 
+
     Each method is drawn with its own marker shape and color.  Markers that are
     *not* ``'x'`` (or ``'+'``) are rendered hollow (face transparent, colored
     edge), while cross-style markers are drawn solid so their line-only geometry
     remains visible.
- 
+
     Parameters
     ----------
     x_axis : str
@@ -246,13 +253,17 @@ def plot_scatter_markers(x_axis, y_axis, **kwargs):
     tick_direction = kwargs.pop("tick_direction", "in")
     hline = kwargs.pop("hline", None)
     hline_name = kwargs.pop("hline_name", "Reference Line")
-    x_tick_labelsize = kwargs.pop("x_tick_labelsize", plt.rcParams.get("xtick.labelsize", None))
-    y_tick_labelsize = kwargs.pop("y_tick_labelsize", plt.rcParams.get("ytick.labelsize", None))
+    x_tick_labelsize = kwargs.pop(
+        "x_tick_labelsize", plt.rcParams.get("xtick.labelsize", None)
+    )
+    y_tick_labelsize = kwargs.pop(
+        "y_tick_labelsize", plt.rcParams.get("ytick.labelsize", None)
+    )
     x_tick_rotation = kwargs.pop("x_tick_rotation", 0)
     x_order = kwargs.pop("x_order", None)
- 
+
     ax = plt.gca()
- 
+
     # --- enforce x-axis category order ---
     # Convert the x column to an ordered Categorical so matplotlib places
     # tick positions in the requested sequence regardless of data arrival order.
@@ -264,16 +275,20 @@ def plot_scatter_markers(x_axis, y_axis, **kwargs):
         # the order is deterministic across facets.
         cats = sorted(data[x_axis].dropna().unique())
         data[x_axis] = pd.Categorical(data[x_axis], categories=cats, ordered=True)
- 
+
     # Resolve hue variable from factors (mirrors plot_with_bands convention)
     hue_variable = factors[0] if factors is not None and len(factors) >= 1 else None
- 
+
     if hue_variable is not None:
         for method in data[hue_variable].unique():
             subset = data[data[hue_variable] == method].sort_values(x_axis)
-            color = colors[method] if (colors is not None and method in colors) else None
-            marker = markers[method] if (markers is not None and method in markers) else "o"
- 
+            color = (
+                colors[method] if (colors is not None and method in colors) else None
+            )
+            marker = (
+                markers[method] if (markers is not None and method in markers) else "o"
+            )
+
             # Cross/plus markers are line-only — draw solid
             if marker in ("x", "+"):
                 ax.scatter(
@@ -303,18 +318,16 @@ def plot_scatter_markers(x_axis, y_axis, **kwargs):
         # No hue — single series, plain scatter
         subset = data.sort_values(x_axis)
         ax.scatter(subset[x_axis], subset[y_axis], s=marker_size, zorder=3)
- 
+
     # --- y-axis formatting ---
-    power_pattern = re.compile(
-        r"(?:power|rejection|reject|type.?i)", re.IGNORECASE
-    )
+    power_pattern = re.compile(r"(?:power|rejection|reject|type.?i)", re.IGNORECASE)
     auto_power = power_pattern.search(y_axis) is not None
- 
+
     if ylim is not None:
         ax.set_ylim(*ylim)
     elif auto_power:
         ax.set_ylim(-0.05, 1.05)
- 
+
     if yticks is not None:
         ax.set_yticks(yticks)
         if yticklabels is not None:
@@ -322,30 +335,34 @@ def plot_scatter_markers(x_axis, y_axis, **kwargs):
     elif auto_power and ylim is None:
         ax.set_yticks([0, 0.25, 0.5, 0.75, 1.0])
         ax.set_yticklabels(["0", "0.25", "0.5", "0.75", "1"], rotation=90, va="center")
- 
+
     if y_axis_title:
         ax.set_ylabel(y_axis_title, fontsize=16)
- 
+
     # --- tick styling ---
-    ax.tick_params(axis="y", direction=tick_direction, length=6, pad=10,
-                   labelsize=y_tick_labelsize)
-    ax.tick_params(axis="x", direction=tick_direction, length=8, pad=15,
-                   labelsize=x_tick_labelsize)
+    ax.tick_params(
+        axis="y", direction=tick_direction, length=6, pad=10, labelsize=y_tick_labelsize
+    )
+    ax.tick_params(
+        axis="x", direction=tick_direction, length=8, pad=15, labelsize=x_tick_labelsize
+    )
     if x_tick_rotation:
         ticks = ax.get_xticks()
         labels = [t.get_text() for t in ax.get_xticklabels()]
         ax.set_xticks(ticks)
-        ax.set_xticklabels(labels, rotation=x_tick_rotation,
-                           ha="right" if x_tick_rotation > 0 else "center")
- 
+        ax.set_xticklabels(
+            labels,
+            rotation=x_tick_rotation,
+            ha="right" if x_tick_rotation > 0 else "center",
+        )
+
     # --- spine styling ---
     for spine in ax.spines.values():
         spine.set_edgecolor(spine_color)
- 
+
     # --- optional horizontal reference line ---
     if hline is not None:
         ax.axhline(hline, color="black", linestyle="-", label=hline_name)
-
 
 
 def plot_boxplot(x_axis, y_axis, **kwargs):
@@ -415,16 +432,16 @@ def plot_boxplot(x_axis, y_axis, **kwargs):
 
 def plot_heatmap(x_axis, y_axis, **kwargs):
     """Plot a heatmap inside a single FacetGrid facet.
- 
+
     Within each facet the data is already filtered to one (col, row) combination
     by :class:`~seaborn.FacetGrid`.  This function pivots the remaining data so
     that ``x_axis`` runs along the columns of the heatmap and ``factors[0]``
     (the *hue* / method variable) runs along the rows, with ``y_axis`` as the
     cell colour intensity.
- 
+
     Designed to be passed as ``plotting_function`` to :func:`plot_grid`, but
     can also be called standalone against ``plt.gca()``.
- 
+
     Parameters
     ----------
     x_axis : str
@@ -469,46 +486,45 @@ def plot_heatmap(x_axis, y_axis, **kwargs):
     y_tick_rotation : float, optional
         Rotation of y-axis tick labels in degrees, by default ``0``.
     """
-    data        = kwargs.pop("data")
-    factors     = kwargs.pop("factors", None)
-    cmap        = kwargs.pop("cmap", "RdYlGn")
-    fmt         = kwargs.pop("fmt", ".2f")
-    annot       = kwargs.pop("annot", True)
-    annot_fontsize  = kwargs.pop("annot_fontsize", 8)
-    linewidths  = kwargs.pop("linewidths", 0.5)
-    linecolor   = kwargs.pop("linecolor", "white")
-    row_order   = kwargs.pop("row_order", None)
-    col_order   = kwargs.pop("col_order", None)
-    cbar        = kwargs.pop("cbar", False)
+    data = kwargs.pop("data")
+    factors = kwargs.pop("factors", None)
+    cmap = kwargs.pop("cmap", "RdYlGn")
+    fmt = kwargs.pop("fmt", ".2f")
+    annot = kwargs.pop("annot", True)
+    annot_fontsize = kwargs.pop("annot_fontsize", 8)
+    linewidths = kwargs.pop("linewidths", 0.5)
+    linecolor = kwargs.pop("linecolor", "white")
+    row_order = kwargs.pop("row_order", None)
+    col_order = kwargs.pop("col_order", None)
+    cbar = kwargs.pop("cbar", False)
     x_tick_rotation = kwargs.pop("x_tick_rotation", 0)
     y_tick_rotation = kwargs.pop("y_tick_rotation", 0)
- 
+
     # Auto-detect sensible colour-scale bounds for power/rejection metrics
     power_pattern = re.compile(r"(?:power|rejection|reject|type.?i)", re.IGNORECASE)
     auto_power = power_pattern.search(y_axis) is not None
     vmin = kwargs.pop("vmin", 0.0 if auto_power else data[y_axis].min())
     vmax = kwargs.pop("vmax", 1.0 if auto_power else data[y_axis].max())
- 
+
     hue_variable = factors[0] if factors is not None and len(factors) >= 1 else None
- 
+
     if hue_variable is None:
         raise ValueError(
             "plot_heatmap requires at least one entry in `factors` to use as "
             "the heatmap row variable."
         )
- 
+
     # Determine row/column ordering
     if row_order is None:
         row_order = sorted(data[hue_variable].unique())
     if col_order is None:
         col_order = sorted(data[x_axis].unique())
- 
+
     # Pivot to (hue_variable) × (x_axis) matrix
-    pivot = (
-        data.pivot_table(index=hue_variable, columns=x_axis, values=y_axis, aggfunc="mean")
-        .reindex(index=row_order, columns=col_order)
-    )
- 
+    pivot = data.pivot_table(
+        index=hue_variable, columns=x_axis, values=y_axis, aggfunc="mean"
+    ).reindex(index=row_order, columns=col_order)
+
     ax = plt.gca()
     sns.heatmap(
         pivot,
@@ -523,27 +539,32 @@ def plot_heatmap(x_axis, y_axis, **kwargs):
         linecolor=linecolor,
         cbar=cbar,
     )
- 
+
     # Tick label rotation
-    ax.set_xticklabels(ax.get_xticklabels(), rotation=x_tick_rotation, ha="right" if x_tick_rotation else "center")
+    ax.set_xticklabels(
+        ax.get_xticklabels(),
+        rotation=x_tick_rotation,
+        ha="right" if x_tick_rotation else "center",
+    )
     ax.set_yticklabels(ax.get_yticklabels(), rotation=y_tick_rotation, va="center")
- 
+
     # Clear axis labels — plot_grid sets them centrally
     ax.set_xlabel("")
     ax.set_ylabel("")
 
+
 def plot_scatter_density(x_axis, y_axis, **kwargs):
     """Scatter two columns of points with an optional KDE contour overlay.
- 
+
     This is the ``plot_grid``-compatible equivalent of :func:`visualise_latent`.
     When used with :func:`plot_grid`, each facet receives the slice of
     ``grouped_stats`` that corresponds to that (col, row) combination.
     ``x_axis`` and ``y_axis`` are then the two columns to scatter against each
     other — for example the estimated and true latent positions stored in a
     long-form DataFrame.
- 
+
     Can also be called standalone against ``plt.gca()``.
- 
+
     Parameters
     ----------
     x_axis : str
@@ -586,25 +607,25 @@ def plot_scatter_density(x_axis, y_axis, **kwargs):
     label_fontsize : int, optional
         Font size for axis labels, by default ``12``.
     """
-    data            = kwargs.pop("data")
-    _factors        = kwargs.pop("factors", None)          # accepted, not used here
-    scatter_color   = kwargs.pop("scatter_color", "royalblue")
-    scatter_alpha   = kwargs.pop("scatter_alpha", 0.4)
-    scatter_size    = kwargs.pop("scatter_size", 10)
-    kdplot          = kwargs.pop("kdplot", True)
-    kde_levels      = kwargs.pop("kde_levels", 5)
-    kde_color       = kwargs.pop("kde_color", "black")
-    kde_linewidths  = kwargs.pop("kde_linewidths", 1.5)
-    diagonal        = kwargs.pop("diagonal", False)
-    diagonal_color  = kwargs.pop("diagonal_color", "red")
-    diagonal_style  = kwargs.pop("diagonal_style", "--")
-    grid            = kwargs.pop("grid", True)
-    x_label         = kwargs.pop("x_label", x_axis.replace("_", " "))
-    y_label         = kwargs.pop("y_label", y_axis.replace("_", " "))
-    label_fontsize  = kwargs.pop("label_fontsize", 12)
- 
+    data = kwargs.pop("data")
+    _factors = kwargs.pop("factors", None)  # accepted, not used here
+    scatter_color = kwargs.pop("scatter_color", "royalblue")
+    scatter_alpha = kwargs.pop("scatter_alpha", 0.4)
+    scatter_size = kwargs.pop("scatter_size", 10)
+    kdplot = kwargs.pop("kdplot", True)
+    kde_levels = kwargs.pop("kde_levels", 5)
+    kde_color = kwargs.pop("kde_color", "black")
+    kde_linewidths = kwargs.pop("kde_linewidths", 1.5)
+    diagonal = kwargs.pop("diagonal", False)
+    diagonal_color = kwargs.pop("diagonal_color", "red")
+    diagonal_style = kwargs.pop("diagonal_style", "--")
+    grid = kwargs.pop("grid", True)
+    x_label = kwargs.pop("x_label", x_axis.replace("_", " "))
+    y_label = kwargs.pop("y_label", y_axis.replace("_", " "))
+    label_fontsize = kwargs.pop("label_fontsize", 12)
+
     ax = plt.gca()
- 
+
     def _flatten_column(col):
         """Flatten a column that may contain scalars, lists, or numpy arrays."""
         raw = col.values
@@ -612,25 +633,25 @@ def plot_scatter_density(x_axis, y_axis, **kwargs):
         if raw.dtype.kind in ("f", "i", "u"):
             return raw.astype(float)
         # Slow path: object array whose elements are sequences (lists / arrays)
-        return np.concatenate([
-            np.atleast_1d(v).ravel() for v in raw
-        ]).astype(float)
- 
+        return np.concatenate([np.atleast_1d(v).ravel() for v in raw]).astype(float)
+
     x_vals = _flatten_column(data[x_axis])
     y_vals = _flatten_column(data[y_axis])
- 
+
     ax.scatter(
-        x_vals, y_vals,
+        x_vals,
+        y_vals,
         alpha=scatter_alpha,
         s=scatter_size,
         color=scatter_color,
         label="Samples",
     )
- 
+
     if kdplot and len(x_vals) > 1:
         try:
             sns.kdeplot(
-                x=x_vals, y=y_vals,
+                x=x_vals,
+                y=y_vals,
                 ax=ax,
                 levels=kde_levels,
                 color=kde_color,
@@ -639,28 +660,29 @@ def plot_scatter_density(x_axis, y_axis, **kwargs):
         except Exception:
             # KDE can fail on degenerate data (e.g. all identical values); skip silently
             pass
- 
+
     if diagonal:
         lim_min = min(x_vals.min(), y_vals.min())
         lim_max = max(x_vals.max(), y_vals.max())
         ax.plot(
-            [lim_min, lim_max], [lim_min, lim_max],
+            [lim_min, lim_max],
+            [lim_min, lim_max],
             color=diagonal_color,
             linestyle=diagonal_style,
             alpha=0.6,
             label="Perfect Correlation",
         )
- 
+
     if grid:
         ax.grid(True, linestyle="--", alpha=0.5)
- 
+
     ax.set_xlabel(x_label, fontsize=label_fontsize)
     ax.set_ylabel(y_label, fontsize=label_fontsize)
 
 
 def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **kwargs):
     """Plot a grid of plots using the specified plotting function.
- 
+
     Parameters
     ----------
     results : pd.DataFrame
@@ -697,8 +719,8 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
         would be redundant or cluttered.
     save_path : str, optional
         Path to save the plot, by default None
- 
- 
+
+
     Returns
     -------
     sns.FacetGrid
@@ -706,7 +728,7 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
     """
     if plotting_function is None:
         raise ValueError("plotting_function must be provided.")
- 
+
     height = kwargs.get("height", 1.3)
     save_path = kwargs.get("save_path", None)
     se_bands = kwargs.get("se_bands", None)
@@ -731,10 +753,10 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
     show_x_axis_title = kwargs.get("show_x_axis_title", True)
     row_order = kwargs.get("row_order", None)
     col_order = kwargs.get("col_order", None)
- 
+
     if save_path is not None:
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
- 
+
     # col_row_only=True: treat factors as [col] or [col, row] with no hue.
     # A dummy column is injected so the plotting function receives a consistent
     # factors list without an empty hue variable disrupting downstream code.
@@ -743,11 +765,11 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
         grouped_stats = grouped_stats.copy()
         grouped_stats[_dummy] = " "
         factors = [_dummy] + list(factors)
- 
+
     hue_variable = factors[0] if len(factors) >= 2 else None
     aggregate_x = factors[1] if len(factors) >= 2 else factors[0]
     aggregate_y = factors[2] if len(factors) >= 3 else None
- 
+
     g = sns.FacetGrid(
         grouped_stats,
         row=aggregate_y,
@@ -760,7 +782,7 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
         col_order=col_order,
         row_order=row_order,
     )
- 
+
     g.map_dataframe(
         plotting_function,
         x_axis=x_axis,
@@ -776,7 +798,7 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
         if no_facet_y_axis:
             ax.set_yticklabels([])
             ax.tick_params(axis="y", length=0)
- 
+
     # Set x and y axis labels only in central places
     if show_x_axis_title:
         if x_axis_title is None:
@@ -786,7 +808,7 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
                 else name_conversion.get(x_axis, x_axis).replace("_", " ").title()
             )
         g.axes[-1, g.axes.shape[1] // 2].set_xlabel(x_axis_title)
- 
+
     if y_axis_title is None:
         y_axis_title = (
             "Log " + name_conversion.get(y_axis, y_axis).replace("_", " ").title()
@@ -794,7 +816,7 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
             else name_conversion.get(y_axis, y_axis).replace("_", " ").title()
         )
     g.axes[g.axes.shape[0] // 2, 0].set_ylabel(y_axis_title)
- 
+
     if len(factors) >= 2:
         # column facet titles
         for ax in range(g.axes.shape[1]):
@@ -812,7 +834,7 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
                 else:
                     facet_title = f"{g.col_names[ax]}"
             g.axes[0, ax].set_title(facet_title)
- 
+
         # custom row facet labels
         if aggregate_y is not None:
             if not show_row_titles:
@@ -850,19 +872,20 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
                             rotation=90,
                             fontsize=plt.rcParams.get("font.size", 10),
                         )
- 
+
     if add_legend is True:
         # Use plt.legend() instead of g.add_legend() — seaborn's add_legend()
         # physically shrinks the grid to make room for the legend, which creates
         # a large whitespace gap to the right of the plots.
         handles, labels = g.axes.flat[0].get_legend_handles_labels()
         g.figure.legend(
-            handles, labels,
+            handles,
+            labels,
             bbox_to_anchor=legend_bbox,
             loc="center left",
             frameon=False,
         )
- 
+
     # code to make the title centered above the grid not the legend
     plot_center_x = (
         g.axes[0, 0].get_position().x0 + g.axes[0, -1].get_position().x1
@@ -900,17 +923,17 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
                 y=1.02,
                 x=plot_center_x,
             )
-    
+
     # flip x axis
     if flip_x_axis is True:
-        print('flipping')
+        print("flipping")
         for ax in g.axes.flat:
             left, right = ax.get_xlim()
             # Only flip if the axis is in standard ascending order (not flipped yet)
             if left < right:
                 # ax.invert_xaxis() is slightly cleaner than ax.set_xlim(right, left)
                 ax.invert_xaxis()
- 
+
     if save_path is not None:
         plt.savefig(save_path + ".png", dpi=300, bbox_inches="tight")
         # plt.savefig(save_path + ".pdf", dpi=300, bbox_inches="tight")

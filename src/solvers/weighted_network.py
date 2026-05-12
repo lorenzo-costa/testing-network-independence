@@ -6,7 +6,6 @@ from scipy.sparse.linalg import eigsh
 from scipy.linalg import norm
 
 
-
 def ASE(A, k=2, rng=None, **kwargs):
     """Adjacency Spectral Embedding
 
@@ -24,7 +23,7 @@ def ASE(A, k=2, rng=None, **kwargs):
     np.ndarray, np.ndarray
         Estimated latent positions, estimated eigenvalues
     """
-    
+
     if rng is None:
         rng = np.random.default_rng()
 
@@ -48,7 +47,6 @@ def ASE(A, k=2, rng=None, **kwargs):
     xhat = evectors @ np.diag(np.sqrt(evals))
 
     return xhat, evals
-
 
 
 def MLE_gaussian(A, k=2, rng=None, shrink=0.5, **kwargs):

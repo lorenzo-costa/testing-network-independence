@@ -19,6 +19,7 @@ from numba import njit
 
 try:
     import copent
+
     _HAS_COPENT = True
 except ImportError:
     _HAS_COPENT = False
@@ -28,6 +29,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 try:
     import numba as nb
+
     _HAS_NUMBA = True
 except ImportError:
     _HAS_NUMBA = False
@@ -36,6 +38,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # RV coefficients
 # ---------------------------------------------------------------------------
+
 
 def rv_coefficient(A, B):
     AtB = A.T @ B
@@ -61,21 +64,23 @@ def rv_coefficient_adjusted(A, B):
     try:
         sx = np.linalg.svd(A, compute_uv=False)
         sy = np.linalg.svd(B, compute_uv=False)
-        m   = min(len(sx), len(sy))
+        m = min(len(sx), len(sy))
         den = np.sum((sx[:m] ** 2) * (sy[:m] ** 2))
         return num / den if den != 0 else 0
     # handle svd did not converge error
     except np.linalg.LinAlgError:
         # if data is infinite return nan for diagnostic purposes
         if not np.isfinite(A).all() or not np.isfinite(B).all():
-            return np.nan 
+            return np.nan
         # else return 0 to not inflate type I error
         else:
             return 0
 
+
 # ---------------------------------------------------------------------------
 # Miscellaneous helpers
 # ---------------------------------------------------------------------------
+
 
 def mse(X, Xhat):
     return ((X - Xhat) ** 2).mean()
@@ -86,14 +91,15 @@ def relative_frobenius_norm(X, Xhat, inplace=True):
         den = norm(X, "fro")
         return 0 if den == 0 else norm(Xhat - X, "fro") / den
 
-    X_flat    = X.ravel()
+    X_flat = X.ravel()
     Xhat_flat = Xhat.ravel()
-    den       = blas.dnrm2(X_flat)
+    den = blas.dnrm2(X_flat)
     if den == 0:
         return 0
     diff = np.copy(Xhat_flat)
     blas.daxpy(X_flat, diff, a=-1.0)
     return blas.dnrm2(diff) / den
+
 
 def relative_nuclear_error(X, Xhat):
     """
@@ -101,12 +107,13 @@ def relative_nuclear_error(X, Xhat):
     Uses the sum of singular values (Nuclear Norm).
     """
     error_matrix = X - Xhat
-    
+
     # Compute singular values
     s_error = np.linalg.svd(error_matrix, compute_uv=False)
     s_true = np.linalg.svd(X, compute_uv=False)
-    
+
     return np.sum(s_error) / np.sum(s_true)
+
 
 @njit(cache=True)
 def _joint_cdf_bit(sa_dense, sb_dense, sort_order, M, K):
@@ -142,7 +149,7 @@ def _joint_cdf_bit(sa_dense, sb_dense, sort_order, M, K):
         for k in range(i, j):
             idx = sort_order[k]
             r = int(sb_dense[idx])
-            while r <= K:          # point update
+            while r <= K:  # point update
                 tree[r] += 1
                 r += r & (-r)
 
@@ -152,7 +159,7 @@ def _joint_cdf_bit(sa_dense, sb_dense, sort_order, M, K):
             idx = sort_order[k]
             r = int(sb_dense[idx])
             s = 0
-            while r > 0:           # prefix-sum [1 .. r]
+            while r > 0:  # prefix-sum [1 .. r]
                 s += tree[r]
                 r -= r & (-r)
             result[idx] = float(s)
@@ -162,7 +169,7 @@ def _joint_cdf_bit(sa_dense, sb_dense, sort_order, M, K):
     return result / M
 
 
-def observed_cvm_dependency(A, B, degree=2, rank_method='average'):
+def observed_cvm_dependency(A, B, degree=2, rank_method="average"):
     """
     Computes a rotationally-invariant Cramér-von Mises copula dependency
     measure between two graphs A and B based on shared neighbor counts.
@@ -184,8 +191,8 @@ def observed_cvm_dependency(A, B, degree=2, rank_method='average'):
         raise ValueError("Matrices A and B must have the same number of nodes.")
 
     # 1. Shared-neighbor matrices
-    SA = np.linalg.matrix_power(A, degree)  
-    SB = np.linalg.matrix_power(B, degree) 
+    SA = np.linalg.matrix_power(A, degree)
+    SB = np.linalg.matrix_power(B, degree)
 
     # 2. Off-diagonal elements only  (N*(N-1) pairs)
     mask = ~np.eye(N, dtype=bool)
@@ -203,7 +210,7 @@ def observed_cvm_dependency(A, B, degree=2, rank_method='average'):
     K = int(sb_dense.max())
 
     # Sort indices by ascending sa_dense (stable = deterministic tie ordering)
-    sort_order = np.argsort(sa_dense, kind='stable').astype(np.int64)
+    sort_order = np.argsort(sa_dense, kind="stable").astype(np.int64)
 
     # empirical copula via rank transform O(M log M) instead of O(M²)
     F_AB = _joint_cdf_bit(sa_dense, sb_dense, sort_order, M, K)

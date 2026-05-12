@@ -3,6 +3,7 @@
 import numpy as np
 import pandas as pd
 
+
 def _ratio_helper(df, factors, ratio_variable, y_axis, num, den):
     df_ratio = df.pivot_table(
         index=factors, columns=ratio_variable, values=y_axis + "_mean"

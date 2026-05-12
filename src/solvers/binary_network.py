@@ -7,6 +7,7 @@ from scipy.linalg import norm
 
 # MLE approximated using logistic regression as in O'connors something (FIX THIS)
 
+
 def logistic_grad(params, X, y, mu=None):
     """Utility function for scipy optimizer returning loss and gradient for logistic regression"""
     if mu is None:

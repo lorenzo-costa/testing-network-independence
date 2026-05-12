@@ -6,6 +6,7 @@ from scipy.special import expit, logit
 # ---------------------------------------------------------------------------
 try:
     import numba as nb
+
     _HAS_NUMBA = True
 except ImportError:
     _HAS_NUMBA = False
@@ -15,6 +16,7 @@ try:
     import jax.numpy as jnp
     from jax import jit
     from functools import partial as _partial
+
     _HAS_JAX = True
 except ImportError:
     _HAS_JAX = False
@@ -24,12 +26,16 @@ except ImportError:
 # Geometry helpers
 # ---------------------------------------------------------------------------
 
+
 def compute_theta(Z, alpha=None, beta=None, X=None):
     """Θ = Z Z^T + α 1^T + 1 α^T + β X"""
     n = Z.shape[0]
-    if alpha is None: alpha = np.zeros(n)
-    if beta  is None: beta  = 0.0
-    if X     is None: X     = np.zeros((n, n))
+    if alpha is None:
+        alpha = np.zeros(n)
+    if beta is None:
+        beta = 0.0
+    if X is None:
+        X = np.zeros((n, n))
     return Z @ Z.T + np.add.outer(alpha, alpha) + beta * X
 
 
@@ -44,16 +50,22 @@ def project_Z(Z, M=None):
     return Z
 
 
-def project_alpha(alpha): return alpha
-def project_beta(beta):   return beta
+def project_alpha(alpha):
+    return alpha
+
+
+def project_beta(beta):
+    return beta
 
 
 # ---------------------------------------------------------------------------
 # [opt-4]  Fused-BLAS NumPy inner loop
 # ---------------------------------------------------------------------------
 
-def _pgd_loop_numpy(A, Z, alpha, beta_val, eta_Z, eta_alpha, eta_beta,
-                    num_iters, X, has_X):
+
+def _pgd_loop_numpy(
+    A, Z, alpha, beta_val, eta_Z, eta_alpha, eta_beta, num_iters, X, has_X
+):
     """
     NumPy inner loop with fused BLAS matmul (opt-4).
 
@@ -73,19 +85,21 @@ def _pgd_loop_numpy(A, Z, alpha, beta_val, eta_Z, eta_alpha, eta_beta,
     # Pre-allocate extended matrices for fused matmul.
     # Left:  [Z | alpha | ones]
     # Right: [Z | ones  | alpha]
-    Zl = np.empty((n, k + 2), order='C')
-    Zr = np.empty((n, k + 2), order='C')
-    Zl[:, k + 1] = 1.0   # ones column – fixed
-    Zr[:, k]     = 1.0   # ones column – fixed
+    Zl = np.empty((n, k + 2), order="C")
+    Zr = np.empty((n, k + 2), order="C")
+    Zl[:, k + 1] = 1.0  # ones column – fixed
+    Zr[:, k] = 1.0  # ones column – fixed
 
     Theta = np.empty((n, n))
-    ones  = np.ones(n)
+    ones = np.ones(n)
 
     for _ in range(num_iters):
         # --- fused Theta build ---
-        Zl[:, :k] = Z;  Zl[:, k]     = alpha   # [Z | α | 1]
-        Zr[:, :k] = Z;  Zr[:, k + 1] = alpha   # [Z | 1 | α]
-        np.dot(Zl, Zr.T, out=Theta)             # Z@Z.T + outer(α,α) in one call
+        Zl[:, :k] = Z
+        Zl[:, k] = alpha  # [Z | α | 1]
+        Zr[:, :k] = Z
+        Zr[:, k + 1] = alpha  # [Z | 1 | α]
+        np.dot(Zl, Zr.T, out=Theta)  # Z@Z.T + outer(α,α) in one call
 
         if has_X:
             Theta += beta_val * X
@@ -100,7 +114,7 @@ def _pgd_loop_numpy(A, Z, alpha, beta_val, eta_Z, eta_alpha, eta_beta,
         np.subtract(A, Theta, out=Theta)
 
         # --- gradient ascent ---
-        Z     += 2.0 * eta_Z    * (Theta @ Z)
+        Z += 2.0 * eta_Z * (Theta @ Z)
         alpha += 2.0 * eta_alpha * (Theta @ ones)
         if has_X:
             beta_val += eta_beta * float(np.sum(Theta * X))
@@ -116,12 +130,14 @@ def _pgd_loop_numpy(A, Z, alpha, beta_val, eta_Z, eta_alpha, eta_beta,
 # ---------------------------------------------------------------------------
 
 if _HAS_NUMBA:
+
     @nb.njit(cache=True, fastmath=True)
-    def _pgd_loop_numba(A, Z, alpha, beta_val, eta_Z, eta_alpha, eta_beta,
-                        num_iters, X, has_X):
+    def _pgd_loop_numba(
+        A, Z, alpha, beta_val, eta_Z, eta_alpha, eta_beta, num_iters, X, has_X
+    ):
         n, k = Z.shape
         Theta = np.empty((n, n))
-        ones  = np.ones(n)
+        ones = np.ones(n)
 
         for _ in range(num_iters):
             Theta[:] = Z @ Z.T
@@ -144,7 +160,7 @@ if _HAS_NUMBA:
                 for j in range(n):
                     Theta[i, j] = A[i, j] - Theta[i, j]
 
-            Z     += 2.0 * eta_Z    * (Theta @ Z)
+            Z += 2.0 * eta_Z * (Theta @ Z)
             alpha += 2.0 * eta_alpha * (Theta @ ones)
             if has_X:
                 beta_val += eta_beta * np.sum(Theta * X)
@@ -172,6 +188,7 @@ else:
 # ---------------------------------------------------------------------------
 
 if _HAS_JAX:
+
     def _make_pgd_loop_jax(has_X: bool):
         """
         Returns a JIT-compiled JAX function for the inner PGD loop.
@@ -196,12 +213,11 @@ if _HAS_JAX:
         alpha = np.array(alpha_jax)
         beta  = float(beta_jax)
         """
+
         # max_iters no longer needs to be static — while_loop accepts
         # a dynamic bound.  We still JIT the whole function.
         @jit
-        def _loop(A, Z, alpha, beta_val, eta_Z, eta_alpha, eta_beta,
-                  max_iters, X, tol):
-
+        def _loop(A, Z, alpha, beta_val, eta_Z, eta_alpha, eta_beta, max_iters, X, tol):
             # ── convergence predicate ────────────────────────────────────
             def cond_fn(carry):
                 _Z, _alpha, _beta, i, delta = carry
@@ -212,29 +228,31 @@ if _HAS_JAX:
                 Z, alpha, beta_val, i, _delta = carry
 
                 Theta = Z @ Z.T + alpha[:, None] + alpha[None, :]
-                if has_X:                          # resolved at trace time
+                if has_X:  # resolved at trace time
                     Theta = Theta + beta_val * X
 
-                sigma    = jax.nn.sigmoid(Theta)
+                sigma = jax.nn.sigmoid(Theta)
                 residual = A - sigma
 
-                Z_new     = Z     + 2.0 * eta_Z     * (residual @ Z)
+                Z_new = Z + 2.0 * eta_Z * (residual @ Z)
                 alpha_new = alpha + 2.0 * eta_alpha * residual.sum(axis=1)
-                beta_new  = (beta_val + eta_beta * jnp.sum(residual * X)
-                             if has_X else beta_val)
+                beta_new = (
+                    beta_val + eta_beta * jnp.sum(residual * X) if has_X else beta_val
+                )
 
                 Z_new = Z_new - Z_new.mean(axis=0)
 
                 # relative Frobenius change in Z as stopping signal
-                delta = (jnp.linalg.norm(Z_new - Z) /
-                         (jnp.linalg.norm(Z) + 1e-12))
+                delta = jnp.linalg.norm(Z_new - Z) / (jnp.linalg.norm(Z) + 1e-12)
 
                 return (Z_new, alpha_new, beta_new, i + 1, delta)
 
             # ── initialise carry ─────────────────────────────────────────
             # delta starts at +inf so the first iteration always runs
             init_carry = (
-                Z, alpha, beta_val,
+                Z,
+                alpha,
+                beta_val,
                 jnp.zeros((), dtype=jnp.int32),
                 jnp.array(jnp.inf, dtype=jnp.float32),
             )
@@ -248,10 +266,11 @@ if _HAS_JAX:
 
     # Cache the two variants (with/without X) at import time.
     _pgd_loop_jax_noX = _make_pgd_loop_jax(has_X=False)
-    _pgd_loop_jax_X   = _make_pgd_loop_jax(has_X=True)
+    _pgd_loop_jax_X = _make_pgd_loop_jax(has_X=True)
 
-    def _pgd_loop_jax(A, Z, alpha, beta_val, eta_Z, eta_alpha, eta_beta,
-                      num_iters, X, has_X, tol=1e-6):
+    def _pgd_loop_jax(
+        A, Z, alpha, beta_val, eta_Z, eta_alpha, eta_beta, num_iters, X, has_X, tol=1e-6
+    ):
         """Thin wrapper: numpy → JAX → numpy.
 
         Parameters
@@ -271,35 +290,44 @@ if _HAS_JAX:
 
         fn = _pgd_loop_jax_X if has_X else _pgd_loop_jax_noX
         Z_j, a_j, b_j = fn(
-            A_j, Z_j, a_j, b_j,
-            eta_Z, eta_alpha, eta_beta,
-            num_iters, X_j, tol_j,
+            A_j,
+            Z_j,
+            a_j,
+            b_j,
+            eta_Z,
+            eta_alpha,
+            eta_beta,
+            num_iters,
+            X_j,
+            tol_j,
         )
         # block_until_ready ensures timing is accurate when benchmarking
-        return (np.array(Z_j.block_until_ready()),
-                np.array(a_j),
-                float(b_j))
+        return (np.array(Z_j.block_until_ready()), np.array(a_j), float(b_j))
 
 
 # ---------------------------------------------------------------------------
 # Main pgd_fit
 # ---------------------------------------------------------------------------
 
-def pgd_fit(A, k,
-            X=None,
-            eta_Z=1e-3,
-            eta_alpha=1e-3,
-            eta_beta=1e-3,
-            num_iters=100,
-            Z0=None,
-            alpha0=None,
-            beta0=None,
-            rng=None,
-            init='svt',
-            tau_init=1e-2,
-            M_init=1e-2,
-            return_history=False,
-            backend='auto'):
+
+def pgd_fit(
+    A,
+    k,
+    X=None,
+    eta_Z=1e-3,
+    eta_alpha=1e-3,
+    eta_beta=1e-3,
+    num_iters=100,
+    Z0=None,
+    alpha0=None,
+    beta0=None,
+    rng=None,
+    init="svt",
+    tau_init=1e-2,
+    M_init=1e-2,
+    return_history=False,
+    backend="auto",
+):
     """
     Projected Gradient Descent for latent space network model.
 
@@ -337,85 +365,114 @@ def pgd_fit(A, k,
     has_X = bool(np.any(X != 0))
 
     # --- initialise ---
-    if init == 'svt':
+    if init == "svt":
         alpha, Z, beta = svt_init(A, k, tau=tau_init, M1=M_init, X=X)
     else:
-        Z     = rng.standard_normal((n, k)) if Z0 is None else Z0.copy()
-        alpha = np.zeros(n)                 if alpha0 is None else alpha0.copy()
-        beta  = 0.0                         if beta0 is None else float(beta0)
+        Z = rng.standard_normal((n, k)) if Z0 is None else Z0.copy()
+        alpha = np.zeros(n) if alpha0 is None else alpha0.copy()
+        beta = 0.0 if beta0 is None else float(beta0)
 
     if return_history:
         history = [(Z.copy(), alpha.copy(), float(beta))]
 
-    Z     = Z.copy()
+    Z = Z.copy()
     alpha = alpha.copy()
-    beta  = float(beta)
+    beta = float(beta)
 
     # --- choose backend ---
-    if backend == 'auto':
+    if backend == "auto":
         if _HAS_JAX:
-            backend = 'jax'
+            backend = "jax"
         elif _HAS_NUMBA:
-            backend = 'numba'
+            backend = "numba"
         else:
-            backend = 'numpy'
+            backend = "numpy"
 
-    if backend == 'jax' and not _HAS_JAX:
+    if backend == "jax" and not _HAS_JAX:
         raise ImportError("JAX not installed. `pip install jax`")
-    if backend == 'numba' and not _HAS_NUMBA:
+    if backend == "numba" and not _HAS_NUMBA:
         raise ImportError("Numba not installed. `pip install numba`")
 
     loop_fn = {
-        'numpy': _pgd_loop_numpy,
-        'numba': _pgd_loop_numba if _HAS_NUMBA else _pgd_loop_numpy,
-        'jax':   _pgd_loop_jax   if _HAS_JAX   else _pgd_loop_numpy,
+        "numpy": _pgd_loop_numpy,
+        "numba": _pgd_loop_numba if _HAS_NUMBA else _pgd_loop_numpy,
+        "jax": _pgd_loop_jax if _HAS_JAX else _pgd_loop_numpy,
     }[backend]
 
     # --- run ---
     if return_history:
         for _ in range(num_iters):
             Z, alpha, beta = loop_fn(
-                A, Z, alpha, beta,
-                eta_Z, eta_alpha, eta_beta, 1, X, has_X)
+                A, Z, alpha, beta, eta_Z, eta_alpha, eta_beta, 1, X, has_X
+            )
             history.append((Z.copy(), alpha.copy(), beta))
         return Z, alpha, beta, history
 
     Z, alpha, beta = loop_fn(
-        A, Z, alpha, beta,
-        eta_Z, eta_alpha, eta_beta, num_iters, X, has_X)
+        A, Z, alpha, beta, eta_Z, eta_alpha, eta_beta, num_iters, X, has_X
+    )
     return Z, alpha, beta
 
 
-def pgd_fit_wrapper(A, k,
-                    X=None,
-                    eta_Z=1e-3,
-                    eta_alpha=1e-3,
-                    eta_beta=1e-3,
-                    num_iters=500,
-                    Z0=None,
-                    alpha0=None,
-                    beta0=None,
-                    rng=None,
-                    init='svt',
-                    tau_init=1e-2,
-                    M_init=4,
-                    return_history=False,
-                    backend='auto'):
+def pgd_fit_wrapper(
+    A,
+    k,
+    X=None,
+    eta_Z=1e-3,
+    eta_alpha=1e-3,
+    eta_beta=1e-3,
+    num_iters=500,
+    Z0=None,
+    alpha0=None,
+    beta0=None,
+    rng=None,
+    init="svt",
+    tau_init=1e-2,
+    M_init=4,
+    return_history=False,
+    backend="auto",
+):
     """Wrapper for pgd_fit returning Z + alpha[:, None]."""
     k = 5
     if return_history:
         Z, alpha, beta, history = pgd_fit(
-            A, k, X=X, eta_Z=eta_Z, eta_alpha=eta_alpha, eta_beta=eta_beta,
-            num_iters=num_iters, Z0=Z0, alpha0=alpha0, beta0=beta0,
-            rng=rng, init=init, tau_init=tau_init, M_init=M_init,
-            return_history=True, backend=backend)
+            A,
+            k,
+            X=X,
+            eta_Z=eta_Z,
+            eta_alpha=eta_alpha,
+            eta_beta=eta_beta,
+            num_iters=num_iters,
+            Z0=Z0,
+            alpha0=alpha0,
+            beta0=beta0,
+            rng=rng,
+            init=init,
+            tau_init=tau_init,
+            M_init=M_init,
+            return_history=True,
+            backend=backend,
+        )
         return Z + alpha[:, None], beta, history
 
     Z, alpha, beta = pgd_fit(
-        A, k, X=X, eta_Z=eta_Z, eta_alpha=eta_alpha, eta_beta=eta_beta,
-        num_iters=num_iters, Z0=Z0, alpha0=alpha0, beta0=beta0,
-        rng=rng, init=init, tau_init=tau_init, M_init=M_init,
-        return_history=False, backend=backend)
+        A,
+        k,
+        X=X,
+        eta_Z=eta_Z,
+        eta_alpha=eta_alpha,
+        eta_beta=eta_beta,
+        num_iters=num_iters,
+        Z0=Z0,
+        alpha0=alpha0,
+        beta0=beta0,
+        rng=rng,
+        init=init,
+        tau_init=tau_init,
+        M_init=M_init,
+        return_history=False,
+        backend=backend,
+    )
     return Z + alpha[:, None], beta
 
 
@@ -423,13 +480,14 @@ def pgd_fit_wrapper(A, k,
 # SVT initialisation  (Algorithm 3 from Ma & Ma 2020)
 # ---------------------------------------------------------------------------
 
+
 def _fit_additive_model(Theta_hat, X, n):
     """
     O(n²) closed-form solution for:
         min_{alpha, beta}  ||Θ - (α_i + α_j + β X_{ij})||_F²
         s.t.  Σ_i α_i = 0
     """
-    R    = Theta_hat.sum(axis=1)
+    R = Theta_hat.sum(axis=1)
     has_cov = bool(np.any(X != 0))
 
     if not has_cov:
@@ -437,9 +495,9 @@ def _fit_additive_model(Theta_hat, X, n):
         alpha -= alpha.mean()
         return alpha, 0.0
 
-    RX  = X.sum(axis=1)
+    RX = X.sum(axis=1)
     num = np.sum(Theta_hat * X) - (2.0 / n) * np.dot(R, RX)
-    den = np.sum(X * X)         - (2.0 / n) * np.dot(RX, RX)
+    den = np.sum(X * X) - (2.0 / n) * np.dot(RX, RX)
     beta = (num / den) if abs(den) > 1e-12 else 0.0
 
     alpha = (R - beta * RX) / n
@@ -470,11 +528,11 @@ def svt_init(A, k, tau, M1, X=None, fit_intercept=True):
         X = np.zeros((n, n))
 
     ones = np.ones(n)
-    J    = np.eye(n) - np.outer(ones, ones) / n
+    J = np.eye(n) - np.outer(ones, ones) / n
 
     U, s, Vt = np.linalg.svd(A)
-    mask      = s >= tau
-    P_tilde   = (U[:, mask] * s[mask]) @ Vt[mask, :]
+    mask = s >= tau
+    P_tilde = (U[:, mask] * s[mask]) @ Vt[mask, :]
 
     lo = 0.5 * np.exp(-M1)
     hi = 1.0 - lo
@@ -486,17 +544,18 @@ def svt_init(A, k, tau, M1, X=None, fit_intercept=True):
     if fit_intercept:
         alpha0, beta0 = _fit_additive_model(Theta_hat, X, n)
     else:
-        alpha0 = np.zeros(n); beta0 = 0.0
+        alpha0 = np.zeros(n)
+        beta0 = 0.0
 
     Theta_resid = Theta_hat - np.add.outer(alpha0, alpha0) - beta0 * X
-    R_mat       = J @ Theta_resid @ J
+    R_mat = J @ Theta_resid @ J
 
     eigvals, eigvecs = np.linalg.eigh(R_mat)
-    eigvals_plus     = np.maximum(eigvals, 0.0)
+    eigvals_plus = np.maximum(eigvals, 0.0)
 
-    idx  = np.argsort(eigvals_plus)[::-1][:k]
-    Uk   = eigvecs[:, idx]
-    Dk   = np.diag(eigvals_plus[idx])
-    Z0   = Uk @ np.sqrt(Dk)
+    idx = np.argsort(eigvals_plus)[::-1][:k]
+    Uk = eigvecs[:, idx]
+    Dk = np.diag(eigvals_plus[idx])
+    Z0 = Uk @ np.sqrt(Dk)
 
     return alpha0, Z0, beta0

@@ -2,6 +2,7 @@ from scipy.linalg import norm
 from .helper_functions._metrics_helper import rv_coefficient, rv_coefficient_adjusted
 import numpy as np
 
+
 class BaseMetric:
     def __init__(self):
         pass
@@ -12,11 +13,12 @@ class BaseMetric:
     def get_name(self):
         raise NotImplementedError("Subclasses should implement this!")
 
+
 class ReturnMetric(BaseMetric):
     def __call__(self, results):
         estimated = results["estimated_latent"]
         truth = results["true_latent"]
-        return {'estimated': estimated, 'truth': truth}
+        return {"estimated": estimated, "truth": truth}
 
     def get_name(self):
         return "ReturnMetric"
@@ -84,7 +86,10 @@ class RelativeFrobeniusNorm(BaseMetric):
         if isinstance(estimated, tuple):
             out = []
             for i in range(len(estimated)):
-                if not np.isfinite(estimated[i]).all() or not np.isfinite(truth[i]).all():
+                if (
+                    not np.isfinite(estimated[i]).all()
+                    or not np.isfinite(truth[i]).all()
+                ):
                     out.append(np.nan)
                 else:
                     if self.gram_matrix:
@@ -104,7 +109,7 @@ class RelativeFrobeniusNorm(BaseMetric):
         # single output computation
         if not np.isfinite(estimated).all() or not np.isfinite(truth).all():
             return np.nan
-        
+
         if self.gram_matrix:
             # Compute the Gram matrix for both estimated and truth
             estimated = estimated @ estimated.T
@@ -116,14 +121,15 @@ class RelativeFrobeniusNorm(BaseMetric):
 
     def get_name(self):
         return "RelativeFrobeniusNorm"
-    
+
 
 import numpy as np
+
 
 class RobustRelativeProcrustesDistance:
     """
     Robust Relative Procrustes Distance for heavy-tailed (Cauchy) data.
-    
+
     1. Robust to outliers via Median-centering and L1-scaling.
     2. Rotation invariant via SVD-based alignment (Kabsch).
     3. Handles differing feature dimensions (columns) via zero-padding.
@@ -133,12 +139,12 @@ class RobustRelativeProcrustesDistance:
     def __call__(self, results):
         estimated = results["estimated_latent"]
         truth = results["true_latent"]
-        
+
         # Handle single matrix vs tuple of matrices
         if not isinstance(estimated, (tuple, list)):
             estimated = (estimated,)
             truth = (truth,)
-        
+
         out = []
         for i in range(len(estimated)):
             est = estimated[i]
@@ -147,40 +153,44 @@ class RobustRelativeProcrustesDistance:
             if not np.isfinite(est).all() or not np.isfinite(true).all():
                 out.append(np.nan)
                 continue
-                
+
             n_true, d_true = true.shape
             n_est, d_est = est.shape
-            
+
             # Procrustes requires 1-to-1 observation mapping (rows must match)
             if n_true != n_est:
-                raise ValueError(f"Row counts must match for Procrustes. Got {n_true} and {n_est}.")
+                raise ValueError(
+                    f"Row counts must match for Procrustes. Got {n_true} and {n_est}."
+                )
 
             # --- 0. Dimensional Padding ---
             # Pad the smaller matrix with zeros so the feature columns match
             max_d = max(d_true, d_est)
-            
+
             if d_true < max_d:
-                true_padded = np.pad(true, ((0, 0), (0, max_d - d_true)), mode='constant')
+                true_padded = np.pad(
+                    true, ((0, 0), (0, max_d - d_true)), mode="constant"
+                )
             else:
                 true_padded = true
-                
+
             if d_est < max_d:
-                est_padded = np.pad(est, ((0, 0), (0, max_d - d_est)), mode='constant')
+                est_padded = np.pad(est, ((0, 0), (0, max_d - d_est)), mode="constant")
             else:
                 est_padded = est
 
             # --- 1. Robust Centering ---
             true_c = true_padded - np.median(true_padded, axis=0)
             est_c = est_padded - np.median(est_padded, axis=0)
-            
+
             # --- 2. Alignment (Kabsch Algorithm) ---
             # Compute cross-covariance matrix
-            H = est_c.T @ true_c 
-            
+            H = est_c.T @ true_c
+
             # SVD works cleanly now because H is a square matrix (max_d x max_d)
             U, _, Vt = np.linalg.svd(H)
             R_opt = U @ Vt
-            
+
             # Optional but recommended: Ensure we have a rotation, not a reflection
             if np.linalg.det(R_opt) < 0:
                 Vt[-1, :] *= -1
@@ -192,11 +202,11 @@ class RobustRelativeProcrustesDistance:
             # Shapes are now guaranteed to match for subtraction
             abs_error = np.sum(np.abs(true_c - est_aligned))
             abs_truth = np.sum(np.abs(true_c))
-            
+
             rel_dist = abs_error / abs_truth if abs_truth > 0 else abs_error
-            
+
             out.append(rel_dist)
-            
+
         return out
 
     def get_name(self):
@@ -328,12 +338,14 @@ class ComputeAll(BaseMetric):
                 "RelativeFrobeniusNorm_x": est[0],
                 "RelativeFrobeniusNorm_z": est[1],
             }
-            
+
             est_procrustes = RobustRelativeProcrustesDistance()(results)
-            latent_metrics.update({
-                "ProcrustesDistance_x": est_procrustes[0],
-                "ProcrustesDistance_z": est_procrustes[1],
-            })
+            latent_metrics.update(
+                {
+                    "ProcrustesDistance_x": est_procrustes[0],
+                    "ProcrustesDistance_z": est_procrustes[1],
+                }
+            )
             out.update(latent_metrics)
 
         return out

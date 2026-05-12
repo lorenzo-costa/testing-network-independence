@@ -8,7 +8,14 @@ from src.metrics import (
     RelativeFrobeniusNorm,
 )
 from src.metrics import ComputeAll
-from src.methods import RVPermutationTest, PermutationTest, QAP, DiffusionCorrelation, CanonicalCorrelationTest, FitIndependent
+from src.methods import (
+    RVPermutationTest,
+    PermutationTest,
+    QAP,
+    DiffusionCorrelation,
+    CanonicalCorrelationTest,
+    FitIndependent,
+)
 from src.solvers.binary_network import MLE_logistic
 from src.solvers.weighted_network import MLE_gaussian, ASE
 from src.helper_functions.simulation_functions import run_simulation
@@ -26,7 +33,6 @@ from datetime import datetime
 from functools import partial
 
 
-
 def get_dist_string(dist_obj):
     name = dist_obj.dist.name
 
@@ -41,35 +47,56 @@ def get_dist_string(dist_obj):
 
 
 if __name__ == "__main__":
-    
     nsim = 2
     n = [100, 200]
     k = [3]
     alpha = [0.05]
-    marginals = ['gaussian', 'uniform 0 10', 'cauchy']
+    marginals = ["gaussian", "uniform 0 10", "cauchy"]
     edge_var = [1]
     method = [
         partial(RVPermutationTest, permutation_type="latent"),
         # QAP,
         # DiffusionCorrelation,
-        partial(PermutationTest, permutation_type="latent", test_function=cvm_stat_multivariate),
+        partial(
+            PermutationTest,
+            permutation_type="latent",
+            test_function=cvm_stat_multivariate,
+        ),
     ]
 
     npermutations = [100]
     metrics = [ComputeAll()]
     approximation = ["F-distr"]
-    
-    dgp = ['bernoulli', 'gaussian']
-    rho = [.2]
-    
+
+    dgp = ["bernoulli", "gaussian"]
+    rho = [0.2]
+
     setup = [
-        (partial(BernoulliNetwork, copula_model='gaussian', center_latent=True), pgd_fit_wrapper),
-        (partial(BernoulliNetwork, copula_model='clayton', center_latent=True), pgd_fit_wrapper),
-        (partial(BernoulliNetwork, copula_model='gumbel', center_latent=True), pgd_fit_wrapper),
-        (partial(BernoulliNetwork, copula_model='mixture_uniform', weights=[0.5, 0.5], correlations=[98, -98], center_latent=True), pgd_fit_wrapper)
+        (
+            partial(BernoulliNetwork, copula_model="gaussian", center_latent=True),
+            pgd_fit_wrapper,
+        ),
+        (
+            partial(BernoulliNetwork, copula_model="clayton", center_latent=True),
+            pgd_fit_wrapper,
+        ),
+        (
+            partial(BernoulliNetwork, copula_model="gumbel", center_latent=True),
+            pgd_fit_wrapper,
+        ),
+        (
+            partial(
+                BernoulliNetwork,
+                copula_model="mixture_uniform",
+                weights=[0.5, 0.5],
+                correlations=[98, -98],
+                center_latent=True,
+            ),
+            pgd_fit_wrapper,
+        ),
     ]
 
-    rng = np.random.default_rng(2)    
+    rng = np.random.default_rng(2)
 
     param_names = [
         "setup",
@@ -81,11 +108,20 @@ if __name__ == "__main__":
         "rho",
         "edge_var",
         "approximation",
-        "npermutations"
+        "npermutations",
     ]
 
     param_values = product(
-        setup, method, n, k, alpha, marginals, rho, edge_var, approximation, npermutations
+        setup,
+        method,
+        n,
+        k,
+        alpha,
+        marginals,
+        rho,
+        edge_var,
+        approximation,
+        npermutations,
     )
 
     factorial_design = [dict(zip(param_names, v)) for v in param_values]

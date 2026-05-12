@@ -7,6 +7,7 @@ import os
 from scipy import stats, linalg
 from scipy.spatial.distance import pdist, squareform
 import warnings
+
 sys.path.append(os.path.abspath(os.path.join(os.getcwd(), "..")))
 
 
@@ -84,7 +85,9 @@ class FitIndependent(BaseMethod):
                 )
             self.k = self.k
 
-        Zhat = self.solver(A, k=self.k, rng=self.rng)[0]  # 0 is the xhat, 1 are the evalues
+        Zhat = self.solver(A, k=self.k, rng=self.rng)[
+            0
+        ]  # 0 is the xhat, 1 are the evalues
         Xhat = self.solver(B, k=self.k, rng=self.rng)[0]
 
         self.Zhat = Zhat
@@ -101,6 +104,7 @@ class FitIndependent(BaseMethod):
             "true_latent": (self.X, self.Z),
         }
         return results
+
 
 class RVtest(BaseMethod):
     """Perform RV permutation test for network independence.
@@ -144,11 +148,11 @@ class RVtest(BaseMethod):
         super().__init__()
 
         self.rho = rho
-        if rho== 0:
+        if rho == 0:
             self.null = True
         else:
             self.null = False
-            
+
         self.approximation = approximation
 
         self.permutation_distribution = []
@@ -165,7 +169,7 @@ class RVtest(BaseMethod):
         self.test_function = test_function
         self.permutation_type = permutation_type
         self.use_true_latent = use_true_latent
-    
+
     def fit(self, data, **kwargs):
         """Compute test statistic and p-value
 
@@ -175,17 +179,18 @@ class RVtest(BaseMethod):
             A dictionary containing keys 'A', 'B', 'X', 'Z' where 'A' and 'B' are adjacency matrices
             and 'X' and 'Z' are latent positions.
         """
-        
+
         self._process_input(data)
-        
+
         if self.approximation == "permutation":
             self._fit_permutation()
         elif self.approximation == "asymptotic":
             self._fit_asymptotic()
         else:
-            raise ValueError("Invalid approximation method. Choose 'permutation' or 'asymptotic'.")
-        
-        
+            raise ValueError(
+                "Invalid approximation method. Choose 'permutation' or 'asymptotic'."
+            )
+
         self.reject_null = bool(self.pvalue < self.alpha)
 
         return
@@ -205,50 +210,49 @@ class RVtest(BaseMethod):
             "null": self.null,
         }
         return results
-    
+
     def _fit_asymptotic(self):
         Zhat = self.Zhat.copy()
         Xhat = self.Xhat.copy()
         Zhat = Zhat - Zhat.mean(axis=0)
         Xhat = Xhat - Xhat.mean(axis=0)
-        
+
         n, k = Zhat.shape
-        
+
         rv = self.test_function(Zhat, Xhat)
-        
-        SigmaXX = 1/(n-1) * Xhat.T @ Xhat
-        SigmaZZ = 1/(n-1) * Zhat.T @ Zhat
-        
+
+        SigmaXX = 1 / (n - 1) * Xhat.T @ Xhat
+        SigmaZZ = 1 / (n - 1) * Zhat.T @ Zhat
+
         eigenvalues_X = np.linalg.eigvalsh(SigmaXX)
         eigenvalues_X = np.sort(eigenvalues_X)[::-1]  # sort in descending order
         eigenvalues_Z = np.linalg.eigvalsh(SigmaZZ)
         eigenvalues_Z = np.sort(eigenvalues_Z)[::-1]  # sort in descending order
 
         den = np.sqrt(np.trace(SigmaXX @ SigmaXX) * np.trace(SigmaZZ @ SigmaZZ))
-        
+
         weights = np.outer(eigenvalues_X, eigenvalues_Z).flatten() / den
 
-        self.pvalue = imhof(n * rv, weights)['Qq']
-        
-    
+        self.pvalue = imhof(n * rv, weights)["Qq"]
+
     def _fit_permutation(self):
         """Get pvalue using permutation test"""
         # A technically not needed but look cleaner
-        A, B, Zhat, Xhat = self.A, self.B, self.Zhat, self.Xhat 
-        
+        A, B, Zhat, Xhat = self.A, self.B, self.Zhat, self.Xhat
+
         test_stat_estimate = self.test_function(Zhat, Xhat)
         self.test_stat_estimate = test_stat_estimate
-        
+
         if self.permutation_type == "observed":
             for _ in range(self.npermutations):
                 perm = self.rng.permutation(B.shape[0])
                 # permute only one of the two
                 B_perm = B[perm][:, perm]
-                
+
                 Xhat_perm = self.solver(B_perm, k=self.k, rng=self.rng)[0]
                 test_stat_perm = self.test_function(Zhat, Xhat_perm)
                 self.permutation_distribution.append(test_stat_perm)
-                
+
         # estimate latent positions once, permute them and compute rv_coefficient
         elif self.permutation_type == "latent":
             for _ in range(self.npermutations):
@@ -256,29 +260,33 @@ class RVtest(BaseMethod):
                 Xhat_perm = Xhat[perm, :]
                 test_stat_perm = self.test_function(Zhat, Xhat_perm)
                 self.permutation_distribution.append(test_stat_perm)
-        
+
         # get and store pvalue
-        self.pvalue = np.mean(np.abs(self.permutation_distribution) >= np.abs(self.test_stat_estimate))
-    
+        self.pvalue = np.mean(
+            np.abs(self.permutation_distribution) >= np.abs(self.test_stat_estimate)
+        )
+
     def _process_input(self, data):
-        """Utility function to extract and process input data, estimate latent 
+        """Utility function to extract and process input data, estimate latent
         positions if needed, and store results in the object."""
-        
+
         if not isinstance(data, dict):
             raise ValueError(
                 "Invalid data format. Expected a dictionary with keys 'A', 'B'."
             )
         if self.use_true_latent:
-            if 'X' not in data.keys() or 'Z' not in data.keys():
-                raise ValueError("True latent positions must be provided when use_true_latent is True.")
-            X = data['X']
-            Z = data['Z']
+            if "X" not in data.keys() or "Z" not in data.keys():
+                raise ValueError(
+                    "True latent positions must be provided when use_true_latent is True."
+                )
+            X = data["X"]
+            Z = data["Z"]
             A = data.get("A", None)
             B = data.get("B", None)
             Xhat = X.copy()
             Zhat = Z.copy()
         else:
-            if 'estimated_X' not in data.keys():
+            if "estimated_X" not in data.keys():
                 # need to estimate latent positions
                 A = data.get("A", None)
                 B = data.get("B", None)
@@ -299,7 +307,9 @@ class RVtest(BaseMethod):
                         )
                     self.k = self.k
 
-                Zhat = self.solver(A, k=self.k, rng=self.rng)[0]  # 0 is the xhat, 1 are the evalues
+                Zhat = self.solver(A, k=self.k, rng=self.rng)[
+                    0
+                ]  # 0 is the xhat, 1 are the evalues
                 Xhat = self.solver(B, k=self.k, rng=self.rng)[0]
 
             else:
@@ -309,7 +319,7 @@ class RVtest(BaseMethod):
                 X = data.get("X", None)
                 A = data.get("A", None)
                 B = data.get("B", None)
-                
+
         self.A = A
         self.B = B
         self.X = X
@@ -319,6 +329,7 @@ class RVtest(BaseMethod):
 
     def get_name(self):
         return "PermutationTest_" + self.approximation + "_" + self.permutation_type
+
 
 class ObservedCVM(BaseMethod):
     def __init__(
@@ -334,8 +345,8 @@ class ObservedCVM(BaseMethod):
     ):
         super().__init__()
 
-        self.rho= rho
-        if rho== 0:
+        self.rho = rho
+        if rho == 0:
             self.null = True
         else:
             self.null = False
@@ -345,7 +356,7 @@ class ObservedCVM(BaseMethod):
         self.alpha = alpha
         self.npermutations = npermutations
         self.rng = np.random.default_rng() if rng is None else rng
-        
+
         self.test_function = test_function
         self.permutation_type = permutation_type
         self.use_true_latent = use_true_latent
@@ -367,18 +378,18 @@ class ObservedCVM(BaseMethod):
             raise ValueError(
                 "Invalid data format. Expected a dictionary with keys 'A', 'B'."
             )
-        
+
         # need to estimate latent positions
         A = data.get("A")
         B = data.get("B")
         Z = data.get("Z", None)
         X = data.get("X", None)
-        
+
         self.A = A
         self.B = B
-        
-        matrix_A = Z@Z.T if self.use_true_latent and Z is not None else A
-        matrix_B = X@X.T if self.use_true_latent and X is not None else B
+
+        matrix_A = Z @ Z.T if self.use_true_latent and Z is not None else A
+        matrix_B = X @ X.T if self.use_true_latent and X is not None else B
 
         test_stat_estimate = self.test_function(matrix_A, matrix_B)
         self.test_stat_estimate = test_stat_estimate
@@ -413,7 +424,6 @@ class ObservedCVM(BaseMethod):
 
     def get_name(self):
         return "ObservedCVMPermutationTest"
-    
 
 
 class LLKRatioTest(BaseMethod):
@@ -465,8 +475,8 @@ class LLKRatioTest(BaseMethod):
         else:
             self.rng = rng
 
-        self.rho= rho
-        if rho== 0:
+        self.rho = rho
+        if rho == 0:
             self.null = True
         else:
             self.null = False
@@ -493,7 +503,7 @@ class LLKRatioTest(BaseMethod):
                 "Invalid data format. Expected a dictionary with keys 'A', 'B'."
             )
 
-        if 'estimated_Z' not in data.keys() or 'estimated_X' not in data.keys():
+        if "estimated_Z" not in data.keys() or "estimated_X" not in data.keys():
             A = data.get("A")
             B = data.get("B")
             self.A = A
@@ -501,7 +511,6 @@ class LLKRatioTest(BaseMethod):
             # true latent positions may not be provided
             X = data.get("X", None)
             Z = data.get("Z", None)
-            
 
             # get the number of dimensions (k). If X or Z is provided, use its
             # shape (i.e. the "true" value of k)
@@ -516,7 +525,9 @@ class LLKRatioTest(BaseMethod):
 
             k = self.k
 
-            Zhat = self.solver(A, k=self.k, rng=self.rng)[0]  # 0 is the xhat, 1 are the evalues
+            Zhat = self.solver(A, k=self.k, rng=self.rng)[
+                0
+            ]  # 0 is the xhat, 1 are the evalues
             Xhat = self.solver(B, k=self.k, rng=self.rng)[0]
         else:
             Xhat = data.get("estimated_X")
@@ -538,7 +549,7 @@ class LLKRatioTest(BaseMethod):
         # wilks_score = np.prod((1-cca_evals))
 
         # faster code
-        M_n = np.eye(n) - 1/n * np.ones((n, n))
+        M_n = np.eye(n) - 1 / n * np.ones((n, n))
         Qx, _ = np.linalg.qr(M_n @ Xhat)
         Qz, _ = np.linalg.qr(M_n @ Zhat)
         S = np.linalg.svd(Qx.T @ Qz, compute_uv=False)
@@ -589,7 +600,7 @@ class LLKRatioTest(BaseMethod):
             "null": self.null,
         }
         return results
-    
+
     def get_name(self):
         return "LLKRatioTest"
 
@@ -665,8 +676,10 @@ class QAP(BaseMethod):
             self.permutation_distribution.append(test_stat_perm)
 
         # compute pvalue
-        self.pvalue = np.mean(np.abs(self.permutation_distribution) >= np.abs(self.test_stat_estimate))
-        
+        self.pvalue = np.mean(
+            np.abs(self.permutation_distribution) >= np.abs(self.test_stat_estimate)
+        )
+
         self.reject_null = bool(self.pvalue < self.alpha)
 
         return
@@ -686,7 +699,7 @@ class QAP(BaseMethod):
             "null": self.null,
         }
         return results
-    
+
     def get_name(self):
         return "QAP"
 
@@ -761,15 +774,15 @@ class DiffusionCorrelation(BaseMethod):
         else:
             self.null = False
         self.rho = rho
-        
+
         self.solver = solver
 
         self.alpha = alpha
-        
+
         self.use_laplacian = use_laplacian
-        
+
         self.eps = 1e-10
-        
+
         self.use_true_latent = use_true_latent
 
     def compute_normalized_laplacian(self, K):
@@ -779,15 +792,15 @@ class DiffusionCorrelation(BaseMethod):
         """
         degrees = np.sum(K, axis=1)
 
-        degrees[degrees < 1e-10] = 1.0 
-        
+        degrees[degrees < 1e-10] = 1.0
+
         B_inv_sqrt = np.diag(1.0 / np.sqrt(degrees))
 
         L = B_inv_sqrt @ K @ B_inv_sqrt
-        
+
         L = (L + L.T) / 2
         L = np.nan_to_num(L)
-        
+
         return L
 
     def compute_distance_matrix(self, U):
@@ -817,16 +830,18 @@ class DiffusionCorrelation(BaseMethod):
             raise ValueError(
                 "Invalid data format. Expected a dictionary with keys 'A', 'B'."
             )
-        
+
         if self.use_true_latent:
-            if 'X' not in data.keys() or 'Z' not in data.keys():
-                raise ValueError("True latent positions must be provided when use_true_latent is True.")
-            X = data['X']
-            Z = data['Z']
+            if "X" not in data.keys() or "Z" not in data.keys():
+                raise ValueError(
+                    "True latent positions must be provided when use_true_latent is True."
+                )
+            X = data["X"]
+            Z = data["Z"]
             Xhat = X.copy()
             Zhat = Z.copy()
         else:
-            if 'estimated_X' not in data.keys():
+            if "estimated_X" not in data.keys():
                 # need to estimate latent positions
                 A = data.get("A")
                 B = data.get("B")
@@ -846,16 +861,18 @@ class DiffusionCorrelation(BaseMethod):
                             "Number of dimensions (k) must be specified if X and Z are not provided."
                         )
                     self.k = self.k
-                
+
                 if self.use_laplacian:
-                # compute normalized Laplacian
+                    # compute normalized Laplacian
                     A_laplacian = self.compute_normalized_laplacian(A)
                     B_laplacian = self.compute_normalized_laplacian(B)
                 else:
                     A_laplacian = A
                     B_laplacian = B
 
-                Zhat = self.solver(A_laplacian, k=self.k, rng=self.rng)[0]  # 0 is the xhat, 1 are the evalues
+                Zhat = self.solver(A_laplacian, k=self.k, rng=self.rng)[
+                    0
+                ]  # 0 is the xhat, 1 are the evalues
                 Xhat = self.solver(B_laplacian, k=self.k, rng=self.rng)[0]
 
             else:
@@ -881,11 +898,11 @@ class DiffusionCorrelation(BaseMethod):
                         distances_A,
                         distances_B,
                         random_state=self.rng,
-                        reps=self.npermutations
+                        reps=self.npermutations,
                     )
                     pvalue = out_mgc.pvalue
                 except IndexError:
-                    pvalue=1.0
+                    pvalue = 1.0
                     print("Error in computing MGC. Check the distance matrices.")
                     print(distances_A.sum(), distances_B.sum())
         else:
@@ -912,10 +929,10 @@ class DiffusionCorrelation(BaseMethod):
             "null": self.null,
         }
         return results
-    
+
     def get_name(self):
         return "DiffusionCorrelation"
-    
+
 
 class CanonicalCorrelationTest(BaseMethod):
     """Testing independence using Canonical Correlation Analysis
@@ -952,7 +969,7 @@ class CanonicalCorrelationTest(BaseMethod):
         self.rng = np.random.default_rng() if rng is None else np.random.default_rng()
         self.npermutations = npermutations
         self.k = k
-        
+
         if solver is None:
             raise ValueError("Solver must be provided")
         self.solver = solver
@@ -980,7 +997,7 @@ class CanonicalCorrelationTest(BaseMethod):
             raise ValueError(
                 "Invalid data format. Expected a dictionary with keys 'A', 'B'."
             )
-        #TODO implement the non-estimation thing
+        # TODO implement the non-estimation thing
         A = data.get("A")
         B = data.get("B")
         self.A = A
@@ -1001,15 +1018,17 @@ class CanonicalCorrelationTest(BaseMethod):
                     "Number of dimensions (k) must be specified if X and Z are not provided."
                 )
             self.k = self.k
-        
+
         n = A.shape[0]
 
-        Zhat = self.solver(A, k=self.k, rng=self.rng)[0]  # 0 is the xhat, 1 are the evalues
+        Zhat = self.solver(A, k=self.k, rng=self.rng)[
+            0
+        ]  # 0 is the xhat, 1 are the evalues
         Xhat = self.solver(B, k=self.k, rng=self.rng)[0]
 
         self.Zhat = Zhat
         self.Xhat = Xhat
-        
+
         Xhat_centered = Xhat - np.mean(Xhat, axis=0)
         Zhat_centered = Zhat - np.mean(Zhat, axis=0)
 
@@ -1017,22 +1036,22 @@ class CanonicalCorrelationTest(BaseMethod):
         # sigma_Z = Zhat_centered.T @ Zhat_centered
         # sigma_XZ = Xhat_centered.T @ Zhat_centered
         # matrix = linalg.fractional_matrix_power(sigma_X, -0.5) @ sigma_XZ @ linalg.fractional_matrix_power(sigma_Z, -0.5)
-        
+
         # faster using qr decomposition
-        Q_x, _ = linalg.qr(Xhat_centered, mode='economic')
-        Q_z, _ = linalg.qr(Zhat_centered, mode='economic')
+        Q_x, _ = linalg.qr(Xhat_centered, mode="economic")
+        Q_z, _ = linalg.qr(Zhat_centered, mode="economic")
 
         matrix = Q_x.T @ Q_z
         evals = np.linalg.svd(matrix, compute_uv=False)
         self.test_stat_estimate = evals[0]
-        
+
         if self.permutation_type == "observed":
             for _ in range(self.npermutations):
                 perm = self.rng.permutation(n)
                 B_perm = B[perm][:, perm]
                 Xhat_perm = self.solver(B_perm, k=self.k, rng=self.rng)[0]
                 Xhat_centered_perm = Xhat_perm - np.mean(Xhat_perm, axis=0)
-                Q_x_perm, _ = linalg.qr(Xhat_centered_perm, mode='economic')
+                Q_x_perm, _ = linalg.qr(Xhat_centered_perm, mode="economic")
                 matrix_perm = Q_x_perm.T @ Q_z
                 evals_perm = np.linalg.svd(matrix_perm, compute_uv=False)
                 self.permutation_distribution.append(evals_perm[0])
@@ -1040,7 +1059,7 @@ class CanonicalCorrelationTest(BaseMethod):
             for _ in range(self.npermutations):
                 perm = self.rng.permutation(n)
                 Xhat_centered_perm = Xhat_centered[perm]
-                Q_x_perm, _ = linalg.qr(Xhat_centered_perm, mode='economic')
+                Q_x_perm, _ = linalg.qr(Xhat_centered_perm, mode="economic")
                 matrix_perm = Q_x_perm.T @ Q_z
                 evals_perm = np.linalg.svd(matrix_perm, compute_uv=False)
                 self.permutation_distribution.append(evals_perm[0])
@@ -1061,7 +1080,7 @@ class CanonicalCorrelationTest(BaseMethod):
         )
         self.pvalue = pvalue
         self.reject_null = bool(self.pvalue < self.alpha)
-        
+
         return
 
     def get_estimated(self):
@@ -1079,6 +1098,6 @@ class CanonicalCorrelationTest(BaseMethod):
             "null": self.null,
         }
         return results
-    
+
     def get_name(self):
         return "CCApermutation_" + self.permutation_type
