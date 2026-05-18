@@ -153,7 +153,7 @@ def _resolve_methods_block(methods_cfg: dict) -> dict:
         "use_true_latent": methods_cfg.get("use_true_latent"),  # None when absent
     }
 
-
+    
 # =============================================================================
 # Experiment-type detection
 # =============================================================================
@@ -183,6 +183,9 @@ def _detect_experiment_type(raw: dict) -> str:
     marginals = raw.get("simulation", {}).get("marginals", [])
     if marginals and isinstance(marginals[0], dict):
         return "diff_marginals"
+
+    if "column_covariance" in raw.get("simulation", {}):
+        return "asymptotic"
 
     return "standard"
 
@@ -267,6 +270,10 @@ def load_config(path: str = "config.yaml") -> dict:
             "prob_switch": sbm["prob_switch"],
             "assignment_mode": sbm["assignment_mode"],
             "block_probs_type": sbm["block_probs_type"],
+        }
+    elif exp_type == "asymptotic":
+        extra_params["asymptotic"] = {
+            "column_covariance": sim_raw["column_covariance"],
         }
 
     return {

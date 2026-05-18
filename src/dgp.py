@@ -186,7 +186,7 @@ class CopulaDGP:
             # param is theta > 0. Larger theta = higher correlation.
             # covert rho to theta for consistency
 
-            t_kendall = 2 / np.pi * np.arctan(self.rho)
+            t_kendall = 2 / np.pi * np.arcsin(self.rho)
             theta = 2 * t_kendall / (1 - t_kendall)
 
             # Generate Exponentials
@@ -202,9 +202,28 @@ class CopulaDGP:
             # 3. Transform
             u_z = (1 + e_z / gamma_sample) ** (-1 / theta)
             u_x = (1 + e_x / gamma_sample) ** (-1 / theta)
+        
+        
+        elif self.copula_model == 'full_clayton':
+            # multivariate clayton 
+            
+            t_kendall = 2 / np.pi * np.arcsin(self.rho)
+            theta = 2 * t_kendall / (1 - t_kendall)
+            
+            gamma_sample = self.rng.gamma(
+            shape=1 / theta, scale=1.0, size=(self.n, 1)
+            )
+
+            e = self.rng.exponential(scale=1.0, size=(self.n, 2 * self.k))
+
+            u = (1 + e / gamma_sample) ** (-1 / theta)
+
+            u_z = u[:, :self.k]
+            u_x = u[:, self.k:]
+            
         elif self.copula_model == "rotated_clayton":
             # Generate standard Clayton
-            t_kendall = 2 / np.pi * np.arctan(self.rho)
+            t_kendall = 2 / np.pi * np.arcsin(self.rho)
             theta = 2 * t_kendall / (1 - t_kendall)
 
             e_z = self.rng.exponential(scale=1.0, size=(self.n, self.k))
@@ -221,7 +240,7 @@ class CopulaDGP:
             u_x = 1.0 - u_x_raw
 
         elif self.copula_model == "gumbel":
-            t_kendall = 2 / np.pi * np.arctan(self.rho)
+            t_kendall = 2 / np.pi * np.arcsin(self.rho)
             theta = 1 / (1 - t_kendall)
 
             alpha = 1.0 / theta
@@ -250,7 +269,7 @@ class CopulaDGP:
             u_x = np.exp(-((E2 / S) ** alpha))
 
         elif self.copula_model == "frank":
-            t_kendall = 2 / np.pi * np.arctan(self.rho)
+            t_kendall = 2 / np.pi * np.arcsin(self.rho)
             theta = 2 * t_kendall / (1 - t_kendall)
 
             # 1. Sample independent uniforms
