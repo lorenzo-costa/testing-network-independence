@@ -21,7 +21,7 @@
 # Simulation Setup
 # -----------------------------------------------------------------------------
 simulation:
-  nsim: 200           # Number of Monte Carlo repetitions per parameter combination
+  nsim: 100           # Number of Monte Carlo repetitions per parameter combination
   seed: 1                 # Master RNG seed for reproducibility (passed to np.random.default_rng)
  
   n: [100, 200, 300]      # Sample sizes (number of nodes)
@@ -58,7 +58,17 @@ methods:
         approximation: permutation
     - name: RVtest
       kwargs:
-        approximation: asymptotic            
+        approximation: asymptotic      
+    - name: QAP
+      kwargs: {}                   
+ 
+    - name: DiffusionCorrelation
+      kwargs: {}                   
+ 
+    - name: ObservedCVM
+      kwargs:
+        degree: 2 
+            
  
 # -----------------------------------------------------------------------------
 # DGP & Solver Setups (H1: rho > 0)
