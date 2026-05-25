@@ -41,6 +41,12 @@ except ImportError:
 
 
 def rv_coefficient(A, B):
+    A = A.copy()
+    B = B.copy()
+    
+    A = A - A.mean(axis=1)
+    B = B - B.mean(axis=1)
+    
     AtB = A.T @ B
     temp_num = AtB.ravel()
     num = temp_num.dot(temp_num)
@@ -57,6 +63,10 @@ def rv_coefficient(A, B):
 
 def rv_coefficient_adjusted(A, B):
     """Adjusted RV coefficient (Mordant & Segers 2022)."""
+    A = A.copy()
+    B = B.copy()
+    A = A - A.mean(axis=1)
+    B = B - B.mean(axis=1)
     AtB = A.T @ B
     temp_num = AtB.ravel()
     num = temp_num.dot(temp_num)

@@ -143,6 +143,7 @@ class RVtest(BaseMethod):
         k=None,
         test_function=rv_coefficient_adjusted,
         permutation_type="latent",
+        kappa=0,
         **kwargs,
     ):
         super().__init__()
@@ -169,6 +170,8 @@ class RVtest(BaseMethod):
         self.test_function = test_function
         self.permutation_type = permutation_type
         self.use_true_latent = use_true_latent
+        
+        self.kappa = kappa
 
     def fit(self, data, **kwargs):
         """Compute test statistic and p-value
@@ -214,8 +217,8 @@ class RVtest(BaseMethod):
     def _fit_asymptotic(self):
         Zhat = self.Zhat.copy()
         Xhat = self.Xhat.copy()
-        Zhat = Zhat - Zhat.mean(axis=0)
-        Xhat = Xhat - Xhat.mean(axis=0)
+        Zhat = Zhat - Zhat.mean(axis=1)
+        Xhat = Xhat - Xhat.mean(axis=1)
 
         n, k = Zhat.shape
 
@@ -231,7 +234,7 @@ class RVtest(BaseMethod):
 
         den = np.sqrt(np.trace(SigmaXX @ SigmaXX) * np.trace(SigmaZZ @ SigmaZZ))
 
-        weights = np.outer(eigenvalues_X, eigenvalues_Z).flatten() / den
+        weights = (1+self.kappa) * np.outer(eigenvalues_X, eigenvalues_Z).flatten() / den 
 
         self.pvalue = imhof(n * rv, weights)["Qq"]
 
