@@ -1,5 +1,5 @@
 import numpy as np
-from .helper_functions._metrics_helper import rv_coefficient_adjusted
+from .helper_functions._metrics_helper import rv_coefficient_adjusted, rv_coefficient
 from .helper_functions.imhof import imhof
 
 import sys
@@ -217,8 +217,8 @@ class RVtest(BaseMethod):
     def _fit_asymptotic(self):
         Zhat = self.Zhat.copy()
         Xhat = self.Xhat.copy()
-        Zhat = Zhat - Zhat.mean(axis=1)
-        Xhat = Xhat - Xhat.mean(axis=1)
+        Zhat = Zhat - Zhat.mean(axis=0)
+        Xhat = Xhat - Xhat.mean(axis=0)
 
         n, k = Zhat.shape
 

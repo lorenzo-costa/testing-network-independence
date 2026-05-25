@@ -44,8 +44,8 @@ def rv_coefficient(A, B):
     A = A.copy()
     B = B.copy()
     
-    A = A - A.mean(axis=1)
-    B = B - B.mean(axis=1)
+    A = A - A.mean(axis=0)
+    B = B - B.mean(axis=0)
     
     AtB = A.T @ B
     temp_num = AtB.ravel()
@@ -58,15 +58,15 @@ def rv_coefficient(A, B):
     b_flat = BtB.ravel()
     den = np.sqrt(a_flat.dot(a_flat) * b_flat.dot(b_flat))
 
-    return num / den if den != 0 else 0
+    return num / den if den != 0 else np.nan
 
 
 def rv_coefficient_adjusted(A, B):
     """Adjusted RV coefficient (Mordant & Segers 2022)."""
     A = A.copy()
     B = B.copy()
-    A = A - A.mean(axis=1)
-    B = B - B.mean(axis=1)
+    A = A - A.mean(axis=0)
+    B = B - B.mean(axis=0)
     AtB = A.T @ B
     temp_num = AtB.ravel()
     num = temp_num.dot(temp_num)

@@ -112,7 +112,7 @@ class CopulaDGP:
         self.weights = weights
         self.correlations = correlations
         self.center_latent = center_latent
-        self.rdpp_distribution = rdpg_distribution
+        self.rdpg_distribution = rdpg_distribution
 
         # ── sim path ──────────────────────────────────────────────────────────
         if latent_sim is not None and latent_sim not in SIM_REGISTRY:
