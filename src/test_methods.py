@@ -47,7 +47,8 @@ class RVtest(BasePermutationTest):
         alpha=0.05,
         rng=None,
         solver=None,
-        use_true_latent=False,
+        use_true_latent_x=False,
+        use_true_latent_z=False,    
         test_function=rv_coefficient_adjusted,
         permutation_type="latent",
         **kwargs,
@@ -59,7 +60,8 @@ class RVtest(BasePermutationTest):
             alpha=alpha,
             rng=rng,
             solver=solver,
-            use_true_latent=use_true_latent,
+            use_true_latent_x=use_true_latent_x,
+            use_true_latent_z=use_true_latent_z,
             test_function=test_function,
             permutation_type=permutation_type,
         )
@@ -180,7 +182,8 @@ class CanonicalCorrelationTest(BasePermutationTest):
         alpha=0.05,
         rng=None,
         solver=None,
-        use_true_latent=False,
+        use_true_latent_x=False,
+        use_true_latent_z=False,
         permutation_type="latent",
         k=None,
         **kwargs,
@@ -191,7 +194,8 @@ class CanonicalCorrelationTest(BasePermutationTest):
             npermutations=npermutations, 
             alpha=alpha,
             permutation_type=permutation_type,
-            use_true_latent=use_true_latent,
+            use_true_latent_x=use_true_latent_x,
+            use_true_latent_z=use_true_latent_z,
             solver=solver,
             test_function=first_cca_component, 
             rng=rng)
@@ -230,14 +234,18 @@ class MultivariateACTest(BasePermutationTest):
 
      Parameters
      ----------
-     k : int
-         Dimensionality of the latent space.
-     test_method : str
-         Statistical test method to use. Options: "mgc", "dcorr".
      npermutations : int
-         Number of permutations for significance testing.
-     alpha : float
-         Significance level for hypothesis testing.
+        Number of permutations for significance testing.
+    alpha : float
+        Significance level for hypothesis testing.
+    solver : callable
+        Function to estimate latent positions from the adjacency matrix.
+    k : int
+        Number of dimensions for the latent space.
+    use_true_latent : bool
+        Whether to use the true latent positions (if True, Z and X must be provided in data)
+    M : int
+        Number of nearest neighbors to use.
     """
     def __init__(
         self,
@@ -245,8 +253,9 @@ class MultivariateACTest(BasePermutationTest):
         alpha=0.05,
         rng=None,
         solver=None,
-        use_true_latent=False,
-        permutation_type="latent",
+        use_true_latent_x=False,
+        use_true_latent_z=False,
+        M=1,
         k=None,
         **kwargs,
     ):
@@ -255,11 +264,13 @@ class MultivariateACTest(BasePermutationTest):
             k=k,
             npermutations=npermutations, 
             alpha=alpha,
-            permutation_type=permutation_type,
-            use_true_latent=use_true_latent,
+            use_true_latent_x=use_true_latent_x,
+            use_true_latent_z=use_true_latent_z,
             solver=solver,
             test_function=multivariate_ac_coefficient_permutation, 
             rng=rng)
+        
+        self.M = M
     
     def fit(self, data, **kwargs):
         """Compute multivariate AC coefficient. X is used as response variables (Y),
@@ -287,13 +298,14 @@ class MultivariateACTest(BasePermutationTest):
 
         # X takes the role of response variable Y in the AC function, Z is the predictor.
         # for consistency keep the names as X and Z.
-        # in _process_input when use_true_latent is True, Zhat copies true Z
-        self.test_stat_estimate = self.test_function(Y = self.X, Z = self.Zhat, rng=self.rng)
+        # in _process_input when use_true_latent is True, Zhat and Xhat copy true latent
+        self.test_stat_estimate = self.test_function(Y = self.Xhat, Z = self.Zhat, 
+                                                     M = self.M, rng=self.rng)
         
         for _ in range(self.npermutations):
-            perm = self.rng.permutation(self.k)
+            perm = self.rng.permutation(self.Zhat.shape[0])
             Zhat_perm = self.Zhat[perm, :]
-            test_stat_perm = self.test_function(Y = self.X, Z = Zhat_perm, rng=self.rng)
+            test_stat_perm = self.test_function(Y = self.Xhat, Z = Zhat_perm, M = self.M, rng=self.rng)
             self.permutation_distribution.append(test_stat_perm)
         
         # get and store pvalue
@@ -304,7 +316,7 @@ class MultivariateACTest(BasePermutationTest):
         self.reject_null = bool(self.pvalue < self.alpha)
 
     def get_name(self):
-        return "MultivariateAC_PermutationTest_" + self.permutation_type
+        return "MultivariateAC_PermutationTest_" + str(self.M)
 
 
 class ObservedCVM(BaseMethod):
@@ -673,22 +685,27 @@ class DiffusionCorrelation(BasePermutationTest):
         alpha=0.05,
         rng=None,
         solver=None,
-        use_true_latent=False,
+        use_true_latent_x=False,
+        use_true_latent_z=False,
         **kwargs,
     ):
+        super().__init__(
+            k=k,
+            npermutations=npermutations,
+            alpha=alpha,
+            rng=rng,
+            solver=solver,
+            test_function=lambda x: x,
+            use_true_latent_x=use_true_latent_x,
+            use_true_latent_z=use_true_latent_z,
+        )
+        
         self.rng = np.random.default_rng() if rng is None else rng
-        self.npermutations = npermutations
-        self.k = k
+
         self.test_method = test_method
 
-        if solver is None:
-            raise ValueError("Solver must be provided")
-        self.solver = solver
-
-        self.alpha = alpha
         self.eps = 1e-10
 
-        self.use_true_latent = use_true_latent
 
     def compute_distance_matrix(self, U):
         return squareform(pdist(U, metric="euclidean"))
@@ -715,7 +732,6 @@ class DiffusionCorrelation(BasePermutationTest):
         """
         
         self._process_input(data)
-        
 
         distances_A = self.compute_distance_matrix(self.Xhat)
         distances_B = self.compute_distance_matrix(self.Zhat)
@@ -732,6 +748,8 @@ class DiffusionCorrelation(BasePermutationTest):
                         reps=self.npermutations,
                     )
                     pvalue = out_mgc.pvalue
+                    test_stat_estimate = out_mgc.statistic
+                    
                 except IndexError:
                     pvalue = 1.0
                     print("Error in computing MGC. Check the distance matrices.")
@@ -741,6 +759,7 @@ class DiffusionCorrelation(BasePermutationTest):
             raise ValueError("Unknown method for computing test statistic.")
 
         self.pvalue = pvalue
+        self.test_stat_estimate = test_stat_estimate
 
         self.reject_null = bool(self.pvalue < self.alpha)
 

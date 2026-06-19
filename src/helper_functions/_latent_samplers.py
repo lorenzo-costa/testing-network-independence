@@ -88,7 +88,7 @@ class SBMGenerator:
         block_probs_type=None,
         block_probs=None,
         community_assignment=None,
-        assignment_mode="random",
+        assignment_mode=None,
         assortativity=0.5,
         sparsity_bias=0.6,
         prob_switch=0.2,
@@ -110,6 +110,8 @@ class SBMGenerator:
         self.distance_probs = distance_probs
         self.sparsity_bias = sparsity_bias
         self.assortativity = assortativity
+        
+        self.is_null = True 
 
     def _sample_community_assignment(self):
         assignment_z = np.zeros((self.n, self.kz))
@@ -135,6 +137,8 @@ class SBMGenerator:
                 ) % self.kz
             
             assignment_x[np.arange(self.n), new_assignment] = 1
+            
+            self.is_null = False
         else:
             raise ValueError(f"Unknown assignment_mode: {self.assignment_mode}")
 
@@ -177,7 +181,10 @@ class SBMGenerator:
             if self.kx != self.kz:
                 raise ValueError("For 'identical' block_probs_type, kx and kz must be the same.")
             probs_z = self._generate_probability_matrix(self.kx)
-            probs_x = probs_z.copy()  
+            probs_x = probs_z.copy()
+
+            self.is_null = False  
+
         elif self.block_probs_type == "correlated":
             if self.kx != self.kz:
                 raise ValueError("For 'correlated' block_probs_type, kx and kz must be the same.")
@@ -186,12 +193,17 @@ class SBMGenerator:
                 # Introduce some correlation by adding noise
                 noise = self.rng.normal(loc=0.0, scale=0.1, size=probs_z.shape)
                 probs_x.append(np.clip(probs_z + noise, 0.0, 1.0))
+            
+            self.is_null = False
+            
         elif self.block_probs_type == "switched":
             if self.kx != self.kz:
                 raise ValueError("For 'switched' block_probs_type, kx and kz must be the same.")
             probs_z = self._generate_probability_matrix(self.kz, self.assortativity)
             probs_x = self._generate_probability_matrix(self.kx, 1 - self.assortativity)
 
+            self.is_null = False
+            
         elif self.block_probs_type == "distance":
             raise NotImplementedError
 
@@ -244,8 +256,8 @@ class CopulaGenerator:
                  n,
                  k,
                  rho=0,
-                 marginals="gaussian",
-                 copula_model="gaussian",
+                 marginals=None,
+                 copula_model=None,
                  copula_params=None,
                  column_covariance=None,
                  center_latent=True,
@@ -269,6 +281,8 @@ class CopulaGenerator:
         self.rng = rng or np.random.default_rng()
         
         self._validate_args_copula()
+        
+        self.is_null = True
     
     def _validate_args_copula(self):
         if self.copula_model == "student_t" and "df" not in self.copula_params:
@@ -315,6 +329,9 @@ class CopulaGenerator:
             # 2. Apply Gaussian CDF to get Uniforms
             u_z = ndtr(z)
             u_x = ndtr(x)
+            
+            if self.rho > 0:
+                self.is_null = False
 
         elif self.copula_model == "student_t":
             # 1. Generate Correlated Gaussians
@@ -340,6 +357,8 @@ class CopulaGenerator:
             # 4. Apply t-distribution CDF to get Uniforms
             u_z = stats.t.cdf(t_z, df=df)
             u_x = stats.t.cdf(t_x, df=df)
+            
+            self.is_null = False
 
         elif self.copula_model == "clayton":
             # Cook & Johnson (1981) generator for Clayton
@@ -362,7 +381,7 @@ class CopulaGenerator:
             # 3. Transform
             u_z = (1 + e_z / gamma_sample) ** (-1 / theta)
             u_x = (1 + e_x / gamma_sample) ** (-1 / theta)
-        
+            self.is_null = False
         
         elif self.copula_model == 'full_clayton':
             # multivariate clayton 
@@ -379,6 +398,8 @@ class CopulaGenerator:
 
             u_z = u[:, :self.k]
             u_x = u[:, self.k:]
+            
+            self.is_null = False
             
         elif self.copula_model == "rotated_clayton":
             # Generate standard Clayton
@@ -397,6 +418,8 @@ class CopulaGenerator:
             # 180 degree flip
             u_z = 1.0 - u_z_raw
             u_x = 1.0 - u_x_raw
+            
+            self.is_null = False
 
         elif self.copula_model == "gumbel":
             t_kendall = 2 / np.pi * np.arcsin(self.rho)
@@ -426,6 +449,8 @@ class CopulaGenerator:
             # Formula: u = exp( - (E / S)^alpha )
             u_z = np.exp(-((E1 / S) ** alpha))
             u_x = np.exp(-((E2 / S) ** alpha))
+            
+            self.is_null = False
 
         elif self.copula_model == "frank":
             t_kendall = 2 / np.pi * np.arcsin(self.rho)
@@ -455,6 +480,8 @@ class CopulaGenerator:
             arg = np.maximum(arg, 1e-10)
 
             u_x = -1.0 / theta * np.log(arg)
+            
+            self.is_null = False
 
         elif self.copula_model == "mixture_uniform":
             weights = self.copula_params["weights"]
@@ -504,6 +531,8 @@ class CopulaGenerator:
             # 3. Apply Gaussian CDF to the completed arrays to get Uniform margins
             u_z = ndtr(z_full)
             u_x = ndtr(x_full)
+            
+            self.is_null = False
 
         else:
             raise NotImplementedError(f"Copula {self.copula_model} not implemented")
@@ -557,8 +586,8 @@ class CopulaGenerator:
             return func(**kwargs) if kwargs else func(*args)
 
         # 3. Apply to both variables
-        self.marginal_x = parse_dist(marginals.get("x", "gaussian"))
-        self.marginal_z = parse_dist(marginals.get("z", "gaussian"))
+        self.marginal_x = parse_dist(marginals['x'])
+        self.marginal_z = parse_dist(marginals['z'])
     
     def _sample_latent_copula(self):
         u_z, u_x = self._generate_copula_uniforms()
@@ -599,6 +628,11 @@ class HyppoSimSampler:
         self.sim_name = sim_name
         self.sim_kwargs = sim_kwargs or {}
         self.rng = rng or np.random.default_rng()
+        
+        if sim_name in  ["uncorrelated_bernoulli", "multimodal_independence"]:
+            self.is_null = True
+        else:
+            self.is_null = False
     
     def _make_rdpg(self, Z, X):
         """Normalise Z and X such that inner prods are in [0, 1]"""
@@ -724,7 +758,7 @@ class OrthogonalSubspaceSampler:
                  n, 
                  k, 
                  dim_common, 
-                 shared_latent_type="gaussian", 
+                 shared_latent_type=None, 
                  center_latent=True, 
                  rng=None,
                  **kwargs,
@@ -735,6 +769,8 @@ class OrthogonalSubspaceSampler:
         self.shared_latent_type = shared_latent_type
         self.center_latent = center_latent
         self.rng = rng or np.random.default_rng()
+        
+        self.is_null = False
     
     def _sample_latent_orthogonal(self):
         """Sample X and Z with some shared + individual structure. Matrices are 
@@ -800,12 +836,14 @@ class RDPGGenerator:
     rng : np.random.Generator, optional
         Random number generator for reproducibility.
     """
-    def __init__(self, n, k, rdpg_distr="dirichlet", rdpg_params=None, rng=None, **kwargs):
+    def __init__(self, n, k, rho=0, rdpg_distr=None, rdpg_params=None, rng=None, **kwargs):
         self.n = n
         self.k = k
+        self.rho = rho
         self.rdpg_distr = rdpg_distr
         self.rdpg_params = rdpg_params if rdpg_params is not None else {}
         self.rng = rng or np.random.default_rng()
+        self.is_null = True
 
     def _sample_latent_rdpg(self):
         """
@@ -859,6 +897,10 @@ class RDPGGenerator:
         else:
             raise ValueError(f"Unknown rdpg_distr: {self.rdpg_distr}")
 
+        if self.rho != 0:
+            Z = self.rho * X + (1.0 - self.rho) * Z
+            self.is_null = False
+        
         return Z, X
 
 class LatentSampler(CopulaGenerator, HyppoSimSampler, OrthogonalSubspaceSampler, SBMGenerator, RDPGGenerator):

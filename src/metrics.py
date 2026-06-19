@@ -237,11 +237,10 @@ class FalseRejection(BaseMetric):
     Takes as input a results dictionary containing 'reject_null' and 'true_null' keys.
     """
 
-    def __call__(self, results):
+    def __call__(self, results, is_null=None):
         reject_null = results["reject_null"]
-        null = results["null"]
         # if null is True, but we reject it.
-        if (null is True) and (reject_null is True):
+        if (is_null is True) and (reject_null is True):
             return True
         return False
 
@@ -255,11 +254,10 @@ class FalseAcceptance(BaseMetric):
     Takes as input a results dictionary containing 'reject_null' and 'true_null' keys.
     """
 
-    def __call__(self, results):
+    def __call__(self, results, is_null=None):
         reject_null = results["reject_null"]
-        null = results["null"]
         # Null is False (H0), but we do not reject it (i.e accept it)
-        if (null is False) and (reject_null is False):
+        if (is_null is False) and (reject_null is False):
             return True
         return False
 
@@ -273,11 +271,10 @@ class TrueRejection(BaseMetric):
     Takes as input a results dictionary with keywords 'reject_null' and 'null'.
     """
 
-    def __call__(self, results):
+    def __call__(self, results, is_null=None):
         reject_null = results["reject_null"]
-        null = results["null"]
         # Null is False (H1) and we reject it
-        if (null is False) and (reject_null is True):
+        if (is_null is False) and (reject_null is True):
             return True
         return False
 
@@ -291,11 +288,10 @@ class TrueAcceptance(BaseMetric):
     Takes as input a results dictionary with keywords 'reject_null' and 'null'.
     """
 
-    def __call__(self, results):
+    def __call__(self, results, is_null=None):
         reject_null = results["reject_null"]
-        null = results["null"]
         # Null is True (H0) and we accept it
-        if (null is True) and (reject_null is False):
+        if (is_null is True) and (reject_null is False):
             return True
         return False
 
@@ -318,7 +314,7 @@ class ComputeAll(BaseMetric):
         super().__init__()
         self.gram_matrix = gram_matrix
 
-    def __call__(self, results):
+    def __call__(self, results, is_null=None):
         out = {}
         reject_null = results.get("reject_null", None)
         estimated_latent = results.get("estimated_latent", None)
@@ -327,10 +323,10 @@ class ComputeAll(BaseMetric):
             # compute test metrics
             test_metrics = {
                 "Rejection": Rejection()(results),
-                "FalseRejection": FalseRejection()(results),
-                "FalseAcceptance": FalseAcceptance()(results),
-                "TrueRejection": TrueRejection()(results),
-                "TrueAcceptance": TrueAcceptance()(results),
+                "FalseRejection": FalseRejection()(results, is_null=is_null),
+                "FalseAcceptance": FalseAcceptance()(results, is_null=is_null),
+                "TrueRejection": TrueRejection()(results, is_null=is_null),
+                "TrueAcceptance": TrueAcceptance()(results, is_null=is_null),
             }
             out.update(test_metrics)
 
