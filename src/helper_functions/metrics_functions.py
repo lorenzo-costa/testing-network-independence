@@ -263,66 +263,68 @@ def make_coordinate_permutations(n, d, rng=None):
 def multivariate_ac_coefficient_permutation(
     Y,
     Z,
+    M=1,
     M_Z=None,
     permutations=None,
     rng=None,
 ):
     """
     Computes the permutation version of the multivariate Azadkia-Chatterjee
-    coefficient:
+    coefficient with M nearest neighbours:
 
-        T_hat^AC =
-            sum_i [ n * R_tilde(Y_i ∧ Y_{M_Z(i)}) - L_dot_i^2 ]
-            ----------------------------------------------------
-            sum_i [ (n - L_dot_i) * L_dot_i ]
+        T_hat^AC_M =
+            (1/M) * sum_i sum_{m=1}^{M} [ n * R_tilde(Y_i ∧ Y_{j_m(i)}) - L_dot_i^2 ]
+            ---------------------------------------------------------------------------
+                            sum_i [ (n - L_dot_i) * L_dot_i ]
 
-    where
-
-        Y_tilde_i = (Y_{pi_1(i),1}, ..., Y_{pi_d(i),d})
-
-        R_tilde(y) = sum_j 1{Y_tilde_j <= y}
-
-        L_dot_i = sum_l 1{Y_l >= Y_tilde_i}
+    where j_1(i), ..., j_M(i) are the M nearest neighbours of Z_i and
+    all other quantities are as in the M=1 case.
 
     Parameters
     ----------
     Y : array-like, shape (n,) or (n, d_Y)
         Response variable.
-
-    M_Z : array-like, shape (n,), optional
-        M_Z[i] is the nearest-neighbor index of Z_i.
-
     Z : array-like, shape (n,) or (n, d_Z), optional
         Used to compute M_Z if M_Z is not provided.
-
+    M : int, optional
+        Number of nearest neighbours to use (default 1, recovering the
+        original single-neighbour estimator).
+    M_Z : array-like, shape (n, M) or (n,) when M=1, optional
+        M_Z[i, m] is the index of the m-th nearest neighbour of Z_i.
+        If omitted, computed from Z.
     permutations : array-like, shape (d_Y, n), optional
         permutations[k, i] = pi_{k+1}(i).
         If omitted, valid coordinate permutations are generated.
-
     rng : int or np.random.Generator, optional
         Random seed or generator used when permutations are generated.
 
     Returns
     -------
     float
-        Permutation estimator of the multivariate AC coefficient.
+        M-nearest-neighbour permutation estimator of the multivariate
+        AC coefficient.
     """
     Y = _as_2d(Y)
     n, d_Y = Y.shape
 
-    # 1. Determine or compute nearest-neighbor mapping M_Z(i)
+    if not isinstance(M, int) or M < 1:
+        raise ValueError("M must be a positive integer.")
+
+    # 1. Determine or compute nearest-neighbour mapping M_Z(i, m)
     if M_Z is None:
         Z = _as_2d(Z)
         if Z.shape[0] != n:
             raise ValueError("Y and Z must have the same number of rows.")
-
         dists = cdist(Z, Z, metric="euclidean")
         np.fill_diagonal(dists, np.inf)
-        M_Z = np.argmin(dists, axis=1)
+        # argsort gives neighbours in ascending distance order; take first M
+        M_Z = np.argsort(dists, axis=1)[:, :M]          # shape (n, M)
     else:
         M_Z = np.asarray(M_Z, dtype=int)
-        if M_Z.shape != (n,):
-            raise ValueError("M_Z must have shape (n,).")
+        if M_Z.ndim == 1:                                # backward compat
+            M_Z = M_Z[:, None]
+        if M_Z.shape != (n, M):
+            raise ValueError(f"M_Z must have shape ({n}, {M}).")
         if np.any((M_Z < 0) | (M_Z >= n)):
             raise ValueError("M_Z contains invalid indices.")
 
@@ -333,14 +335,10 @@ def multivariate_ac_coefficient_permutation(
         permutations = np.asarray(permutations, dtype=int)
         if permutations.shape != (d_Y, n):
             raise ValueError("permutations must have shape (d_Y, n).")
-
-        # Check each row is a permutation of 0, ..., n-1
         target = np.arange(n)
         for k in range(d_Y):
             if not np.array_equal(np.sort(permutations[k]), target):
                 raise ValueError(f"permutations[{k}] is not a valid permutation.")
-
-        # Check pi_a(i) != pi_b(i) for all a != b, for each i
         if d_Y > 1:
             for i in range(n):
                 if len(set(permutations[:, i])) != d_Y:
@@ -354,22 +352,146 @@ def multivariate_ac_coefficient_permutation(
     for k in range(d_Y):
         Y_tilde[:, k] = Y[permutations[k], k]
 
-    # 3. Compute Y_i ∧ Y_{M_Z(i)}
-    Y_min = np.minimum(Y, Y[M_Z])
+    # 3. Compute Y_i ∧ Y_{j_m(i)} for all i, m
+    #    Y[M_Z] has shape (n, M, d_Y); Y[:, None, :] broadcasts to (n, 1, d_Y)
+    Y_neighbors = Y[M_Z]                                 # (n, M, d_Y)
+    Y_min = np.minimum(Y[:, None, :], Y_neighbors)       # (n, M, d_Y)
 
-    # 4. Compute R_tilde(Y_i ∧ Y_{M_Z(i)})
-    # R_tilde_i = sum_j 1{Y_tilde_j <= Y_min_i}, coordinatewise
-    less_equal = np.all(Y_tilde[:, None, :] <= Y_min[None, :, :], axis=-1)
-    R_tilde = np.sum(less_equal, axis=0)
+    # 4. Compute R_tilde[i, m] = #{j : Y_tilde[j] <=_coord Y_min[i, m]}
+    #    Broadcast: Y_tilde (n, d_Y) -> (n, 1, 1, d_Y)  [index j]
+    #               Y_min   (n, M, d_Y) -> (1, n, M, d_Y)
+    #    Result before sum: (n, n, M) -> sum over j -> (n, M)
+    less_equal = np.all(
+        Y_tilde[:, None, None, :] <= Y_min[None, :, :, :], axis=-1
+    )                                                     # (n, n, M)
+    R_tilde = np.sum(less_equal, axis=0)                  # (n, M)
 
-    # 5. Compute L_dot_i = sum_l 1{Y_l >= Y_tilde_i}, coordinatewise
+    # 5. Compute L_dot_i = #{l : Y_l >=_coord Y_tilde_i}  (unchanged)
     greater_equal = np.all(Y[:, None, :] >= Y_tilde[None, :, :], axis=-1)
-    L_dot = np.sum(greater_equal, axis=0)
+    L_dot = np.sum(greater_equal, axis=0)                 # (n,)
 
-    numerator = np.sum(n * R_tilde - L_dot**2)
+    # 6. Numerator: (1/M) * sum_i sum_m [n * R_tilde[i,m] - L_dot[i]^2]
+    #    L_dot[i]^2 is subtracted once per neighbour, so broadcasting
+    #    L_dot[:, None] over axis m handles this correctly.
+    inner = n * R_tilde - L_dot[:, None] ** 2            # (n, M)
+    numerator = np.sum(inner) / M
+
     denominator = np.sum((n - L_dot) * L_dot)
 
     if denominator == 0:
         return 0.0
-
     return numerator / denominator
+
+# def multivariate_ac_coefficient_permutation(
+#     Y,
+#     Z,
+#     M_Z=None,
+#     permutations=None,
+#     rng=None,
+# ):
+#     """
+#     Computes the permutation version of the multivariate Azadkia-Chatterjee
+#     coefficient:
+
+#         T_hat^AC =
+#             sum_i [ n * R_tilde(Y_i ∧ Y_{M_Z(i)}) - L_dot_i^2 ]
+#             ----------------------------------------------------
+#             sum_i [ (n - L_dot_i) * L_dot_i ]
+
+#     where
+
+#         Y_tilde_i = (Y_{pi_1(i),1}, ..., Y_{pi_d(i),d})
+
+#         R_tilde(y) = sum_j 1{Y_tilde_j <= y}
+
+#         L_dot_i = sum_l 1{Y_l >= Y_tilde_i}
+
+#     Parameters
+#     ----------
+#     Y : array-like, shape (n,) or (n, d_Y)
+#         Response variable.
+
+#     M_Z : array-like, shape (n,), optional
+#         M_Z[i] is the nearest-neighbor index of Z_i.
+
+#     Z : array-like, shape (n,) or (n, d_Z), optional
+#         Used to compute M_Z if M_Z is not provided.
+
+#     permutations : array-like, shape (d_Y, n), optional
+#         permutations[k, i] = pi_{k+1}(i).
+#         If omitted, valid coordinate permutations are generated.
+
+#     rng : int or np.random.Generator, optional
+#         Random seed or generator used when permutations are generated.
+
+#     Returns
+#     -------
+#     float
+#         Permutation estimator of the multivariate AC coefficient.
+#     """
+#     Y = _as_2d(Y)
+#     n, d_Y = Y.shape
+
+#     # 1. Determine or compute nearest-neighbor mapping M_Z(i)
+#     if M_Z is None:
+#         Z = _as_2d(Z)
+#         if Z.shape[0] != n:
+#             raise ValueError("Y and Z must have the same number of rows.")
+
+#         dists = cdist(Z, Z, metric="euclidean")
+#         np.fill_diagonal(dists, np.inf)
+#         M_Z = np.argmin(dists, axis=1)
+#     else:
+#         M_Z = np.asarray(M_Z, dtype=int)
+#         if M_Z.shape != (n,):
+#             raise ValueError("M_Z must have shape (n,).")
+#         if np.any((M_Z < 0) | (M_Z >= n)):
+#             raise ValueError("M_Z contains invalid indices.")
+
+#     # 2. Build coordinate-wise permuted sample Y_tilde
+#     if permutations is None:
+#         permutations = make_coordinate_permutations(n, d_Y, rng=rng)
+#     else:
+#         permutations = np.asarray(permutations, dtype=int)
+#         if permutations.shape != (d_Y, n):
+#             raise ValueError("permutations must have shape (d_Y, n).")
+
+#         # Check each row is a permutation of 0, ..., n-1
+#         target = np.arange(n)
+#         for k in range(d_Y):
+#             if not np.array_equal(np.sort(permutations[k]), target):
+#                 raise ValueError(f"permutations[{k}] is not a valid permutation.")
+
+#         # Check pi_a(i) != pi_b(i) for all a != b, for each i
+#         if d_Y > 1:
+#             for i in range(n):
+#                 if len(set(permutations[:, i])) != d_Y:
+#                     raise ValueError(
+#                         "Permutations must satisfy pi_a(i) != pi_b(i) "
+#                         "for every i and a != b."
+#                     )
+
+#     # Y_tilde[i, k] = Y[pi_k(i), k]
+#     Y_tilde = np.empty_like(Y)
+#     for k in range(d_Y):
+#         Y_tilde[:, k] = Y[permutations[k], k]
+
+#     # 3. Compute Y_i ∧ Y_{M_Z(i)}
+#     Y_min = np.minimum(Y, Y[M_Z])
+
+#     # 4. Compute R_tilde(Y_i ∧ Y_{M_Z(i)})
+#     # R_tilde_i = sum_j 1{Y_tilde_j <= Y_min_i}, coordinatewise
+#     less_equal = np.all(Y_tilde[:, None, :] <= Y_min[None, :, :], axis=-1)
+#     R_tilde = np.sum(less_equal, axis=0)
+
+#     # 5. Compute L_dot_i = sum_l 1{Y_l >= Y_tilde_i}, coordinatewise
+#     greater_equal = np.all(Y[:, None, :] >= Y_tilde[None, :, :], axis=-1)
+#     L_dot = np.sum(greater_equal, axis=0)
+
+#     numerator = np.sum(n * R_tilde - L_dot**2)
+#     denominator = np.sum((n - L_dot) * L_dot)
+
+#     if denominator == 0:
+#         return 0.0
+
+#     return numerator / denominator
