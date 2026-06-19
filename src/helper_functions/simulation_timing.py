@@ -8,7 +8,7 @@ from src.metrics import (
     RelativeFrobeniusNorm,
 )
 from src.metrics import ComputeAll
-from src.methods import (
+from src.test_methods import (
     RVPermutationTest,
     PermutationTest,
     QAP,
@@ -22,7 +22,7 @@ from src.helper_functions.simulation_functions import run_simulation
 from src.helper_functions.analyse_functions import aggregate_results
 from src.metrics import rv_coefficient_adjusted
 from src.solvers.MaMa_uuuuu import pgd_fit_wrapper
-from src.helper_functions._metrics_helper import cvm_stat_multivariate
+from src.helper_functions.metrics_functions import cvm_stat_multivariate
 
 
 import numpy as np

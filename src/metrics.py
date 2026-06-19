@@ -1,5 +1,5 @@
 from scipy.linalg import norm
-from .helper_functions._metrics_helper import rv_coefficient, rv_coefficient_adjusted
+from .helper_functions.metrics_functions import rv_coefficient, rv_coefficient_adjusted
 import numpy as np
 
 
@@ -18,7 +18,9 @@ class ReturnMetric(BaseMetric):
     def __call__(self, results):
         estimated = results["estimated_latent"]
         truth = results["true_latent"]
-        return {"estimated": estimated, "truth": truth}
+        test_stat = results.get("test_stat", None)
+        p_value = results.get("p-value", None)
+        return {"estimated": estimated, "truth": truth, "test_stat": test_stat, "p-value": p_value}
 
     def get_name(self):
         return "ReturnMetric"

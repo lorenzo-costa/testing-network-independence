@@ -5,7 +5,7 @@ import os
 import numpy as np
 import logging
 import re
-
+from scipy import stats
 
 # Suppress weird matplotlib category warning for boxplots
 logging.getLogger("matplotlib.category").setLevel(logging.ERROR)

@@ -2,7 +2,7 @@
 # note None of this work well, just leaving them here to not lose them
 
 import numpy as np
-from methods import solve_independent
+from test_methods import solve_independent
 from metrics import rv_coefficient
 
 

@@ -19,7 +19,7 @@ from numba import njit
 import numba as nb
 from scipy.spatial.distance import cdist
 
-from _misc_helpers import u_center, _joint_cdf_bit, _as_2d
+from ._misc_helpers import u_center, _joint_cdf_bit, _as_2d
 
 # ---------------------------------------------------------------------------
 # RV coefficients
