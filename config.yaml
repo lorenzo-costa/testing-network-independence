@@ -21,7 +21,7 @@
 # Simulation Setup
 # -----------------------------------------------------------------------------
 simulation:
-  nsim: 100            # Number of Monte Carlo repetitions per parameter combination
+  nsim: 100          # Number of Monte Carlo repetitions per parameter combination
   seed: 2                 # Master RNG seed for reproducibility (passed to np.random.default_rng)
  
   n: [100, 200, 300]      # Sample sizes (number of nodes)
@@ -45,7 +45,8 @@ simulation:
 methods:
   npermutations: [200]      # Number of permutations used in permutation-based tests
   df: [3]                   # Degrees of freedom (used in Student-t approximations)
-  use_true_latent: [False, True]  # Whether to use true latent positions (oracle) vs estimated ones
+  use_true_latent_x: [True]  
+  use_true_latent_z: [True, False]  
  
   # List of test methods to benchmark. 'kwargs' are passed to the method constructor.
   list:
@@ -54,19 +55,26 @@ methods:
         permutation_type: latent  
         approximation: permutation
  
-    - name: QAP
-      kwargs: {}                   
+    # - name: QAP
+    #   kwargs: {}                   
  
     - name: DiffusionCorrelation
       kwargs: {}                   
  
-    - name: ObservedCVM
-      kwargs:
-        degree: 2                  
+    # - name: ObservedCVM
+    #   kwargs:
+    #     degree: 2                  
  
-    - name: ObservedCVM
+    # - name: ObservedCVM
+    #   kwargs:
+    #     degree: 1
+
+    - name: MultivariateACTest
       kwargs:
-        degree: 1                  
+        M: 1                       
+    - name: MultivariateACTest
+      kwargs:
+        M: 20                         
  
 # -----------------------------------------------------------------------------
 # DGP & Solver Setups (H1: rho > 0)

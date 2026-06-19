@@ -30,7 +30,7 @@ from src.solvers.weighted_network import ASE
 from src.solvers.MaMa_uuuuu import pgd_fit_wrapper
 
 # -- Test methods -------------------------------------------------------------
-from src.test_methods import RVtest, QAP, DiffusionCorrelation, ObservedCVM
+from src.test_methods import RVtest, QAP, DiffusionCorrelation, ObservedCVM, MultivariateACTest
 from src.helper_functions.metrics_functions import observed_cvm_dependency
 
 # -- Metrics ------------------------------------------------------------------
@@ -56,6 +56,7 @@ METHOD_REGISTRY = {
     "QAP": QAP,
     "DiffusionCorrelation": DiffusionCorrelation,
     "ObservedCVM": ObservedCVM,
+    "MultivariateACTest": MultivariateACTest,
 }
 
 # Latent-sim shapes that do NOT accept sim_kwargs={'noise': True}
@@ -81,6 +82,9 @@ def _resolve_method(entry: dict):
         return partial(
             cls, test_function=partial(observed_cvm_dependency, degree=degree)
         )
+    if name == "MultivariateACTest":
+        M = kwargs.get("M", 1)
+        return partial(cls, M=M)
 
     return partial(cls, **kwargs) if kwargs else cls
 
@@ -88,11 +92,25 @@ def _resolve_method(entry: dict):
 def _resolve_standard_setup(entry: dict):
     """
     Resolve one copula-based setup entry into a (partial(DGP, ...), Solver) tuple.
-    Used by: standard, observed, diff_marginals experiments.
+
+    Keeps copula_model as a standalone DGP argument.
+    Packs every other setup-specific field into copula_params.
     """
     dgp_cls = DGP_REGISTRY[entry["dgp"]]
     solver = SOLVER_REGISTRY[entry["solver"]]
-    dgp_kwargs = {k: v for k, v in entry.items() if k not in ("dgp", "solver")}
+
+    reserved = {"dgp", "solver", "copula_model"}
+
+    copula_params = {
+        k: v for k, v in entry.items()
+        if k not in reserved
+    }
+
+    dgp_kwargs = {
+        "copula_model": entry.get("copula_model"),
+        "copula_params": copula_params,
+    }
+
     return (partial(dgp_cls, **dgp_kwargs), solver)
 
 
@@ -150,7 +168,8 @@ def _resolve_methods_block(methods_cfg: dict) -> dict:
         "approximation": methods_cfg.get(
             "approximation"
         ),  # None when absent (e.g. multiness)
-        "use_true_latent": methods_cfg.get("use_true_latent"),  # None when absent
+        "use_true_latent_x": methods_cfg.get("use_true_latent_x"),  # None when absent
+        "use_true_latent_z": methods_cfg.get("use_true_latent_z"),  # None when absent
     }
 
     
@@ -213,7 +232,8 @@ def load_config(path: str = "config.yaml") -> dict:
         npermutations   -- list of ints
         df              -- list of ints (None for sbm / multiness)
         approximation   -- list of strings or None when absent (multiness / sbm)
-        use_true_latent -- list of bools or None when not applicable
+        use_true_latent_x -- list of bools or None when not applicable
+        use_true_latent_z -- list of bools or None when not applicable
     setups : list
         (partial(DGP, ...), Solver) tuples for the H1 run.
     null_setups : dict | None
@@ -339,9 +359,12 @@ def build_factorial_design(cfg: dict) -> tuple:
         if mth["approximation"] is not None:
             names.append("approximation")
             vals.append(mth["approximation"])
-        if mth["use_true_latent"] is not None:
-            names.append("use_true_latent")
-            vals.append(mth["use_true_latent"])
+        if mth["use_true_latent_x"] is not None:
+            names.append("use_true_latent_x")
+            vals.append(mth["use_true_latent_x"])
+        if mth["use_true_latent_z"] is not None:
+            names.append("use_true_latent_z")
+            vals.append(mth["use_true_latent_z"])
         return [dict(zip(names, v)) for v in iproduct(*vals)]
 
     # -- Multiness ------------------------------------------------------------
@@ -374,9 +397,12 @@ def build_factorial_design(cfg: dict) -> tuple:
             sim["dim_individual"],
             sim["shared_latent_type"],
         ]
-        if mth["use_true_latent"] is not None:
-            names.append("use_true_latent")
-            vals.append(mth["use_true_latent"])
+        if mth["use_true_latent_x"] is not None:
+            names.append("use_true_latent_x")
+            vals.append(mth["use_true_latent_x"])
+        if mth["use_true_latent_z"] is not None:
+            names.append("use_true_latent_z")
+            vals.append(mth["use_true_latent_z"])
 
         h1 = [dict(zip(names, v)) for v in iproduct(*vals)]
 
