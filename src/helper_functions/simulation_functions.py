@@ -26,7 +26,7 @@ def run_scenario(metrics, args, seed, method_params=None):
     """
     rng = np.random.default_rng(seed)
     args["rng"] = rng
-
+    
     if args.get("data") is None:
         dgp, solver = args["setup"]
         args["solver"] = solver

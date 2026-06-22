@@ -10,7 +10,7 @@
 # Simulation Control
 # -----------------------------------------------------------------------------
 simulation:
-  nsim: 1                 
+  nsim: 100                 
   seed: 1
 
   n: [100, 200, 300]   # Includes n=50 to probe small-sample behaviour
@@ -34,14 +34,15 @@ methods:
         approximation: permutation              
  
     - name: DiffusionCorrelation
-      kwargs: {}  
+      kwargs: {}
 
     - name: CanonicalCorrelation
-      kwargs: {}                  
+      kwargs: {}
 
     - name: MultivariateACTest
       kwargs:
-        M: 1                       
+        M: 1     
+
     - name: MultivariateACTest
       kwargs:
         M: 20        

@@ -101,6 +101,7 @@ class RVtest(BasePermutationTest):
         n, _ = Zhat.shape
 
         rv = self.test_function(Zhat, Xhat)
+        self.test_stat_estimate = rv
 
         # ── Plug-in eigenvalues of Ω̂_XZ ────────────────────────────────────────
         # Ω̂_XZ = (1/n) Σᵢ vec(X̃ᵢZ̃ᵢᵀ) vec(X̃ᵢZ̃ᵢᵀ)ᵀ  is (pq × pq)
@@ -210,13 +211,8 @@ class CanonicalCorrelationTest(BasePermutationTest):
 
         self._process_input(data)
 
-        if self.approximation == "permutation":
-            self._fit_permutation()
-        else:
-            raise ValueError(
-                "Invalid approximation method. Choose 'permutation' or 'asymptotic'."
-            )
-
+        self._fit_permutation()
+        
         self.reject_null = bool(self.pvalue < self.alpha)
 
         return

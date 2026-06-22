@@ -597,6 +597,16 @@ class CopulaGenerator:
             X = X - X.mean(axis=0)
             Z = Z - Z.mean(axis=0)
         return Z, X
+    
+    def get_name(self):
+        try:
+            marginal_x_name = self.marginal_x.dist.name
+            marginal_z_name = self.marginal_z.dist.name
+        except AttributeError:
+            marginal_x_name = str(self.marginal_x)
+            marginal_z_name = str(self.marginal_z)
+            
+        return f"copula_{self.copula_model}_rho{self.rho}_marginals_{marginal_x_name}_{marginal_z_name}"
 
 
 class HyppoSimSampler:
@@ -690,7 +700,7 @@ class HyppoSimSampler:
         We tile those to (n, k) so downstream code always sees (n, k).
         If the sim returns something wider than k we trim to the first k columns.
         """
-        sim_fn = SIM_REGISTRY[self.latent_sim]
+        sim_fn = SIM_REGISTRY[self.sim_name]
         
         raw_x, raw_z = sim_fn(n=self.n, p=self.k, **self.sim_kwargs)
         X = self._align_shape(np.asarray(raw_x, dtype=float))
@@ -724,6 +734,9 @@ class HyppoSimSampler:
             repeats = -(-self.k // cols)  # ceiling division
             arr = np.tile(arr, (1, repeats))
         return arr[:, : self.k]
+
+    def get_name(self):
+        return f"HyppoSim_{self.sim_name}"
 
 
 class OrthogonalSubspaceSampler:
@@ -810,6 +823,9 @@ class OrthogonalSubspaceSampler:
             raise ValueError(f"Unknown shared_latent_type: {self.shared_latent_type}")
 
         return Z, X
+    
+    def get_name(self):
+        return f"OrthogonalSubspace_{self.shared_latent_type}"
 
 
 class RDPGGenerator:
@@ -911,8 +927,11 @@ class RDPGGenerator:
             self.is_null = False
         
         return Z, X
+    
+    def get_name(self):
+        return f"RDPG_{self.rdpg_distr}"
 
-class LatentSampler(CopulaGenerator, HyppoSimSampler, OrthogonalSubspaceSampler, SBMGenerator, RDPGGenerator):
+class LatentSampler:
     """Base class for sampling latent variables
     
     Arguments
@@ -955,18 +974,54 @@ class LatentSampler(CopulaGenerator, HyppoSimSampler, OrthogonalSubspaceSampler,
         self.n = n
         self.k = k
         
-        CopulaGenerator.__init__(self, n=n, k=k, rng=rng, copula_model=copula_model, **kwargs)
-        HyppoSimSampler.__init__(self, n=n, k=k, rng=rng, **kwargs)
-        OrthogonalSubspaceSampler.__init__(self, n=n, k=k, dim_common=dim_common, rng=rng, **kwargs)
-        # SBMGenerator.__init__(self, n=n, k=k, rng=rng, block_probs_type=block_probs_type, **kwargs)
-        RDPGGenerator.__init__(self, n=n, k=k, rng=rng, rdpg_distr=rdpg_distr, **kwargs)
+        if latent_sim is not None:
+            if copula_model is not None:
+                raise Warning("Both latent_sim and copula_model specified. copula_model will be ignored.")
+            if dim_common is not None:
+                raise Warning("Both latent_sim and dim_common specified. dim_common will be ignored.")
+            if block_probs_type is not None:
+                raise Warning("Both latent_sim and block_probs_type specified. block_probs_type will be ignored.")
+            if rdpg_distr is not None:
+                raise Warning("Both latent_sim and rdpg_distr specified. rdpg_distr will be ignored.")
+            
+            latent_sampler = HyppoSimSampler(n=n, k=k, sim_name=latent_sim, rng=rng, **kwargs)
+       
+        elif dim_common is not None:
+            if copula_model is not None:
+                raise Warning("Both dim_common and copula_model specified. copula_model will be ignored.")
+            if block_probs_type is not None:
+                raise Warning("Both dim_common and block_probs_type specified. block_probs_type will be ignored.")
+            if rdpg_distr is not None:
+                raise Warning("Both dim_common and rdpg_distr specified. rdpg_distr will be ignored.")
+            
+            latent_sampler = OrthogonalSubspaceSampler(n=n, k=k, dim_common=dim_common, rng=rng, **kwargs)
+        
+        elif block_probs_type is not None:
+            if copula_model is not None:
+                raise Warning("Both block_probs_type and copula_model specified. copula_model will be ignored.")
+            if rdpg_distr is not None:
+                raise Warning("Both block_probs_type and rdpg_distr specified. rdpg_distr will be ignored.")
+            
+            latent_sampler = SBMGenerator(n=n, k=k, rng=rng, block_probs_type=block_probs_type, **kwargs)
+        
+        elif rdpg_distr is not None:
+            if copula_model is not None:
+                raise Warning("Both rdpg_distr and copula_model specified. copula_model will be ignored.")
+            
+            latent_sampler = RDPGGenerator(n=n, k=k, rng=rng, rdpg_distr=rdpg_distr, **kwargs)
+        
+        else:
+            latent_sampler = CopulaGenerator(n=n, k=k, rng=rng, copula_model=copula_model, **kwargs)
+            
+        self.latent_sampler = latent_sampler
+        self.sampler_name = latent_sampler.get_name()
         
         self.copula_model = copula_model
         self.latent_sim = latent_sim
         self.dim_common = dim_common
         self.block_probs_type = block_probs_type
         self.rdpg_distr = rdpg_distr
-    
+        
     def _sample_latent(self):
         """Return X, Z each of shape (n, k). 
         Hierarchy of generation is:
@@ -976,42 +1031,20 @@ class LatentSampler(CopulaGenerator, HyppoSimSampler, OrthogonalSubspaceSampler,
         - else use the copula-based generation with the specified marginals and dependence structure.
         """
         Z, X = None, None
+        
         if self.latent_sim is not None:
-            Z, X = self._sample_latent_sim()
-            self.sampler_name = f"HyppoSim_{self.latent_sim}"
-
-        if self.dim_common is not None:
-            if self.latent_sim is not None:
-                raise Warning("Both latent_sim and dim_common specified. latent_sim will take precedence and dim_common will be ignored.")
-            else:
-                Z, X = self._sample_latent_orthogonal()
-                self.sampler_name = f"OrthogonalSubspace_dim{self.dim_common}_{self.shared_latent_type}"
-
-        if self.block_probs_type is not None:
-            if self.latent_sim is not None or self.dim_common is not None:
-                raise Warning("Multiple latent generation methods specified. block_probs_type will be ignored.")
-            else:
-                community_assignment_z, community_assignment_x, probs_matrix_z, probs_matrix_x = self._sample_sbm_latent()
-                X = community_assignment_x @ probs_matrix_x**0.5
-                Z = community_assignment_z @ probs_matrix_z**0.5
-                
-                self.sampler_name = f"SBM_{self.block_probs_type}"
-        
-        if self.rdpg_distr is not None:
-            if self.latent_sim is not None or self.dim_common is not None or self.block_probs_type is not None:
-                raise Warning("Multiple latent generation methods specified. rdpg_distr will be ignored.")
-            else:
-                Z, X = self._sample_latent_rdpg()
-                self.sampler_name = f"RDPG_{self.rdpg_distr}"
-        
-        if self.copula_model is not None:
-            if self.latent_sim is not None or self.dim_common is not None or self.block_probs_type is not None or self.rdpg_distr is not None:
-                raise Warning("Multiple latent generation methods specified. copula_model will be ignored.")
-            else:
-                Z, X = self._sample_latent_copula()
-                self.sampler_name = f"Copula_{self.copula_model}_rho{self.rho}"
-        
-        if Z is None or X is None:
+            Z, X = self.latent_sampler._sample_latent_hyppo()
+        elif self.dim_common is not None:
+            Z, X = self.latent_sampler._sample_latent_orthogonal()
+        elif self.block_probs_type is not None:
+            community_assignment_z, community_assignment_x, probs_matrix_z, probs_matrix_x = self.latent_sampler._sample_sbm_latent()
+            X = community_assignment_x @ probs_matrix_x**0.5
+            Z = community_assignment_z @ probs_matrix_z**0.5            
+        elif self.rdpg_distr is not None:
+            Z, X = self.latent_sampler._sample_latent_rdpg()
+        elif self.copula_model is not None:
+            Z, X = self.latent_sampler._sample_latent_copula()
+        else:
             raise ValueError("No valid latent generation method specified. Please provide one of: latent_sim, dim_common, block_probs_type, or copula_model.")
         
         return Z, X

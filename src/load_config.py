@@ -90,7 +90,7 @@ def _resolve_method(entry: dict):
     return partial(cls, **kwargs) if kwargs else cls
 
 
-def _resolve_standard_setup(entry: dict):
+def _resolve_copula_setup(entry: dict):
     """
     Resolve one copula-based setup entry into a (partial(DGP, ...), Solver) tuple.
 
@@ -121,8 +121,11 @@ def _resolve_lee2019_setups(setups_cfg: dict) -> list:
     (partial(DGP, latent_sim=...), partial(ASE, k=...)) tuples.
     multimodal_independence is special-cased: it receives no sim_kwargs.
     """
-    ase_k = setups_cfg.get("ase_k", 2)
-    solver = partial(ASE, k=ase_k)
+    ase_k = setups_cfg.get("ase_k", None)
+    if ase_k is None:
+        solver = ASE
+    else:
+        solver = partial(ASE, k=ase_k)
     rdpg = setups_cfg.get("bernoulli_rdpg", "minmax")
     result = []
 
@@ -264,16 +267,7 @@ def load_config(path: str = "config.yaml") -> dict:
         setups = _resolve_sbm_setups(raw["setups"])
     else:
         # standard, diff_marginals, multiness — all use copula-style setup entries
-        setups = [_resolve_standard_setup(e) for e in raw["setups"]]
-
-    # -- Resolve null setups (standard-family experiments only) ---------------
-    null_setups = None
-    if "null_setups" in raw:
-        nc = raw["null_setups"]
-        null_setups = {
-            "rho": nc["rho"],
-            "setups": [_resolve_standard_setup(e) for e in nc["setups"]],
-        }
+        setups = [_resolve_copula_setup(e) for e in raw["setups"]]    
 
     # -- Experiment-specific extra params -------------------------------------
     extra_params = {}
@@ -303,7 +297,6 @@ def load_config(path: str = "config.yaml") -> dict:
         "rng": rng,
         "methods": methods,
         "setups": setups,
-        "null_setups": null_setups,
         "extra_params": extra_params,
         "metrics": metrics,
         "output": raw["output"],
@@ -366,15 +359,7 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             vals.append(mth["use_true_latent_z"])
 
         h1 = [dict(zip(names, v)) for v in iproduct(*vals)]
-        h0 = None
-        if cfg["null_setups"]:
-            null = cfg["null_setups"]
-            vals_h0 = [
-                null["setups"] if n == "setup" else null["rho"] if n == "rho" else v
-                for n, v in zip(names, vals)
-            ]
-            h0 = [dict(zip(names, v)) for v in iproduct(*vals_h0)]
-        return h1, h0
+        return h1
 
     # -- Lee 2019 -------------------------------------------------------------
     if exp == "lee2019":
@@ -391,7 +376,7 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             sp["make_sparse"], sp["sparsity_bias"],
         ]
         
-        return [dict(zip(names, v)) for v in iproduct(*vals)], None
+        return [dict(zip(names, v)) for v in iproduct(*vals)]
 
     # -- SBM ------------------------------------------------------------------
     if exp == "sbm":
@@ -407,15 +392,12 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             mth["npermutations"], sbm["sparsity_bias"], sbm["prob_switch"],
             sbm["assignment_mode"], sbm["block_probs_type"], sbm["assortativity"],
         ]
-        return [dict(zip(names, v)) for v in iproduct(*vals)], None
+        return [dict(zip(names, v)) for v in iproduct(*vals)]
 
     # -- Standard / observed / diff_marginals ---------------------------------
     h1 = _standard_rows(sets, sim["rho"])
-    h0 = None
-    if cfg["null_setups"]:
-        null = cfg["null_setups"]
-        h0 = _standard_rows(null["setups"], null["rho"])
-    return h1, h0
+   
+    return h1
 
 
 def build_factorial_design(cfg: dict) -> tuple[list[dict], list[dict] | None]:
@@ -434,16 +416,13 @@ def build_factorial_design(cfg: dict) -> tuple[list[dict], list[dict] | None]:
     if isinstance(exp_types, str):
         exp_types = [exp_types]
 
-    all_h1: list[dict] = []
-    all_h0: list[dict] = []
+    all_h1 = []
 
     for exp in exp_types:
-        h1, h0 = _build_single_design(exp, cfg)
+        h1 = _build_single_design(exp, cfg)
         all_h1.extend(h1)
-        if h0 is not None:
-            all_h0.extend(h0)
 
-    return all_h1, all_h0 if all_h0 else None
+    return all_h1
 
 
 def build_factorial_design_multi(cfgs: list[dict]) -> tuple[list[dict], list[dict] | None]:
@@ -452,13 +431,11 @@ def build_factorial_design_multi(cfgs: list[dict]) -> tuple[list[dict], list[dic
     Each cfg is resolved for its own single experiment type.
     Rows from all types are concatenated; H0 rows are concatenated where present.
     """
-    all_h1, all_h0 = [], []
+    all_h1 = []
     for cfg in cfgs:
-        h1, h0 = build_factorial_design(cfg)           # existing single-type fn
+        h1 = build_factorial_design(cfg)           # existing single-type fn
         all_h1.extend(h1)
-        if h0 is not None:
-            all_h0.extend(h0)
-    return all_h1, all_h0 if all_h0 else None
+    return all_h1
 
 
 # =============================================================================

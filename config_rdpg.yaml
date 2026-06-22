@@ -1,21 +1,7 @@
 # =============================================================================
 # Simulation Configuration
 # =============================================================================
-# All hard-coded parameters are defined here.
-# Callables are referenced by string identifiers and resolved in the loader (see load_config.py).
-# =============================================================================
-# Base configuration setup
-# - number of simulations: 100
-# - number of nodes: 100, 200, 300
-# - number of latent dimensions: 3
-# - egde weight variance: 1 (for Gaussian networks)
-# - correlation under H1: 0.2
-# - using both true and estimated latent positions for testing methods
-# - marginals: Gaussian, uniform, cauchy, t, chi-squared
-# - copula models: gaussian, clayton, gumbel, student_t, mixture_uniform
-# - testing methods: RVPermutationTest, QAP, DiffusionCorrelation, ObservedCVM (degree 1 and 2)
-# - DGPs: GaussianNetwork, BernoulliNetwork
-# - Solvers: ASE for Gaussian, pgd_fit_wrapper for Bernoulli
+
 
 # -----------------------------------------------------------------------------
 # Simulation Setup
@@ -71,27 +57,9 @@ methods:
 # -----------------------------------------------------------------------------
 setups:
   - dgp: BernoulliNetwork
-    copula_model: gaussian
-    solver: pgd_fit_wrapper
- 
-  - dgp: BernoulliNetwork
-    copula_model: clayton
-    solver: pgd_fit_wrapper
- 
-  - dgp: BernoulliNetwork
-    copula_model: gumbel
-    solver: pgd_fit_wrapper
- 
-  - dgp: BernoulliNetwork
-    copula_model: student_t
-    df: 3
-    solver: pgd_fit_wrapper
- 
-  - dgp: BernoulliNetwork
-    copula_model: mixture_uniform
-    weights: [0.5, 0.5]
-    correlations: [0.5, -0.5]
-    solver: pgd_fit_wrapper
+    rdpg: True
+    rdpg_distr: dirichlet
+    solver: ASE
  
 # -----------------------------------------------------------------------------
 # Metrics
