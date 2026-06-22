@@ -10,19 +10,13 @@
 # Simulation Control
 # -----------------------------------------------------------------------------
 simulation:
-  nsim: 100                 
-  seed: 2
+  nsim: 1                 
+  seed: 1
 
-  n: [50, 100, 200, 300]   # Includes n=50 to probe small-sample behaviour
+  n: [100, 200, 300]   # Includes n=50 to probe small-sample behaviour
   k: [1]                    # Single latent dimension (scalar latent variable)
-  rho: [0.2]
   alpha: [0.05]
-  edge_var: [1, 3]          # Two edge variances: standard and inflated noise
-
-  # Only Gaussian marginals used in this study
-  marginals:
-    - gaussian
-
+  edge_var: [3]          # Two edge variances: standard and inflated noise
 
 # -----------------------------------------------------------------------------
 # Testing Methods
@@ -30,28 +24,27 @@ simulation:
 methods:
   npermutations: [200]
   df: [3]
-  approximation: ["F-distr"]
-  # NOTE: use_true_latent is not a sweep dimension in this experiment
+  use_true_latent_x: [True]  
+  use_true_latent_z: [True, False]   
 
   list:
-    - name: QAP
-      kwargs: {}
-
-    - name: ObservedCVM
-      kwargs:
-        degree: 2
-
-    - name: ObservedCVM
-      kwargs:
-        degree: 1
-
-    - name: DiffusionCorrelation
-      kwargs: {}
-
     - name: RVtest
       kwargs:
-        permutation_type: latent
-        approximation: permutation
+        permutation_type: latent  
+        approximation: permutation              
+ 
+    - name: DiffusionCorrelation
+      kwargs: {}  
+
+    - name: CanonicalCorrelation
+      kwargs: {}                  
+
+    - name: MultivariateACTest
+      kwargs:
+        M: 1                       
+    - name: MultivariateACTest
+      kwargs:
+        M: 20        
 
 
 # -----------------------------------------------------------------------------
@@ -61,7 +54,6 @@ methods:
 # noise: true adds observation noise to the latent positions.
 # -----------------------------------------------------------------------------
 setups:
-  ase_k: 2    # Embedding dimension for ASE — fixed at 2 for all Lee2019 setups
 
   # --- Gaussian (continuous-weight) networks ---
   gaussian_latent_sims:
@@ -122,12 +114,7 @@ sparsity:
 # Metrics
 # -----------------------------------------------------------------------------
 metrics:
-  compute_all: true
-
-
-# -----------------------------------------------------------------------------
-# Output
-# -----------------------------------------------------------------------------
+  compute_all: true   
+ 
 output:
-  results_dir: results
-  file_prefix: sim_lee2019     # Output file: sim_lee2019_<YYYYMMDD_HHMM>.csv
+  results_dir: results   # Files are named: simulation_results_<YYYYMMDD_HHMM>.csv

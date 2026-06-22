@@ -166,8 +166,6 @@ class CanonicalCorrelationTest(BasePermutationTest):
         Correlation between latent positions (zero under independence i.e. H0 is true)
     k : int
         Dimensionality of the latent space.
-    test_method : str
-        Statistical test method to use. Options: "mgc", "dcorr".
     npermutations : int
         Number of permutations for significance testing.
     alpha : float

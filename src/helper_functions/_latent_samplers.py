@@ -151,23 +151,17 @@ class SBMGenerator:
         if assortativity is None:
             assortativity = self.assortativity
 
-        # 1. Start with random base probabilities
         mat = self.rng.random((k, k))
 
-        # Make symmetric (standard for undirected SBMs)
         if self.symmetric:
             mat = (mat + mat.T) / 2.0
 
-        # 2. Create masks to separate diagonal from off-diagonal
         diag_mask = np.eye(k, dtype=bool)
 
-        # 3. Apply Assortativity
-        # Multiply diagonal by (assortativity * 2) and off-diagonal by ((1 - assortativity) * 2)
         # If assortativity=0.5, both multiply by 1.0 (no change).
         mat[diag_mask] *= assortativity * 2
         mat[~diag_mask] *= (1.0 - assortativity) * 2
 
-        # 4. Apply Sparsity
         mat *= 1 - self.sparsity_bias
 
         return np.clip(mat, 0.0, 1.0)
@@ -310,7 +304,6 @@ class CopulaGenerator:
             raise ValueError("rho must be passed for Copula model")
 
         if self.copula_model == "gaussian":
-            # 1. Generate Correlated Gaussians using a k x k covariance matrix
             mean = np.zeros(self.k)
             z = self.rng.multivariate_normal(
                 mean=mean, cov=self.column_covariance, size=self.n, check_valid="warn"
@@ -326,7 +319,7 @@ class CopulaGenerator:
             else:
                 x = self.rho * z + np.sqrt(1 - self.rho**2) * e
 
-            # 2. Apply Gaussian CDF to get Uniforms
+            # Gaussian CDF to get Uniforms
             u_z = ndtr(z)
             u_x = ndtr(x)
             
@@ -836,7 +829,11 @@ class RDPGGenerator:
     rng : np.random.Generator, optional
         Random number generator for reproducibility.
     """
-    def __init__(self, n, k, rho=0, rdpg_distr=None, rdpg_params=None, rng=None, **kwargs):
+    def __init__(self, n, k, rho=0, rdpg_distr=None, 
+                 rdpg_params=None, rng=None,
+                 functional_dependence=None,
+                 noise_variance=0.1,
+                 **kwargs):
         self.n = n
         self.k = k
         self.rho = rho
@@ -844,6 +841,8 @@ class RDPGGenerator:
         self.rdpg_params = rdpg_params if rdpg_params is not None else {}
         self.rng = rng or np.random.default_rng()
         self.is_null = True
+        self.functional_dependence = functional_dependence
+        self.noise_variance = noise_variance
 
     def _sample_latent_rdpg(self):
         """
@@ -899,6 +898,16 @@ class RDPGGenerator:
 
         if self.rho != 0:
             Z = self.rho * X + (1.0 - self.rho) * Z
+            self.is_null = False
+        if self.functional_dependence is not None:
+            if self.functional_dependence == "quadratic":
+                print('using quadratic, yeee')
+                X2 = X**2
+                norms = np.linalg.norm(X2, axis=1, keepdims=True)
+                X2 = np.where(norms > 1, X2 / norms, X2)
+                Z = self.rho * X2 + (1 - self.rho) * Z
+            else:
+                raise ValueError(f"Unknown functional_dependence: {self.functional_dependence}")
             self.is_null = False
         
         return Z, X

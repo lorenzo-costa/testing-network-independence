@@ -22,7 +22,7 @@
 # -----------------------------------------------------------------------------
 simulation:
   nsim: 100          # Number of Monte Carlo repetitions per parameter combination
-  seed: 2                 # Master RNG seed for reproducibility (passed to np.random.default_rng)
+  seed: 1                 # Master RNG seed for reproducibility (passed to np.random.default_rng)
  
   n: [100, 200, 300]      # Sample sizes (number of nodes)
   k: [3]                  # Number of latent dimensions for the network embedding
@@ -30,7 +30,6 @@ simulation:
   alpha: [0.05]           # Nominal significance level(s) for hypothesis tests
   edge_var: [3]           # Edge weight variance (used in Gaussian networks)
  
-  # Marginal distributions applied to the latent variables.
   marginals:
     - gaussian
     - "uniform -1 1"
@@ -38,6 +37,10 @@ simulation:
     - "t 5"
     - "chi 5"
  
+  column_covariance:
+    - [[1, 0.99, 0], [0.99, 1, 0], [0, 0, 1]] # highly correlated dimensions
+    - [[3, 0, 0], [0, 1, 0], [0, 0, 0.5]] # one dominant dimension
+    - [[1, 0, 0], [0, 1, 0], [0, 0, 1]] # identitfy
  
 # -----------------------------------------------------------------------------
 # Testing Methods
@@ -53,25 +56,22 @@ methods:
     - name: RVtest
       kwargs:
         permutation_type: latent  
-        approximation: permutation
- 
-    # - name: QAP
-    #   kwargs: {}                   
+        approximation: permutation       
+
+    - name: RVtest
+      kwargs:
+        approximation: asymptotic   
  
     - name: DiffusionCorrelation
-      kwargs: {}                   
- 
-    # - name: ObservedCVM
-    #   kwargs:
-    #     degree: 2                  
- 
-    # - name: ObservedCVM
-    #   kwargs:
-    #     degree: 1
+      kwargs: {} 
+
+    - name: CanonicalCorrelation
+      kwargs: {}                  
 
     - name: MultivariateACTest
       kwargs:
-        M: 1                       
+        M: 1     
+                      
     - name: MultivariateACTest
       kwargs:
         M: 20                         
@@ -130,28 +130,8 @@ setups:
     correlations: [0.5, -0.5]
     solver: pgd_fit_wrapper
  
- 
-# -----------------------------------------------------------------------------
-# Null Hypothesis Setups (H0: rho = 0)
-# A restricted subset of setups run under the null to measure Type I error.
-# -----------------------------------------------------------------------------
-null_setups:
-  rho: [0.0]    # Null correlation — no dependence between networks
- 
-  # Only the Gaussian copula variants are run under H0
-  setups:
-    - dgp: GaussianNetwork
-      copula_model: gaussian
-      solver: ASE
- 
-    - dgp: BernoulliNetwork
-      copula_model: gaussian
-      solver: pgd_fit_wrapper
- 
- 
 # -----------------------------------------------------------------------------
 # Metrics
-# Controls which performance metrics are computed over simulation runs.
 # -----------------------------------------------------------------------------
 metrics:
   compute_all: true   

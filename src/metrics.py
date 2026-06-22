@@ -7,7 +7,7 @@ class BaseMetric:
     def __init__(self):
         pass
 
-    def __call__(self, estimated, truth):
+    def __call__(self):
         raise NotImplementedError("Subclasses should implement this!")
 
     def get_name(self):
@@ -15,19 +15,19 @@ class BaseMetric:
 
 
 class ReturnMetric(BaseMetric):
-    def __call__(self, results):
+    def __call__(self, results, is_null=None):
         estimated = results["estimated_latent"]
         truth = results["true_latent"]
         test_stat = results.get("test_stat", None)
         p_value = results.get("p-value", None)
-        return {"estimated": estimated, "truth": truth, "test_stat": test_stat, "p-value": p_value}
+        return {"estimated": estimated, "truth": truth, "test_stat": test_stat, "p-value": p_value, "is_null": is_null}
 
     def get_name(self):
         return "ReturnMetric"
 
 
 class RVCoefficient(BaseMetric):
-    def __call__(self, results):
+    def __call__(self, results, is_null=None):
         estimated = results["estimated_latent"]
         truth = results["true_latent"]
         return rv_coefficient(estimated, truth)
@@ -37,7 +37,7 @@ class RVCoefficient(BaseMetric):
 
 
 class AdjustedRVCoefficient(BaseMetric):
-    def __call__(self, results):
+    def __call__(self, results, is_null=None):
         estimated = results["estimated_latent"]
         truth = results["true_latent"]
         return rv_coefficient_adjusted(estimated, truth)
@@ -47,7 +47,7 @@ class AdjustedRVCoefficient(BaseMetric):
 
 
 class MSE(BaseMetric):
-    def __call__(self, results):
+    def __call__(self, results, is_null=None):
         estimated = results["estimated_latent"]
         truth = results["true_latent"]
         return ((truth - estimated) ** 2).mean()
@@ -80,7 +80,7 @@ class RelativeFrobeniusNorm(BaseMetric):
         # get rid of orthogonal invariance
         self.gram_matrix = gram_matrix
 
-    def __call__(self, results):
+    def __call__(self, results, is_null=None):
         estimated = results["estimated_latent"]
         truth = results["true_latent"]
 
@@ -138,7 +138,7 @@ class RobustRelativeProcrustesDistance:
     4. Scale invariant (Relative) to handle large matrix entries.
     """
 
-    def __call__(self, results):
+    def __call__(self, results, is_null=None):
         estimated = results["estimated_latent"]
         truth = results["true_latent"]
 
