@@ -149,7 +149,7 @@ def _resolve_lee2019_setups(setups_cfg: dict) -> list:
                 sim_kwargs={"noise": True},
             )
         result.append((dgp, solver))
-
+    
     return result
 
 
@@ -290,8 +290,8 @@ def load_config(path: str = "config.yaml") -> dict:
         extra_params["asymptotic"] = {
             "column_covariance": sim_raw["column_covariance"],
         }
-
-    return {
+        
+    out = {
         "experiment_type": exp_type,
         "simulation": sim_raw,
         "rng": rng,
@@ -301,7 +301,8 @@ def load_config(path: str = "config.yaml") -> dict:
         "metrics": metrics,
         "output": raw["output"],
     } 
-
+    
+    return out
 
 # =============================================================================
 # Public: build_factorial_design
@@ -375,6 +376,12 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             mth["npermutations"], mth["df"],
             sp["make_sparse"], sp["sparsity_bias"],
         ]
+        if mth["use_true_latent_x"] is not None:
+            names.append("use_true_latent_x")
+            vals.append(mth["use_true_latent_x"])
+        if mth["use_true_latent_z"] is not None:
+            names.append("use_true_latent_z")
+            vals.append(mth["use_true_latent_z"])
         
         return [dict(zip(names, v)) for v in iproduct(*vals)]
 

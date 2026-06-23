@@ -46,12 +46,15 @@ class GaussianNetwork(LatentSampler):
         rng=None,
         X=None,
         Z=None,
+        force_x_single_dimension=False,
         **kwargs,
     ):
         if rng is None:
             rng = np.random.default_rng()
         
-        LatentSampler.__init__(self, n=n, k=k, rng=rng, **kwargs)
+        LatentSampler.__init__(self, n=n, k=k, rng=rng, 
+                               force_x_single_dimension=force_x_single_dimension, 
+                               **kwargs)
         
         self.edge_var = edge_var
         self.symmetric = symmetric
@@ -60,6 +63,8 @@ class GaussianNetwork(LatentSampler):
         
         self.X = X
         self.Z = Z
+        
+        self.force_x_single_dimension = force_x_single_dimension
     
     def __repr__(self):
         return self.get_name() + f"(n={self.n}, k={self.k}, edge_var={self.edge_var}, "\

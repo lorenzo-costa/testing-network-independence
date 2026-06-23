@@ -965,6 +965,7 @@ class LatentSampler:
         block_probs_type=None,
         rdpg_distr=None,
         rng=None,
+        force_x_single_dimension=False,
         **kwargs,
     ):
         if rng is None:
@@ -1022,6 +1023,8 @@ class LatentSampler:
         self.block_probs_type = block_probs_type
         self.rdpg_distr = rdpg_distr
         
+        self.force_x_single_dimension = force_x_single_dimension
+        
     def _sample_latent(self):
         """Return X, Z each of shape (n, k). 
         Hierarchy of generation is:
@@ -1046,5 +1049,8 @@ class LatentSampler:
             Z, X = self.latent_sampler._sample_latent_copula()
         else:
             raise ValueError("No valid latent generation method specified. Please provide one of: latent_sim, dim_common, block_probs_type, or copula_model.")
+        
+        if self.force_x_single_dimension:
+            X = X[:, 0:1]  # Keep only the first dimension of X
         
         return Z, X

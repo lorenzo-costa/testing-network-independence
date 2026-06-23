@@ -59,7 +59,15 @@ methods:
                       
     - name: MultivariateACTest
       kwargs:
-        M: 20                         
+        M: 20
+
+    - name: MultivariateACTest
+      kwargs:
+        M: 50
+
+    - name: MultivariateACTest
+      kwargs:
+        M: 90                         
  
 # -----------------------------------------------------------------------------
 # DGP & Solver Setups (H1: rho > 0)
