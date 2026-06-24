@@ -1,5 +1,5 @@
 import numpy as np
-from _base_class import BaseMethod
+from ._base_class import BaseMethod
 
 
 import sys

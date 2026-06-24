@@ -1,4 +1,4 @@
-from _base_class import BaseMethod
+from ._base_class import BaseMethod
 import numpy as np
 
 

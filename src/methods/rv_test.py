@@ -1,6 +1,6 @@
 
 import numpy as np
-from _base_class import BasePermutationTest, BaseEstimationMethod
+from ._base_class import BasePermutationTest, BaseEstimationMethod
 from ..test_functions.rv_cca_coefficients import rv_coefficient, rv_coefficient_adjusted
 from ..helper_functions.imhof import imhof
 
@@ -36,7 +36,7 @@ class EstimateRV(BaseEstimationMethod):
         return "EstimateRV"
 
 
-class RVtest(BasePermutationTest):
+class RVTest(BasePermutationTest):
     """Perform RV test for network independence.
 
     Parameters

@@ -1,6 +1,6 @@
 
 import numpy as np
-from _base_class import BasePermutationTest, BaseEstimationMethod
+from ._base_class import BasePermutationTest, BaseEstimationMethod
 from ..test_functions.ac_coefficient import ac_coefficient
 
 import sys
@@ -66,6 +66,7 @@ class MultivariateACTest(BasePermutationTest):
         solver=None,
         use_true_latent_x=False,
         use_true_latent_z=False,
+        right_neighbor=False,
         M=1,
         k=None,
         **kwargs,
@@ -78,10 +79,11 @@ class MultivariateACTest(BasePermutationTest):
             use_true_latent_x=use_true_latent_x,
             use_true_latent_z=use_true_latent_z,
             solver=solver,
-            test_function=multivariate_ac_coefficient_permutation, 
+            test_function=ac_coefficient, 
             rng=rng)
         
         self.M = M
+        self.right_neighbor = right_neighbor
     
     def fit(self, data, **kwargs):
         """Compute multivariate AC coefficient. X is used as response variables (Y),
@@ -111,12 +113,12 @@ class MultivariateACTest(BasePermutationTest):
         # for consistency keep the names as X and Z.
         # in _process_input when use_true_latent is True, Zhat and Xhat copy true latent
         self.test_stat_estimate = self.test_function(Y = self.Xhat, Z = self.Zhat, 
-                                                     M = self.M, rng=self.rng)
+                                                     M = self.M, rng=self.rng, right_neighbor=self.right_neighbor)
         
         for _ in range(self.npermutations):
             perm = self.rng.permutation(self.Zhat.shape[0])
             Zhat_perm = self.Zhat[perm, :]
-            test_stat_perm = self.test_function(Y = self.Xhat, Z = Zhat_perm, M = self.M, rng=self.rng)
+            test_stat_perm = self.test_function(Y = self.Xhat, Z = Zhat_perm, M = self.M, rng=self.rng, right_neighbor=self.right_neighbor)
             self.permutation_distribution.append(test_stat_perm)
         
         # get and store pvalue

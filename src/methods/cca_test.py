@@ -1,6 +1,6 @@
 
 import numpy as np
-from _base_class import BasePermutationTest, BaseEstimationMethod
+from ._base_class import BasePermutationTest, BaseEstimationMethod
 from ..test_functions.rv_cca_coefficients import first_cca_component
 
 

@@ -1,6 +1,6 @@
 
 import numpy as np
-from _base_class import BasePermutationTest, BaseEstimationMethod
+from ._base_class import BasePermutationTest, BaseEstimationMethod
 from scipy.spatial.distance import pdist, squareform
 import warnings
 from scipy.stats import multiscale_graphcorr
