@@ -4,6 +4,7 @@ from scipy.special import expit, ndtr
 
 from ._latent_samplers import LatentSampler
 
+
 class GaussianNetwork(LatentSampler):
     """
     Weighted network DGP with Gaussian weights on edges.
@@ -30,7 +31,7 @@ class GaussianNetwork(LatentSampler):
         Pre-specified latent positions for X. If provided, these will be used instead of sampling
     Z : np.ndarray, optional
         Pre-specified latent positions for Z. If provided, these will be used instead of sampling
-    
+
     rng : np.random.Generator, optional
         Random number generator.
     """
@@ -51,24 +52,31 @@ class GaussianNetwork(LatentSampler):
     ):
         if rng is None:
             rng = np.random.default_rng()
-        
-        LatentSampler.__init__(self, n=n, k=k, rng=rng, 
-                               force_x_single_dimension=force_x_single_dimension, 
-                               **kwargs)
-        
+
+        LatentSampler.__init__(
+            self,
+            n=n,
+            k=k,
+            rng=rng,
+            force_x_single_dimension=force_x_single_dimension,
+            **kwargs,
+        )
+
         self.edge_var = edge_var
         self.symmetric = symmetric
         self.self_loops = self_loops
         self.sparsity_exponent = sparsity_exponent
-        
+
         self.X = X
         self.Z = Z
-        
+
         self.force_x_single_dimension = force_x_single_dimension
-    
+
     def __repr__(self):
-        return self.get_name() + f"(n={self.n}, k={self.k}, edge_var={self.edge_var}, "\
+        return (
+            self.get_name() + f"(n={self.n}, k={self.k}, edge_var={self.edge_var}, "
             f"symmetric={self.symmetric}, self_loops={self.self_loops}, sparsity_exponent={self.sparsity_exponent})"
+        )
 
     def get_name(self):
         return f"GaussianNetwork_" + self.sampler_name
@@ -91,10 +99,10 @@ class GaussianNetwork(LatentSampler):
 
         expected_A = Z @ Z.T
         expected_B = X @ X.T
-        
+
         if self.sparsity_exponent > 0:
-            expected_A = expected_A * self.n**(-self.sparsity_exponent)
-            expected_B = expected_B * self.n**(-self.sparsity_exponent)
+            expected_A = expected_A * self.n ** (-self.sparsity_exponent)
+            expected_B = expected_B * self.n ** (-self.sparsity_exponent)
 
         A = self.rng.normal(loc=expected_A, scale=self.edge_var)
         B = self.rng.normal(loc=expected_B, scale=self.edge_var)
@@ -132,7 +140,7 @@ class BernoulliNetwork(LatentSampler):
     def __init__(
         self,
         n,
-        k,        
+        k,
         rng=None,
         symmetric=True,
         self_loops=False,
@@ -153,10 +161,12 @@ class BernoulliNetwork(LatentSampler):
 
     def get_name(self):
         return f"BernoulliNetwork_" + self.sampler_name
-    
+
     def __repr__(self):
-        return self.get_name() + f"(n={self.n}, k={self.k}, rdpg={self.rdpg}, "\
+        return (
+            self.get_name() + f"(n={self.n}, k={self.k}, rdpg={self.rdpg}, "
             f"symmetric={self.symmetric}, self_loops={self.self_loops}, sparsity_exponent={self.sparsity_exponent})"
+        )
 
     def generate(self):
         """Sample matrix and latent positions. Model definiton specifies options for:
@@ -178,16 +188,24 @@ class BernoulliNetwork(LatentSampler):
             expected_A = Z @ Z.T
             expected_B = X @ X.T
             if self.rdpg:
-                # sparsity applied directly to inner product, 
+                # sparsity applied directly to inner product,
                 if self.sparsity_exponent > 0:
-                    expected_A = expected_A * np.log(self.n)**(-self.sparsity_exponent)
-                    expected_B = expected_B * np.log(self.n)**(-self.sparsity_exponent)
+                    expected_A = expected_A * np.log(self.n) ** (
+                        -self.sparsity_exponent
+                    )
+                    expected_B = expected_B * np.log(self.n) ** (
+                        -self.sparsity_exponent
+                    )
             else:
                 # apply logit link to get probabilities
                 if self.sparsity_exponent > 0:
-                    expected_A = expected_A * np.log(self.n)**(-self.sparsity_exponent)
-                    expected_B = expected_B * np.log(self.n)**(-self.sparsity_exponent)
-                    
+                    expected_A = expected_A * np.log(self.n) ** (
+                        -self.sparsity_exponent
+                    )
+                    expected_B = expected_B * np.log(self.n) ** (
+                        -self.sparsity_exponent
+                    )
+
                 expected_A = expit(expected_A)
                 expected_B = expit(expected_B)
 

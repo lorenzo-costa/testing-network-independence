@@ -1,4 +1,3 @@
-
 import numpy as np
 from ._base_class import BasePermutationTest, BaseEstimationMethod
 from ..test_functions.rv_cca_coefficients import rv_coefficient, rv_coefficient_adjusted
@@ -6,13 +5,22 @@ from ..helper_functions.imhof import imhof
 
 import sys
 import os
+
 sys.path.append(os.path.abspath(os.path.join(os.getcwd(), "..")))
 
 
 class EstimateRV(BaseEstimationMethod):
     """Method to return RV coefficient between the latent positions of two networks"""
-    def __init__(self, rng=None, solver=None, k=None, use_true_latent=False,
-                 test_function=rv_coefficient, **kwargs):
+
+    def __init__(
+        self,
+        rng=None,
+        solver=None,
+        k=None,
+        use_true_latent=False,
+        test_function=rv_coefficient,
+        **kwargs,
+    ):
         super().__init__(k=k, rng=rng, solver=solver, use_true_latent=use_true_latent)
 
         self.test_function = test_function
@@ -70,12 +78,11 @@ class RVTest(BasePermutationTest):
         rng=None,
         solver=None,
         use_true_latent_x=False,
-        use_true_latent_z=False,    
+        use_true_latent_z=False,
         test_function=rv_coefficient_adjusted,
         permutation_type="latent",
         **kwargs,
     ):
-        
         super().__init__(
             k=k,
             npermutations=npermutations,
@@ -89,7 +96,7 @@ class RVTest(BasePermutationTest):
         )
 
         self.approximation = approximation
-        
+
     def fit(self, data, **kwargs):
         """Compute test statistic and p-value
 
@@ -114,7 +121,7 @@ class RVTest(BasePermutationTest):
         self.reject_null = bool(self.pvalue < self.alpha)
 
         return
-    
+
     def _fit_asymptotic(self):
         Zhat = self.Zhat.copy()
         Xhat = self.Xhat.copy()
@@ -132,17 +139,17 @@ class RVTest(BasePermutationTest):
         #   (1/n) G,  where  Gᵢⱼ = (X̃ᵢᵀX̃ⱼ)(Z̃ᵢᵀZ̃ⱼ) = (X̃X̃ᵀ)ᵢⱼ ⊙ (Z̃Z̃ᵀ)ᵢⱼ
         # so we never form the (pq × pq) object.
 
-        GX = Xhat @ Xhat.T          # (n, n)  Gram matrix of X
-        GZ = Zhat @ Zhat.T          # (n, n)  Gram matrix of Z
+        GX = Xhat @ Xhat.T  # (n, n)  Gram matrix of X
+        GZ = Zhat @ Zhat.T  # (n, n)  Gram matrix of Z
         Omega_gram = (GX * GZ) / n  # (n, n)  Hadamard product — Gram rep. of Ω̂
 
-        hat_lambda = np.linalg.eigvalsh(Omega_gram)       # ascending
-        hat_lambda = np.sort(hat_lambda)[::-1]            # descending
+        hat_lambda = np.linalg.eigvalsh(Omega_gram)  # ascending
+        hat_lambda = np.sort(hat_lambda)[::-1]  # descending
         # drop numerical zeros (rank ≤ min(n, p·q) in practice)
         hat_lambda = hat_lambda[hat_lambda > 1e-10 * hat_lambda[0]]
 
         # ── Normalisation: den = sqrt(tr(Ω̂²)) = sqrt(Σᵢ λ̂ᵢ²) ─────────────────
-        den = np.sqrt(np.sum(hat_lambda ** 2))
+        den = np.sqrt(np.sum(hat_lambda**2))
 
         weights = hat_lambda / den
         self.pvalue = imhof(n * rv, weights)["Qq"]
@@ -167,7 +174,7 @@ class RVTest(BasePermutationTest):
 
     #     den = np.sqrt(np.trace(SigmaXX @ SigmaXX) * np.trace(SigmaZZ @ SigmaZZ))
 
-    #     weights = (1+self.kappa) * np.outer(eigenvalues_X, eigenvalues_Z).flatten() / den 
+    #     weights = (1+self.kappa) * np.outer(eigenvalues_X, eigenvalues_Z).flatten() / den
 
     #     self.pvalue = imhof(n * rv, weights)["Qq"]
 

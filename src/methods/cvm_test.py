@@ -4,6 +4,7 @@ from ._base_class import BaseMethod
 
 import sys
 import os
+
 sys.path.append(os.path.abspath(os.path.join(os.getcwd(), "..")))
 
 
@@ -53,7 +54,7 @@ class ObservedCVM(BaseMethod):
         B = data.get("B")
         Z = data.get("Z", None)
         X = data.get("X", None)
-        
+
         # for consistency with other methods
         self.Z = Z
         self.X = X

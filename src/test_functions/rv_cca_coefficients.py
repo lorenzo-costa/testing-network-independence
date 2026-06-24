@@ -13,16 +13,17 @@ Optimisations over the original:
 
 import numpy as np
 
+
 # ---------------------------------------------------------------------------
 # RV coefficients
 # ---------------------------------------------------------------------------
 def rv_coefficient(A, B):
     A = A.copy()
     B = B.copy()
-    
+
     A = A - A.mean(axis=0)
     B = B - B.mean(axis=0)
-    
+
     AtB = A.T @ B
     temp_num = AtB.ravel()
     num = temp_num.dot(temp_num)
@@ -61,11 +62,14 @@ def rv_coefficient_adjusted(A, B):
         # else return 0 to not inflate type I error
         else:
             return 0
-    
+
+
 # ---------------------------------------------------------------------------
 # CCA score
 # ---------------------------------------------------------------------------
-def first_cca_component(Xhat: np.ndarray, Zhat: np.ndarray, rcond: float = 1e-10) -> float:
+def first_cca_component(
+    Xhat: np.ndarray, Zhat: np.ndarray, rcond: float = 1e-10
+) -> float:
     """
     First canonical correlation coefficient between Xhat and Zhat.
 
@@ -81,7 +85,7 @@ def first_cca_component(Xhat: np.ndarray, Zhat: np.ndarray, rcond: float = 1e-10
         latent positions for graph B.
     Zhat  : np.ndarray, shape (n, q)
         latent positions for graph A.
-        
+
     rcond : threshold for rank truncation (relative to largest singular value)
 
     Returns
@@ -92,12 +96,12 @@ def first_cca_component(Xhat: np.ndarray, Zhat: np.ndarray, rcond: float = 1e-10
     assert Zhat.shape[0] == n, "Xhat and Zhat must have the same n"
 
     # ── 1. Center: apply Mₙ ─────────────────────────────────────────────────
-    X = Xhat - Xhat.mean(axis=0, keepdims=True)   # (n, p)
-    Z = Zhat - Zhat.mean(axis=0, keepdims=True)   # (n, q)
+    X = Xhat - Xhat.mean(axis=0, keepdims=True)  # (n, p)
+    Z = Zhat - Zhat.mean(axis=0, keepdims=True)  # (n, q)
 
     # ── 2. Thin SVD of each centered matrix ─────────────────────────────────
-    Ux, sx, _ = np.linalg.svd(X, full_matrices=False)   # Ux: (n, p)
-    Uz, sz, _ = np.linalg.svd(Z, full_matrices=False)   # Uz: (n, q)
+    Ux, sx, _ = np.linalg.svd(X, full_matrices=False)  # Ux: (n, p)
+    Uz, sz, _ = np.linalg.svd(Z, full_matrices=False)  # Uz: (n, q)
 
     # ── 3. Drop numerically zero singular directions ─────────────────────────
     #       (avoids inverting near-zero singular values implicitly)

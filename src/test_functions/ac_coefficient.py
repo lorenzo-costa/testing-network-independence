@@ -11,17 +11,18 @@ import numpy as np
 from scipy.spatial import cKDTree
 from scipy.stats import rankdata
 
+
 # Main function
 def ac_coefficient(
     Y,
     Z,
     X=None,
     *,
-    M = 1,
+    M=1,
     permutation=False,
     right_neighbor=False,
     rng=None,
-    block_size = 2048,
+    block_size=2048,
 ):
     """Compute an unconditional or conditional Azadkia--Chatterjee coefficient.
 
@@ -30,42 +31,44 @@ def ac_coefficient(
     selects the unconditional version; supplying ``X`` selects the conditional
     version.
     """
-    
+
     y = _as_2d(Y, name="Y")
     n, d_y = y.shape
     if n < 2:
         raise ValueError("At least two observations are required.")
-    
+
     M = _validate_m(M, n)
-    
+
     z = _as_2d(Z, name="Z", n=n)
 
     if d_y == 1:
         if permutation is True:
             raise ValueError("permutation is only used when Y is multivariate.")
-        
-        m_idx, n_idx = _neighbor_maps(z, x=X, n=n, M=M, rng=rng, right_neighbor=right_neighbor)
-        
+
+        m_idx, n_idx = _neighbor_maps(
+            z, x=X, n=n, M=M, rng=rng, right_neighbor=right_neighbor
+        )
+
         if right_neighbor is True:
             return _right_neighbor_coefficient(y[:, 0], m_idx, rng=rng)
-            
+
         return _scalar_coefficient(y[:, 0], m_idx, n_idx)
-    
+
     if right_neighbor is True:
         raise ValueError("right_neighbor is only used when Y is univariate.")
-    
+
     if permutation is True:
         perm = _make_permutations(n, d_y, rng=rng)
         y_tilde = np.take_along_axis(y, perm.T, axis=0)
     else:
         y_tilde = y.copy()
-        
+
     m_idx, n_idx = _neighbor_maps(z, x=X, n=n, M=M, rng=rng)
 
     return _multivariate_coefficient(y, y_tilde, m_idx, n_idx, block_size=block_size)
 
 
-#Coeff calculation functions
+# Coeff calculation functions
 def _scalar_coefficient(
     y: np.ndarray,
     m_idx: np.ndarray,
@@ -91,6 +94,7 @@ def _scalar_coefficient(
 
     return 0.0 if denominator == 0 else float(numerator / denominator)
 
+
 def _right_neighbor_coefficient(
     y: np.ndarray,
     M_idx: np.ndarray,
@@ -106,12 +110,10 @@ def _right_neighbor_coefficient(
         ranks[M_idx],
     ).sum(dtype=np.int64)
 
-    normalizer = (n + 1) * (
-        n * M + M * (M + 1) / 4
-    )
+    normalizer = (n + 1) * (n * M + M * (M + 1) / 4)
 
     return float(-2.0 + 6.0 * rank_sum / normalizer)
-    
+
 
 def _multivariate_coefficient(
     y: np.ndarray,
@@ -155,7 +157,6 @@ def _multivariate_coefficient(
     return 0.0 if denominator == 0 else float(numerator / denominator)
 
 
-
 # NN-indices
 def _neighbor_maps(
     z,
@@ -180,7 +181,8 @@ def _neighbor_maps(
         m_idx = _knn_indices(np.hstack((x, z)), M, rng=rng)
         n_idx = _knn_indices(x, M, rng=rng)
         return m_idx, n_idx
-    
+
+
 def _knn_indices(
     points: np.ndarray,
     M: int,
@@ -201,9 +203,7 @@ def _knn_indices(
         raise ValueError("Require 1 <= M < n.")
 
     generator = (
-        rng
-        if isinstance(rng, np.random.Generator)
-        else np.random.default_rng(rng)
+        rng if isinstance(rng, np.random.Generator) else np.random.default_rng(rng)
     )
 
     tree = cKDTree(points)
@@ -278,6 +278,7 @@ def _knn_indices(
 
     return neighbors
 
+
 def _right_neighbor_indices(
     z: np.ndarray,
     M: int,
@@ -290,17 +291,13 @@ def _right_neighbor_indices(
     """
 
     if z.ndim != 2 or z.shape[1] != 1:
-        raise ValueError(
-            "Right neighbors require a scalar ordering variable."
-        )
+        raise ValueError("Right neighbors require a scalar ordering variable.")
 
     values = z[:, 0]
     n = len(values)
 
     generator = (
-        rng
-        if isinstance(rng, np.random.Generator)
-        else np.random.default_rng(rng)
+        rng if isinstance(rng, np.random.Generator) else np.random.default_rng(rng)
     )
 
     # Primary sort key: values.
@@ -325,6 +322,7 @@ def _right_neighbor_indices(
 
     return neighbors
 
+
 # Helpers
 def _as_2d(values, *, name: str, n: int | None = None) -> np.ndarray:
     """Return a finite array with shape ``(n, d)``."""
@@ -342,6 +340,7 @@ def _as_2d(values, *, name: str, n: int | None = None) -> np.ndarray:
         raise ValueError(f"{name} must contain only finite values.")
     return values
 
+
 def _validate_m(M: int, n: int) -> int:
     if not isinstance(M, (int, np.integer)) or isinstance(M, bool) or M < 1:
         raise ValueError("M must be a positive integer.")
@@ -349,17 +348,19 @@ def _validate_m(M: int, n: int) -> int:
         raise ValueError("M must be smaller than n.")
     return int(M)
 
+
 def _make_permutations(n: int, d_y: int, rng=None) -> np.ndarray:
     """Make coordinate permutations with distinct source rows per observation."""
     if d_y > n:
-        raise ValueError(
-            "The multivariate permutation construction requires d_Y <= n."
-        )
+        raise ValueError("The multivariate permutation construction requires d_Y <= n.")
 
-    generator = rng if isinstance(rng, np.random.Generator) else np.random.default_rng(rng)
+    generator = (
+        rng if isinstance(rng, np.random.Generator) else np.random.default_rng(rng)
+    )
     base = generator.permutation(n)
     shifts = generator.choice(n, size=d_y, replace=False)
     return np.array([np.roll(base, -shift) for shift in shifts], dtype=np.int64)
+
 
 def _orthant_counts(
     sample: np.ndarray,

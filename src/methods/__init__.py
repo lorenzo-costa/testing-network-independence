@@ -1,4 +1,3 @@
-
 from .ac_test import EstimateAC, MultivariateACTest
 from .cca_test import CanonicalCorrelationTest
 from .cvm_test import ObservedCVM

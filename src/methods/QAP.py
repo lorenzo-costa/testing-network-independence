@@ -4,6 +4,7 @@ import numpy as np
 
 import sys
 import os
+
 sys.path.append(os.path.abspath(os.path.join(os.getcwd(), "..")))
 
 
@@ -39,12 +40,12 @@ class QAP(BaseMethod):
         self.npermutations = npermutations
         self.null_hypothesis = null_hypothesis
         self.permutation_distribution = []
-        
-        # for consistency with other methods 
+
+        # for consistency with other methods
         self.X = None
         self.Z = None
         self.Xhat = None
-        self.Zhat = None    
+        self.Zhat = None
 
     def fit(self, data, **kwargs):
         """Estimates the latent positions and computes p-value
@@ -113,5 +114,3 @@ class QAP(BaseMethod):
         v_w_hat = 4 * eta_hat_1_phi / (eta_hat_2_alpha * eta_hat_2_beta)
 
         return np.sqrt(n) * rho_hat / np.sqrt(v_w_hat)
-
-

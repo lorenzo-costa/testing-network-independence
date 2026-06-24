@@ -20,7 +20,13 @@ class ReturnMetric(BaseMetric):
         truth = results["true_latent"]
         test_stat = results.get("test_stat", None)
         p_value = results.get("p-value", None)
-        return {"estimated": estimated, "truth": truth, "test_stat": test_stat, "p-value": p_value, "is_null": is_null}
+        return {
+            "estimated": estimated,
+            "truth": truth,
+            "test_stat": test_stat,
+            "p-value": p_value,
+            "is_null": is_null,
+        }
 
     def get_name(self):
         return "ReturnMetric"

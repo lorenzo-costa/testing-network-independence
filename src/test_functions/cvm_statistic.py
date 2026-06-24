@@ -2,6 +2,7 @@ import numpy as np
 from scipy.stats import rankdata
 from numba import njit
 
+
 # ---------------------------------------------------------------------------
 # CvM computations
 # ---------------------------------------------------------------------------
@@ -75,9 +76,9 @@ def observed_cvm_dependency(A, B, degree=2, rank_method="average"):
     rank_method : str, optional
         the method to use for ranking shared neighbor counts (default is "average").
         Options include:
-        - "max": Use the maximum rank. This is the plug-in estimator standard in 
+        - "max": Use the maximum rank. This is the plug-in estimator standard in
         copula theory (Deheuvels 1979). It has jump discontinuities.
-        - "average" (default): Use the average rank. This is also known as the 
+        - "average" (default): Use the average rank. This is also known as the
         mid-rank copula transform. It provides a sort of smoothing effect.
     Returns
     -------

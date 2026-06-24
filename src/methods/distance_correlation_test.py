@@ -1,4 +1,3 @@
-
 import numpy as np
 from ._base_class import BasePermutationTest, BaseEstimationMethod
 from scipy.spatial.distance import pdist, squareform
@@ -8,6 +7,7 @@ from scipy.stats import multiscale_graphcorr
 
 import sys
 import os
+
 sys.path.append(os.path.abspath(os.path.join(os.getcwd(), "..")))
 
 
@@ -50,13 +50,12 @@ class DistanceCorrelationTest(BasePermutationTest):
             use_true_latent_x=use_true_latent_x,
             use_true_latent_z=use_true_latent_z,
         )
-        
+
         self.rng = np.random.default_rng() if rng is None else rng
 
         self.test_method = test_method
 
         self.eps = 1e-10
-
 
     def compute_distance_matrix(self, U):
         return squareform(pdist(U, metric="euclidean"))
@@ -81,7 +80,7 @@ class DistanceCorrelationTest(BasePermutationTest):
             A dictionary containing keys 'A', 'B', 'X', 'Z' where 'A' and 'B' are adjacency matrices
             and 'X' and 'Z' are latent positions.
         """
-        
+
         self._process_input(data)
 
         distances_A = self.compute_distance_matrix(self.Xhat)
@@ -100,7 +99,7 @@ class DistanceCorrelationTest(BasePermutationTest):
                     )
                     pvalue = out_mgc.pvalue
                     test_stat_estimate = out_mgc.statistic
-                    
+
                 except IndexError:
                     pvalue = 1.0
                     print("Error in computing MGC. Check the distance matrices.")

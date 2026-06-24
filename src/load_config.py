@@ -57,7 +57,7 @@ METHOD_REGISTRY = {
     "DiffusionCorrelation": DistanceCorrelationTest,
     "ObservedCVM": ObservedCVM,
     "MultivariateACTest": MultivariateACTest,
-    "CanonicalCorrelation": CanonicalCorrelationTest, 
+    "CanonicalCorrelation": CanonicalCorrelationTest,
 }
 
 # Latent-sim shapes that do NOT accept sim_kwargs={'noise': True}
@@ -102,10 +102,7 @@ def _resolve_copula_setup(entry: dict):
 
     reserved = {"dgp", "solver", "copula_model"}
 
-    copula_params = {
-        k: v for k, v in entry.items()
-        if k not in reserved
-    }
+    copula_params = {k: v for k, v in entry.items() if k not in reserved}
 
     dgp_kwargs = {
         "copula_model": entry.get("copula_model"),
@@ -149,7 +146,7 @@ def _resolve_lee2019_setups(setups_cfg: dict) -> list:
                 sim_kwargs={"noise": True},
             )
         result.append((dgp, solver))
-    
+
     return result
 
 
@@ -176,7 +173,7 @@ def _resolve_methods_block(methods_cfg: dict) -> dict:
         "use_true_latent_z": methods_cfg.get("use_true_latent_z"),  # None when absent
     }
 
-    
+
 # =============================================================================
 # Experiment-type detection
 # =============================================================================
@@ -267,7 +264,7 @@ def load_config(path: str = "config.yaml") -> dict:
         setups = _resolve_sbm_setups(raw["setups"])
     else:
         # standard, diff_marginals, multiness — all use copula-style setup entries
-        setups = [_resolve_copula_setup(e) for e in raw["setups"]]    
+        setups = [_resolve_copula_setup(e) for e in raw["setups"]]
 
     # -- Experiment-specific extra params -------------------------------------
     extra_params = {}
@@ -290,7 +287,7 @@ def load_config(path: str = "config.yaml") -> dict:
         extra_params["asymptotic"] = {
             "column_covariance": sim_raw["column_covariance"],
         }
-        
+
     out = {
         "experiment_type": exp_type,
         "simulation": sim_raw,
@@ -300,9 +297,10 @@ def load_config(path: str = "config.yaml") -> dict:
         "extra_params": extra_params,
         "metrics": metrics,
         "output": raw["output"],
-    } 
-    
+    }
+
     return out
+
 
 # =============================================================================
 # Public: build_factorial_design
@@ -321,13 +319,28 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
 
     def _standard_rows(setups_list, rho_list):
         names = [
-            "setup", "method", "n", "k", "alpha",
-            "marginals", "rho", "edge_var", "npermutations", "df",
+            "setup",
+            "method",
+            "n",
+            "k",
+            "alpha",
+            "marginals",
+            "rho",
+            "edge_var",
+            "npermutations",
+            "df",
         ]
         vals = [
-            setups_list, mth["list"], sim["n"], sim["k"], sim["alpha"],
-            sim["marginals"], rho_list, sim["edge_var"],
-            mth["npermutations"], mth["df"],
+            setups_list,
+            mth["list"],
+            sim["n"],
+            sim["k"],
+            sim["alpha"],
+            sim["marginals"],
+            rho_list,
+            sim["edge_var"],
+            mth["npermutations"],
+            mth["df"],
         ]
         if mth["approximation"] is not None:
             names.append("approximation")
@@ -343,14 +356,32 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
     # -- Multiness ------------------------------------------------------------
     if exp == "multiness":
         names = [
-            "setup", "method", "n", "k", "alpha", "rho", "edge_var",
-            "npermutations", "df", "dim_common", "dim_individual",
+            "setup",
+            "method",
+            "n",
+            "k",
+            "alpha",
+            "rho",
+            "edge_var",
+            "npermutations",
+            "df",
+            "dim_common",
+            "dim_individual",
             "shared_latent_type",
         ]
         vals = [
-            sets, mth["list"], sim["n"], sim["k"], sim["alpha"],
-            sim["rho"], sim["edge_var"], mth["npermutations"], mth["df"],
-            sim["dim_common"], sim["dim_individual"], sim["shared_latent_type"],
+            sets,
+            mth["list"],
+            sim["n"],
+            sim["k"],
+            sim["alpha"],
+            sim["rho"],
+            sim["edge_var"],
+            mth["npermutations"],
+            mth["df"],
+            sim["dim_common"],
+            sim["dim_individual"],
+            sim["shared_latent_type"],
         ]
         if mth["use_true_latent_x"] is not None:
             names.append("use_true_latent_x")
@@ -366,15 +397,28 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
     if exp == "lee2019":
         sp = cfg["extra_params"]["sparsity"]
         names = [
-            "setup", "method", "n", "k", "alpha",
-            "edge_var", "npermutations", "df",
-            "make_sparse", "sparsity_bias",
+            "setup",
+            "method",
+            "n",
+            "k",
+            "alpha",
+            "edge_var",
+            "npermutations",
+            "df",
+            "make_sparse",
+            "sparsity_bias",
         ]
         vals = [
-            sets, mth["list"], sim["n"], sim["k"], sim["alpha"], 
+            sets,
+            mth["list"],
+            sim["n"],
+            sim["k"],
+            sim["alpha"],
             sim["edge_var"],
-            mth["npermutations"], mth["df"],
-            sp["make_sparse"], sp["sparsity_bias"],
+            mth["npermutations"],
+            mth["df"],
+            sp["make_sparse"],
+            sp["sparsity_bias"],
         ]
         if mth["use_true_latent_x"] is not None:
             names.append("use_true_latent_x")
@@ -382,28 +426,49 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
         if mth["use_true_latent_z"] is not None:
             names.append("use_true_latent_z")
             vals.append(mth["use_true_latent_z"])
-        
+
         return [dict(zip(names, v)) for v in iproduct(*vals)]
 
     # -- SBM ------------------------------------------------------------------
     if exp == "sbm":
         sbm = cfg["extra_params"]["sbm"]
         names = [
-            "setup", "method", "n", "k", "alpha", "marginals", "rho",
-            "edge_var", "npermutations", "sparsity_bias", "prob_switch",
-            "assignment_mode", "block_probs_type", "assortativity",
+            "setup",
+            "method",
+            "n",
+            "k",
+            "alpha",
+            "marginals",
+            "rho",
+            "edge_var",
+            "npermutations",
+            "sparsity_bias",
+            "prob_switch",
+            "assignment_mode",
+            "block_probs_type",
+            "assortativity",
         ]
         vals = [
-            sets, mth["list"], sim["n"], sim["k"], sim["alpha"],
-            sim["marginals"], sim["rho"], sim["edge_var"],
-            mth["npermutations"], sbm["sparsity_bias"], sbm["prob_switch"],
-            sbm["assignment_mode"], sbm["block_probs_type"], sbm["assortativity"],
+            sets,
+            mth["list"],
+            sim["n"],
+            sim["k"],
+            sim["alpha"],
+            sim["marginals"],
+            sim["rho"],
+            sim["edge_var"],
+            mth["npermutations"],
+            sbm["sparsity_bias"],
+            sbm["prob_switch"],
+            sbm["assignment_mode"],
+            sbm["block_probs_type"],
+            sbm["assortativity"],
         ]
         return [dict(zip(names, v)) for v in iproduct(*vals)]
 
     # -- Standard / observed / diff_marginals ---------------------------------
     h1 = _standard_rows(sets, sim["rho"])
-   
+
     return h1
 
 
@@ -432,7 +497,9 @@ def build_factorial_design(cfg: dict) -> tuple[list[dict], list[dict] | None]:
     return all_h1
 
 
-def build_factorial_design_multi(cfgs: list[dict]) -> tuple[list[dict], list[dict] | None]:
+def build_factorial_design_multi(
+    cfgs: list[dict],
+) -> tuple[list[dict], list[dict] | None]:
     """
     Build a combined factorial design from a list of independently loaded configs.
     Each cfg is resolved for its own single experiment type.
@@ -440,7 +507,7 @@ def build_factorial_design_multi(cfgs: list[dict]) -> tuple[list[dict], list[dic
     """
     all_h1 = []
     for cfg in cfgs:
-        h1 = build_factorial_design(cfg)           # existing single-type fn
+        h1 = build_factorial_design(cfg)  # existing single-type fn
         all_h1.extend(h1)
     return all_h1
 

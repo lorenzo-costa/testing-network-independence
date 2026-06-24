@@ -2,6 +2,7 @@ import numpy as np
 
 import sys
 import os
+
 sys.path.append(os.path.abspath(os.path.join(os.getcwd(), "..")))
 
 
@@ -27,14 +28,15 @@ class BaseMethod:
             "true_latent": (self.X, self.Z),
             "p-value": self.pvalue,
             "reject_null": self.reject_null,
-            "test_stat" : self.test_stat_estimate,
+            "test_stat": self.test_stat_estimate,
         }
         return results
 
+
 class BaseEstimationMethod(BaseMethod):
     """Base class for estimation methods"""
-    def __init__(self, rng=None, solver=None, k=None, 
-                 use_true_latent=False, **kwargs):
+
+    def __init__(self, rng=None, solver=None, k=None, use_true_latent=False, **kwargs):
         super().__init__()
 
         self.rng = rng if rng is not None else np.random.default_rng()
@@ -43,7 +45,7 @@ class BaseEstimationMethod(BaseMethod):
         self.solver = solver
         self.k = k
         self.use_true_latent = use_true_latent
-    
+
     def _process_input(self, data):
         """Utility function to extract and process input data, estimate latent
         positions if needed, and store results in the object."""
@@ -85,7 +87,9 @@ class BaseEstimationMethod(BaseMethod):
                         )
                     self.k = self.k
 
-                Zhat = self.solver(A, k=self.k, rng=self.rng)[0]  # 0 is the xhat, 1 are the evalues
+                Zhat = self.solver(A, k=self.k, rng=self.rng)[
+                    0
+                ]  # 0 is the xhat, 1 are the evalues
                 Xhat = self.solver(B, k=self.k, rng=self.rng)[0]
 
             else:
@@ -106,39 +110,42 @@ class BaseEstimationMethod(BaseMethod):
 
 class BasePermutationTest(BaseMethod):
     """Base class for permutation tests"""
-    def __init__(self,
-                 k=None,
-                npermutations=100,
-                alpha=0.05,
-                rng=None,
-                solver=None,
-                use_true_latent_x=False,
-                use_true_latent_z=False,
-                test_function=None,
-                permutation_type="latent",
-                **kwargs):
+
+    def __init__(
+        self,
+        k=None,
+        npermutations=100,
+        alpha=0.05,
+        rng=None,
+        solver=None,
+        use_true_latent_x=False,
+        use_true_latent_z=False,
+        test_function=None,
+        permutation_type="latent",
+        **kwargs,
+    ):
         super().__init__()
 
         self.rng = rng if rng is not None else np.random.default_rng()
-        
+
         if solver is None:
             raise ValueError("Solver must be provided")
-        
+
         self.k = k
         self.solver = solver
         self.npermutations = npermutations
         self.alpha = alpha
         self.use_true_latent_x = use_true_latent_x
         self.use_true_latent_z = use_true_latent_z
-        
+
         if test_function is None:
             raise ValueError("Test function must be provided")
         self.test_function = test_function
-        
+
         self.permutation_type = permutation_type
-        
+
         self.permutation_distribution = []
-    
+
     def _fit_permutation(self):
         """Get pvalue using permutation test"""
         # A technically not needed but looks cleaner
@@ -169,9 +176,9 @@ class BasePermutationTest(BaseMethod):
         self.pvalue = np.mean(
             np.abs(self.permutation_distribution) >= np.abs(self.test_stat_estimate)
         )
-        
+
         self.reject_null = bool(self.pvalue < self.alpha)
-    
+
     def _process_input(self, data):
         """Utility function to extract and process input data, estimate latent
         positions if needed, and store results in the object."""
@@ -180,7 +187,7 @@ class BasePermutationTest(BaseMethod):
             raise ValueError(
                 "Invalid data format. Expected a dictionary with keys 'A', 'B'."
             )
-        
+
         # split between using true latent for x or z
         if self.use_true_latent_x is True:
             if "X" not in data.keys():
@@ -202,13 +209,13 @@ class BasePermutationTest(BaseMethod):
                 X = data.get("X", None)
                 if self.k is None:
                     raise ValueError("Number of dimensions (k) must be specified")
-    
+
                 Xhat = self.solver(B, k=self.k, rng=self.rng)[0]
             else:
                 Xhat = data.get("estimated_X")
                 B = data.get("B", None)
                 X = data.get("X", None)
-        
+
         if self.use_true_latent_z is True:
             if "Z" not in data.keys():
                 raise ValueError(
@@ -229,9 +236,9 @@ class BasePermutationTest(BaseMethod):
                 # shape (i.e. the "true" value of k)
                 if self.k is None:
                     raise ValueError("Number of dimensions (k) must be provided.")
-                    
+
                 # 0 is the xhat, 1 are the eigenvalues
-                Zhat = self.solver(A, k=self.k, rng=self.rng)[0]  
+                Zhat = self.solver(A, k=self.k, rng=self.rng)[0]
             else:
                 Zhat = data.get("estimated_Z")
                 Z = data.get("Z", None)
@@ -243,4 +250,3 @@ class BasePermutationTest(BaseMethod):
         self.Z = Z
         self.Zhat = Zhat
         self.Xhat = Xhat
-    

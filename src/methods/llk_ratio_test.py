@@ -5,6 +5,7 @@ from ._base_class import BaseMethod
 
 import sys
 import os
+
 sys.path.append(os.path.abspath(os.path.join(os.getcwd(), "..")))
 
 
@@ -55,12 +56,12 @@ class LLKRatioTest(BaseMethod):
             self.rng = np.random.default_rng()
         else:
             self.rng = rng
-        
+
         self.k = k
 
         self.alpha = alpha
         self.approximation = approximation
-        
+
         if solver is None:
             raise ValueError("Solver must be provided")
         self.solver = solver
@@ -158,4 +159,3 @@ class LLKRatioTest(BaseMethod):
 
     def get_name(self):
         return "LLKRatioTest"
-

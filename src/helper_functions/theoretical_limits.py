@@ -2,23 +2,24 @@ import numpy as np
 
 
 def theoretical_rv_limit(
-        lambdas,
-        gammas,
-        kappa= 0.0,
-        A= None,
-        U =None,
-        V = None,
-        n_mc=200_000,
-        method="general",
-        rng=None,
-        tol=1e-12):
+    lambdas,
+    gammas,
+    kappa=0.0,
+    A=None,
+    U=None,
+    V=None,
+    n_mc=200_000,
+    method="general",
+    rng=None,
+    tol=1e-12,
+):
     """Sample from theoretical limit for RV distribution:
-    
+
     \frac{\sum_{r=1}^{pq}\lambda_{r}\chi^{2}_{1, ij}(\eta_{r})}
-    
+
     {\sqrt{ tr(\Sigma_{XX}^{2})tr(\Sigma_{ZZ}^{2}) }}
-    
-    
+
+
 
     Parameters
     ----------
@@ -142,7 +143,6 @@ def theoretical_rv_limit(
     return C * draws
 
 
-
 def dirichlet_cov(alpha: np.ndarray) -> np.ndarray:
     """
     Covariance matrix of Dirichlet(alpha).
@@ -157,18 +157,18 @@ def dirichlet_cov(alpha: np.ndarray) -> np.ndarray:
 
     alpha0 = np.sum(alpha)
 
-    Sigma = (
-        alpha0 * np.diag(alpha) - np.outer(alpha, alpha)
-    ) / (alpha0**2 * (alpha0 + 1.0))
+    Sigma = (alpha0 * np.diag(alpha) - np.outer(alpha, alpha)) / (
+        alpha0**2 * (alpha0 + 1.0)
+    )
 
     return Sigma
 
 
 def dirichlet_rv_limit_params(
-        alpha_x: np.ndarray,
-        alpha_z: np.ndarray,
-        drop_zero: bool = True,
-        tol: float = 1e-12,
+    alpha_x: np.ndarray,
+    alpha_z: np.ndarray,
+    drop_zero: bool = True,
+    tol: float = 1e-12,
 ):
     """
     Given Dirichlet parameters for independent blocks

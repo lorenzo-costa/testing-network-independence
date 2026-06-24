@@ -3,7 +3,12 @@ run_simulation_script.py  —  Main copula study
 Uses: config.yaml
 """
 
-from src.load_config import load_config, build_factorial_design, flatten_args_columns, build_factorial_design_multi
+from src.load_config import (
+    load_config,
+    build_factorial_design,
+    flatten_args_columns,
+    build_factorial_design_multi,
+)
 from src.helper_functions.simulation_functions import run_simulation
 
 import os
@@ -18,12 +23,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--config",
         type=str,
-        nargs="+",                      # one or more paths
+        nargs="+",  # one or more paths
         default=["config.yaml"],
         help="One or more YAML config files (one per experiment type).",
     )
     args = parser.parse_args()
-    
+
     cfgs = [load_config(p) for p in args.config]
     factorial = build_factorial_design_multi(cfgs)
     sim = cfgs[0]["simulation"]

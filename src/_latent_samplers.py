@@ -50,13 +50,11 @@ SIM_REGISTRY = {
     "multiplicative_noise": multiplicative_noise,
     "multimodal_independence": multimodal_independence,
 }
-   
-    
 
 
 class SBMGenerator:
     """Base class for generating from a SBM
-    
+
     Parameters
         ----------
         n : int
@@ -70,8 +68,8 @@ class SBMGenerator:
         community_assignment : _type_, optional
             _description_, by default None
         assignment_mode : str, optional
-            Specifies how community assignments are generated across networks. 
-            Options: 
+            Specifies how community assignments are generated across networks.
+            Options:
             - "random" (independent random assignment for each network) default
             - "correlated" (some nodes switch communities with some probability)
         prob_switch : float, optional
@@ -79,7 +77,7 @@ class SBMGenerator:
         distance_probs : _type_, optional
             _description_, by default None
     """
-    
+
     def __init__(
         self,
         n,
@@ -95,7 +93,6 @@ class SBMGenerator:
         distance_probs=None,
         **kwargs,
     ):
-
         self.n = n
         if community_assignment is not None:
             k = community_assignment[0].shape[1]
@@ -110,8 +107,8 @@ class SBMGenerator:
         self.distance_probs = distance_probs
         self.sparsity_bias = sparsity_bias
         self.assortativity = assortativity
-        
-        self.is_null = True 
+
+        self.is_null = True
 
     def _sample_community_assignment(self):
         assignment_z = np.zeros((self.n, self.kz))
@@ -132,19 +129,17 @@ class SBMGenerator:
             if n_switching_nodes > 0:
                 shift = self.rng.integers(1, self.kx, size=n_switching_nodes)
                 new_assignment = idxs_z.copy()
-                new_assignment[switch_mask] = (
-                    idxs_z[switch_mask] + shift
-                ) % self.kz
-            
+                new_assignment[switch_mask] = (idxs_z[switch_mask] + shift) % self.kz
+
             assignment_x[np.arange(self.n), new_assignment] = 1
-            
+
             self.is_null = False
         else:
             raise ValueError(f"Unknown assignment_mode: {self.assignment_mode}")
 
         self.assignment_z = assignment_z
         self.assignment_x = assignment_x
-        
+
         return assignment_z, assignment_x
 
     def _generate_probability_matrix(self, k, assortativity=None):
@@ -173,31 +168,37 @@ class SBMGenerator:
         elif self.block_probs_type == "identical":
             # Generate one matrix and use it for all networks
             if self.kx != self.kz:
-                raise ValueError("For 'identical' block_probs_type, kx and kz must be the same.")
+                raise ValueError(
+                    "For 'identical' block_probs_type, kx and kz must be the same."
+                )
             probs_z = self._generate_probability_matrix(self.kx)
             probs_x = probs_z.copy()
 
-            self.is_null = False  
+            self.is_null = False
 
         elif self.block_probs_type == "correlated":
             if self.kx != self.kz:
-                raise ValueError("For 'correlated' block_probs_type, kx and kz must be the same.")
+                raise ValueError(
+                    "For 'correlated' block_probs_type, kx and kz must be the same."
+                )
             probs_z = self._generate_probability_matrix(self.kz)
             for i in range(1, self.num_networks):
                 # Introduce some correlation by adding noise
                 noise = self.rng.normal(loc=0.0, scale=0.1, size=probs_z.shape)
                 probs_x.append(np.clip(probs_z + noise, 0.0, 1.0))
-            
+
             self.is_null = False
-            
+
         elif self.block_probs_type == "switched":
             if self.kx != self.kz:
-                raise ValueError("For 'switched' block_probs_type, kx and kz must be the same.")
+                raise ValueError(
+                    "For 'switched' block_probs_type, kx and kz must be the same."
+                )
             probs_z = self._generate_probability_matrix(self.kz, self.assortativity)
             probs_x = self._generate_probability_matrix(self.kx, 1 - self.assortativity)
 
             self.is_null = False
-            
+
         elif self.block_probs_type == "distance":
             raise NotImplementedError
 
@@ -211,7 +212,9 @@ class SBMGenerator:
 
     def _sample_sbm_latent(self):
         if self.community_assignment is None:
-            community_assignment_z, community_assignment_x = self._sample_community_assignment()
+            community_assignment_z, community_assignment_x = (
+                self._sample_community_assignment()
+            )
             self.community_assignment_z = community_assignment_z
             self.community_assignment_x = community_assignment_x
         if self.block_probs is None:
@@ -219,12 +222,17 @@ class SBMGenerator:
             self.block_probs_z = block_probs_z
             self.block_probs_x = block_probs_x
 
-        return self.community_assignment_z, self.community_assignment_x, self.block_probs_z, self.block_probs_x
+        return (
+            self.community_assignment_z,
+            self.community_assignment_x,
+            self.block_probs_z,
+            self.block_probs_x,
+        )
 
 
 class CopulaGenerator:
     """Base class for sampling from a copula-based DGP
-    
+
     Parameters
     ----------
     n : int
@@ -236,64 +244,74 @@ class CopulaGenerator:
     marginals : dict or str
         Marginal distributions for the latent variables. Can be a string (e.g. 'gaussian') or a dict with 'x' and 'z' keys.
     copula_model : str
-        Type of copula to use for generating dependence structure. 
+        Type of copula to use for generating dependence structure.
         Options: 'gaussian', 'student_t', 'clayton', 'rotated_clayton', 'gumbel', 'frank', 'mixture_uniform'.
     copula_params : dict
         Additional parameters for the copula model (e.g. df for student_t, weights and correlations for mixture_uniform).
     column_covariance : np.ndarray
-        Covariance matrix for the columns of the latent variables. Used in Guassian, Student-t, 
+        Covariance matrix for the columns of the latent variables. Used in Guassian, Student-t,
         and mixture_uniform copulas to induce column-wise dependence.
     rng : np.random.Generator
         Random number generator for reproducibility.
     """
-    def __init__(self, 
-                 n,
-                 k,
-                 rho=0,
-                 marginals=None,
-                 copula_model=None,
-                 copula_params=None,
-                 column_covariance=None,
-                 center_latent=True,
-                 # student_df=5,
-                 # weights=None,
-                 # correlations=None,
-                 rng=None,
-                 **kwargs,
-                 ):
-        
+
+    def __init__(
+        self,
+        n,
+        k,
+        rho=0,
+        marginals=None,
+        copula_model=None,
+        copula_params=None,
+        column_covariance=None,
+        center_latent=True,
+        # student_df=5,
+        # weights=None,
+        # correlations=None,
+        rng=None,
+        **kwargs,
+    ):
         self.n = n
         self.k = k
         self.rho = rho
         self.copula_model = copula_model
         self.copula_params = copula_params if copula_params is not None else {}
-        self.column_covariance = column_covariance if column_covariance is not None else np.eye(k)
+        self.column_covariance = (
+            column_covariance if column_covariance is not None else np.eye(k)
+        )
         self.center_latent = center_latent
-        
+
         self._convert_marginals(marginals)
-        
+
         self.rng = rng or np.random.default_rng()
-        
+
         self._validate_args_copula()
-        
+
         self.is_null = True
-    
+
     def _validate_args_copula(self):
         if self.copula_model == "student_t" and "df" not in self.copula_params:
             raise ValueError("df parameter must be provided for student_t copula")
         if self.copula_model == "mixture_uniform":
-            if "weights" not in self.copula_params or "correlations" not in self.copula_params:
-                raise ValueError("weights and correlations must be provided for mixture_uniform copula")
-            if len(self.copula_params["weights"]) != len(self.copula_params["correlations"]):
-                raise ValueError("weights and correlations must have the same length for mixture_uniform copula")
+            if (
+                "weights" not in self.copula_params
+                or "correlations" not in self.copula_params
+            ):
+                raise ValueError(
+                    "weights and correlations must be provided for mixture_uniform copula"
+                )
+            if len(self.copula_params["weights"]) != len(
+                self.copula_params["correlations"]
+            ):
+                raise ValueError(
+                    "weights and correlations must have the same length for mixture_uniform copula"
+                )
             if not np.isclose(sum(self.copula_params["weights"]), 1.0):
                 raise ValueError("weights must sum to 1 for mixture_uniform copula")
-        
+
         if not self.column_covariance.shape == (self.k, self.k):
-                raise ValueError(
-                    f"column_covariance must be a {self.k}x{self.k} matrix."
-                )    
-            
+            raise ValueError(f"column_covariance must be a {self.k}x{self.k} matrix.")
+
     def _generate_copula_uniforms(self):
         """
         Generates Uniform(0,1) random variables (u_z, u_x)
@@ -322,14 +340,14 @@ class CopulaGenerator:
             # Gaussian CDF to get Uniforms
             u_z = ndtr(z)
             u_x = ndtr(x)
-            
+
             if self.rho > 0:
                 self.is_null = False
 
         elif self.copula_model == "student_t":
             # 1. Generate Correlated Gaussians
             df = self.copula_params["df"]
-            
+
             mean = np.zeros(self.k)
             g_z = self.rng.multivariate_normal(
                 mean=mean, cov=self.column_covariance, size=self.n
@@ -350,7 +368,7 @@ class CopulaGenerator:
             # 4. Apply t-distribution CDF to get Uniforms
             u_z = stats.t.cdf(t_z, df=df)
             u_x = stats.t.cdf(t_x, df=df)
-            
+
             self.is_null = False
 
         elif self.copula_model == "clayton":
@@ -375,25 +393,23 @@ class CopulaGenerator:
             u_z = (1 + e_z / gamma_sample) ** (-1 / theta)
             u_x = (1 + e_x / gamma_sample) ** (-1 / theta)
             self.is_null = False
-        
-        elif self.copula_model == 'full_clayton':
-            # multivariate clayton 
+
+        elif self.copula_model == "full_clayton":
+            # multivariate clayton
             t_kendall = 2 / np.pi * np.arcsin(self.rho)
             theta = 2 * t_kendall / (1 - t_kendall)
-            
-            gamma_sample = self.rng.gamma(
-            shape=1 / theta, scale=1.0, size=(self.n, 1)
-            )
+
+            gamma_sample = self.rng.gamma(shape=1 / theta, scale=1.0, size=(self.n, 1))
 
             e = self.rng.exponential(scale=1.0, size=(self.n, 2 * self.k))
 
             u = (1 + e / gamma_sample) ** (-1 / theta)
 
-            u_z = u[:, :self.k]
-            u_x = u[:, self.k:]
-            
+            u_z = u[:, : self.k]
+            u_x = u[:, self.k :]
+
             self.is_null = False
-            
+
         elif self.copula_model == "rotated_clayton":
             # Generate standard Clayton
             t_kendall = 2 / np.pi * np.arcsin(self.rho)
@@ -411,7 +427,7 @@ class CopulaGenerator:
             # 180 degree flip
             u_z = 1.0 - u_z_raw
             u_x = 1.0 - u_x_raw
-            
+
             self.is_null = False
 
         elif self.copula_model == "gumbel":
@@ -442,7 +458,7 @@ class CopulaGenerator:
             # Formula: u = exp( - (E / S)^alpha )
             u_z = np.exp(-((E1 / S) ** alpha))
             u_x = np.exp(-((E2 / S) ** alpha))
-            
+
             self.is_null = False
 
         elif self.copula_model == "frank":
@@ -473,19 +489,17 @@ class CopulaGenerator:
             arg = np.maximum(arg, 1e-10)
 
             u_x = -1.0 / theta * np.log(arg)
-            
+
             self.is_null = False
 
         elif self.copula_model == "mixture_uniform":
             weights = self.copula_params["weights"]
             correlations = self.copula_params["correlations"]
-            
+
             # 1. Assign each sample (row) to a specific mixture component
             # This determines which 'rho' each row will use
-            
-            component_indices = self.rng.choice(
-                len(weights), size=self.n, p=weights
-            )
+
+            component_indices = self.rng.choice(len(weights), size=self.n, p=weights)
 
             # Initialize the full (n, k) latent Gaussian arrays
             z_full = np.zeros((self.n, self.k))
@@ -524,7 +538,7 @@ class CopulaGenerator:
             # 3. Apply Gaussian CDF to the completed arrays to get Uniform margins
             u_z = ndtr(z_full)
             u_x = ndtr(x_full)
-            
+
             self.is_null = False
 
         else:
@@ -579,25 +593,25 @@ class CopulaGenerator:
             return func(**kwargs) if kwargs else func(*args)
 
         # 3. Apply to both variables
-        self.marginal_x = parse_dist(marginals['x'])
-        self.marginal_z = parse_dist(marginals['z'])
-    
+        self.marginal_x = parse_dist(marginals["x"])
+        self.marginal_z = parse_dist(marginals["z"])
+
     def _sample_latent_copula(self):
         u_z, u_x = self._generate_copula_uniforms()
         Z = self.marginal_z.ppf(u_z)
         X = self.marginal_x.ppf(u_x)
-        
+
         # ensure no NaNs or infs from bad ppf inputs (can happen with extreme correlations and certain marginals)
         while (not np.isfinite(X).all()) or (not np.isfinite(Z).all()):
             u_z, u_x = self._generate_copula_uniforms()
             Z = self.marginal_z.ppf(u_z)
             X = self.marginal_x.ppf(u_x)
-        
+
         if self.center_latent:
             X = X - X.mean(axis=0)
             Z = Z - Z.mean(axis=0)
         return Z, X
-    
+
     def get_name(self):
         try:
             marginal_x_name = self.marginal_x.dist.name
@@ -605,38 +619,40 @@ class CopulaGenerator:
         except AttributeError:
             marginal_x_name = str(self.marginal_x)
             marginal_z_name = str(self.marginal_z)
-            
+
         return f"copula_{self.copula_model}_rho{self.rho}_marginals_{marginal_x_name}_{marginal_z_name}"
 
 
 class HyppoSimSampler:
-    def __init__(self, 
-                 n,
-                 k,
-                 sim_name=None, 
-                 sim_kwargs=None, 
-                 center_latent=True,
-                 make_rdpg=None,
-                 rng=None,
-                 **kwargs,
-                 ):
-        
+    def __init__(
+        self,
+        n,
+        k,
+        sim_name=None,
+        sim_kwargs=None,
+        center_latent=True,
+        make_rdpg=None,
+        rng=None,
+        **kwargs,
+    ):
         self.n = n
         self.k = k
         self.center_latent = center_latent
         self.make_rdpg = make_rdpg
-        
+
         if (sim_name is not None) and (sim_name not in SIM_REGISTRY):
-            raise ValueError(f"Unknown sim_name '{sim_name}'. Available: {sorted(SIM_REGISTRY)}")
+            raise ValueError(
+                f"Unknown sim_name '{sim_name}'. Available: {sorted(SIM_REGISTRY)}"
+            )
         self.sim_name = sim_name
         self.sim_kwargs = sim_kwargs or {}
         self.rng = rng or np.random.default_rng()
-        
-        if sim_name in  ["uncorrelated_bernoulli", "multimodal_independence"]:
+
+        if sim_name in ["uncorrelated_bernoulli", "multimodal_independence"]:
             self.is_null = True
         else:
             self.is_null = False
-    
+
     def _make_rdpg(self, Z, X):
         """Normalise Z and X such that inner prods are in [0, 1]"""
         if self.make_rdpg == "max":
@@ -659,7 +675,7 @@ class HyppoSimSampler:
                 + 1e-15
             )
             Z = Z / np.sqrt(Z.shape[1])
-            
+
         elif self.make_rdpg == "hypersphere":
             # Map latent values to positive orthant directions
             V_X = ndtr(X)
@@ -682,9 +698,9 @@ class HyppoSimSampler:
             Z = r_Z * dir_Z
         else:
             raise Exception(f"Unknown rdpg option: {self.make_rdpg}")
-        
+
         return Z, X
-    
+
     def _sample_latent_hyppo(self):
         """
         Use one of the simulation functions to produce (X, Z).
@@ -701,11 +717,11 @@ class HyppoSimSampler:
         If the sim returns something wider than k we trim to the first k columns.
         """
         sim_fn = SIM_REGISTRY[self.sim_name]
-        
+
         raw_x, raw_z = sim_fn(n=self.n, p=self.k, **self.sim_kwargs)
         X = self._align_shape(np.asarray(raw_x, dtype=float))
         Z = self._align_shape(np.asarray(raw_z, dtype=float))
-        
+
         while (not np.isfinite(X).all()) or (not np.isfinite(Z).all()):
             raw_x, raw_z = sim_fn(n=self.n, p=self.k, **self.sim_kwargs)
             X = self._align_shape(np.asarray(raw_x, dtype=float))
@@ -714,7 +730,7 @@ class HyppoSimSampler:
         if self.center_latent:
             X = X - X.mean(axis=0)
             Z = Z - Z.mean(axis=0)
-        
+
         if self.make_rdpg is not None:
             Z, X = self._make_rdpg(Z, X)
 
@@ -742,7 +758,7 @@ class HyppoSimSampler:
 class OrthogonalSubspaceSampler:
     """Sampler for generating X and Z with some shared + individual structure.
     Matrices are generated to be orthogonal to each other to ensure identifiability.
-    
+
     Parameters
     ----------
     n : int
@@ -760,31 +776,33 @@ class OrthogonalSubspaceSampler:
     rng : np.random.Generator
         Random number generator for reproducibility.
     """
-    def __init__(self, 
-                 n, 
-                 k, 
-                 dim_common, 
-                 shared_latent_type=None, 
-                 center_latent=True, 
-                 rng=None,
-                 **kwargs,
-                 ):
+
+    def __init__(
+        self,
+        n,
+        k,
+        dim_common,
+        shared_latent_type=None,
+        center_latent=True,
+        rng=None,
+        **kwargs,
+    ):
         self.n = n
         self.k = k
         self.dim_common = dim_common
         self.shared_latent_type = shared_latent_type
         self.center_latent = center_latent
         self.rng = rng or np.random.default_rng()
-        
+
         self.is_null = False
-    
+
     def _sample_latent_orthogonal(self):
-        """Sample X and Z with some shared + individual structure. Matrices are 
+        """Sample X and Z with some shared + individual structure. Matrices are
         generated to be orthogonal to each other to ensure identifiability."""
-        
+
         if self.dim_common > self.k:
             raise ValueError("dim_common must be specified less than k.")
-        
+
         dim_common = self.dim_common
         dim_individual = self.k - dim_common
 
@@ -823,14 +841,14 @@ class OrthogonalSubspaceSampler:
             raise ValueError(f"Unknown shared_latent_type: {self.shared_latent_type}")
 
         return Z, X
-    
+
     def get_name(self):
         return f"OrthogonalSubspace_{self.shared_latent_type}"
 
 
 class RDPGGenerator:
     """Base class for sampling continuous latent positions for an RDPG.
-    
+
     Parameters
     ----------
     n : int
@@ -845,11 +863,19 @@ class RDPGGenerator:
     rng : np.random.Generator, optional
         Random number generator for reproducibility.
     """
-    def __init__(self, n, k, rho=0, rdpg_distr=None, 
-                 rdpg_params=None, rng=None,
-                 functional_dependence=None,
-                 noise_variance=0.1,
-                 **kwargs):
+
+    def __init__(
+        self,
+        n,
+        k,
+        rho=0,
+        rdpg_distr=None,
+        rdpg_params=None,
+        rng=None,
+        functional_dependence=None,
+        noise_variance=0.1,
+        **kwargs,
+    ):
         self.n = n
         self.k = k
         self.rho = rho
@@ -862,7 +888,7 @@ class RDPGGenerator:
 
     def _sample_latent_rdpg(self):
         """
-        Samples X and Z matrices for an RDPG ensuring that 
+        Samples X and Z matrices for an RDPG ensuring that
         the inner products of any two vectors are in [0, 1].
         """
         if self.rdpg_distr == "dirichlet":
@@ -876,36 +902,39 @@ class RDPGGenerator:
             Z = self.rng.dirichlet(alpha_z, size=self.n)
 
         elif self.rdpg_distr == "uniform_ball":
+
             def sample_positive_ball():
                 # sample from standard normal, normalize to sphere
                 norm_samples = self.rng.normal(size=(self.n, self.k))
                 radii = np.linalg.norm(norm_samples, axis=1, keepdims=True)
                 sphere_samples = norm_samples / radii
-                
+
                 # Scale radially to fill the interior of the k-dimensional ball
                 u = self.rng.uniform(size=(self.n, 1))
                 ball_samples = sphere_samples * (u ** (1.0 / self.k))
-                
+
                 # Take absolute value to constrain to the positive orthant.
                 # L2 norm <= 1 and non-negative coordinates guarantee inner products in [0, 1].
                 return np.abs(ball_samples)
-            
+
             X = sample_positive_ball()
             Z = sample_positive_ball()
 
         elif self.rdpg_distr == "truncated_normal":
             loc = self.rdpg_params.get("loc", 0.0)
             scale = self.rdpg_params.get("scale", 1.0)
-            
+
             def sample_trunc_norm():
-                # Sample absolute normal 
-                raw = np.abs(self.rng.normal(loc=loc, scale=scale, size=(self.n, self.k)))                
-                
+                # Sample absolute normal
+                raw = np.abs(
+                    self.rng.normal(loc=loc, scale=scale, size=(self.n, self.k))
+                )
+
                 # Scale down only the vectors that exceed a norm of 1
                 norms = np.linalg.norm(raw, axis=1, keepdims=True)
                 raw = np.where(norms > 1.0, raw / norms, raw)
                 return raw
-            
+
             X = sample_trunc_norm()
             Z = sample_trunc_norm()
 
@@ -917,23 +946,26 @@ class RDPGGenerator:
             self.is_null = False
         if self.functional_dependence is not None:
             if self.functional_dependence == "quadratic":
-                print('using quadratic, yeee')
+                print("using quadratic, yeee")
                 X2 = X**2
                 norms = np.linalg.norm(X2, axis=1, keepdims=True)
                 X2 = np.where(norms > 1, X2 / norms, X2)
                 Z = self.rho * X2 + (1 - self.rho) * Z
             else:
-                raise ValueError(f"Unknown functional_dependence: {self.functional_dependence}")
+                raise ValueError(
+                    f"Unknown functional_dependence: {self.functional_dependence}"
+                )
             self.is_null = False
-        
+
         return Z, X
-    
+
     def get_name(self):
         return f"RDPG_{self.rdpg_distr}"
 
+
 class LatentSampler:
     """Base class for sampling latent variables
-    
+
     Arguments
     ----------
     n : int
@@ -944,12 +976,12 @@ class LatentSampler:
         Type of copula to use for generating dependence structure. If not None, function sample from Copula
     hyppo_sim : str
         Name of a simulation function from hyppo package to use for generating latent variables instead of the copula path.
-        If not None function samples from specified sim function. Takes precedence over copula_model if both are provided. 
+        If not None function samples from specified sim function. Takes precedence over copula_model if both are provided.
     dim_common : int
-        If not None X and Z are sampled with some shared + individual structure. 
+        If not None X and Z are sampled with some shared + individual structure.
         This specifies the dimensionality of the shared subspace.
     block_probs_type : str
-        If dim_common is not None, this specifies the type of shared latent structure. 
+        If dim_common is not None, this specifies the type of shared latent structure.
         Options: 'gaussian' (shared latent positions drawn from Gaussian) or 'one_hot' (shared latent positions are one-hot vectors indicating group membership).
     rng : np.random.Generator
         Random number generator for reproducibility.
@@ -974,59 +1006,89 @@ class LatentSampler:
         self.rng = rng
         self.n = n
         self.k = k
-        
+
         if latent_sim is not None:
             if copula_model is not None:
-                raise Warning("Both latent_sim and copula_model specified. copula_model will be ignored.")
+                raise Warning(
+                    "Both latent_sim and copula_model specified. copula_model will be ignored."
+                )
             if dim_common is not None:
-                raise Warning("Both latent_sim and dim_common specified. dim_common will be ignored.")
+                raise Warning(
+                    "Both latent_sim and dim_common specified. dim_common will be ignored."
+                )
             if block_probs_type is not None:
-                raise Warning("Both latent_sim and block_probs_type specified. block_probs_type will be ignored.")
+                raise Warning(
+                    "Both latent_sim and block_probs_type specified. block_probs_type will be ignored."
+                )
             if rdpg_distr is not None:
-                raise Warning("Both latent_sim and rdpg_distr specified. rdpg_distr will be ignored.")
-            
-            latent_sampler = HyppoSimSampler(n=n, k=k, sim_name=latent_sim, rng=rng, **kwargs)
-       
+                raise Warning(
+                    "Both latent_sim and rdpg_distr specified. rdpg_distr will be ignored."
+                )
+
+            latent_sampler = HyppoSimSampler(
+                n=n, k=k, sim_name=latent_sim, rng=rng, **kwargs
+            )
+
         elif dim_common is not None:
             if copula_model is not None:
-                raise Warning("Both dim_common and copula_model specified. copula_model will be ignored.")
+                raise Warning(
+                    "Both dim_common and copula_model specified. copula_model will be ignored."
+                )
             if block_probs_type is not None:
-                raise Warning("Both dim_common and block_probs_type specified. block_probs_type will be ignored.")
+                raise Warning(
+                    "Both dim_common and block_probs_type specified. block_probs_type will be ignored."
+                )
             if rdpg_distr is not None:
-                raise Warning("Both dim_common and rdpg_distr specified. rdpg_distr will be ignored.")
-            
-            latent_sampler = OrthogonalSubspaceSampler(n=n, k=k, dim_common=dim_common, rng=rng, **kwargs)
-        
+                raise Warning(
+                    "Both dim_common and rdpg_distr specified. rdpg_distr will be ignored."
+                )
+
+            latent_sampler = OrthogonalSubspaceSampler(
+                n=n, k=k, dim_common=dim_common, rng=rng, **kwargs
+            )
+
         elif block_probs_type is not None:
             if copula_model is not None:
-                raise Warning("Both block_probs_type and copula_model specified. copula_model will be ignored.")
+                raise Warning(
+                    "Both block_probs_type and copula_model specified. copula_model will be ignored."
+                )
             if rdpg_distr is not None:
-                raise Warning("Both block_probs_type and rdpg_distr specified. rdpg_distr will be ignored.")
-            
-            latent_sampler = SBMGenerator(n=n, k=k, rng=rng, block_probs_type=block_probs_type, **kwargs)
-        
+                raise Warning(
+                    "Both block_probs_type and rdpg_distr specified. rdpg_distr will be ignored."
+                )
+
+            latent_sampler = SBMGenerator(
+                n=n, k=k, rng=rng, block_probs_type=block_probs_type, **kwargs
+            )
+
         elif rdpg_distr is not None:
             if copula_model is not None:
-                raise Warning("Both rdpg_distr and copula_model specified. copula_model will be ignored.")
-            
-            latent_sampler = RDPGGenerator(n=n, k=k, rng=rng, rdpg_distr=rdpg_distr, **kwargs)
-        
+                raise Warning(
+                    "Both rdpg_distr and copula_model specified. copula_model will be ignored."
+                )
+
+            latent_sampler = RDPGGenerator(
+                n=n, k=k, rng=rng, rdpg_distr=rdpg_distr, **kwargs
+            )
+
         else:
-            latent_sampler = CopulaGenerator(n=n, k=k, rng=rng, copula_model=copula_model, **kwargs)
-            
+            latent_sampler = CopulaGenerator(
+                n=n, k=k, rng=rng, copula_model=copula_model, **kwargs
+            )
+
         self.latent_sampler = latent_sampler
         self.sampler_name = latent_sampler.get_name()
-        
+
         self.copula_model = copula_model
         self.latent_sim = latent_sim
         self.dim_common = dim_common
         self.block_probs_type = block_probs_type
         self.rdpg_distr = rdpg_distr
-        
+
         self.force_x_single_dimension = force_x_single_dimension
-        
+
     def _sample_latent(self):
-        """Return X, Z each of shape (n, k). 
+        """Return X, Z each of shape (n, k).
         Hierarchy of generation is:
         - if hyppo_sim is specified, use that to generate (X, Z) directly.
         - else if dim_common is specified, generate X and Z with some shared + individual structure.
@@ -1034,23 +1096,30 @@ class LatentSampler:
         - else use the copula-based generation with the specified marginals and dependence structure.
         """
         Z, X = None, None
-        
+
         if self.latent_sim is not None:
             Z, X = self.latent_sampler._sample_latent_hyppo()
         elif self.dim_common is not None:
             Z, X = self.latent_sampler._sample_latent_orthogonal()
         elif self.block_probs_type is not None:
-            community_assignment_z, community_assignment_x, probs_matrix_z, probs_matrix_x = self.latent_sampler._sample_sbm_latent()
+            (
+                community_assignment_z,
+                community_assignment_x,
+                probs_matrix_z,
+                probs_matrix_x,
+            ) = self.latent_sampler._sample_sbm_latent()
             X = community_assignment_x @ probs_matrix_x**0.5
-            Z = community_assignment_z @ probs_matrix_z**0.5            
+            Z = community_assignment_z @ probs_matrix_z**0.5
         elif self.rdpg_distr is not None:
             Z, X = self.latent_sampler._sample_latent_rdpg()
         elif self.copula_model is not None:
             Z, X = self.latent_sampler._sample_latent_copula()
         else:
-            raise ValueError("No valid latent generation method specified. Please provide one of: latent_sim, dim_common, block_probs_type, or copula_model.")
-        
+            raise ValueError(
+                "No valid latent generation method specified. Please provide one of: latent_sim, dim_common, block_probs_type, or copula_model."
+            )
+
         if self.force_x_single_dimension:
             X = X[:, 0:1]  # Keep only the first dimension of X
-        
+
         return Z, X

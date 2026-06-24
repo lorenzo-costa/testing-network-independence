@@ -734,7 +734,7 @@ def plot_histogram(x_axis, y_axis, **kwargs):
         Linestyle of the theoretical KDE curve, by default ``'--'``.
     """
     data = kwargs.pop("data")
-    _factors = kwargs.pop("factors", None)          # accepted, not used here
+    _factors = kwargs.pop("factors", None)  # accepted, not used here
     colors = kwargs.pop("colors", None)
     linestyles = kwargs.pop("linestyles", None)
     hist_group = kwargs.pop("hist_group", None)

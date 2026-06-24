@@ -1,5 +1,5 @@
-
 from ._base_class import BaseEstimationMethod
+
 
 class FitIndependent(BaseEstimationMethod):
     """Method to fit ase independently to each network
@@ -16,14 +16,8 @@ class FitIndependent(BaseEstimationMethod):
         Latent positions for second network
     """
 
-    def __init__(self, 
-                 k=None,
-                 rng=None, 
-                 solver=None, 
-                 **kwargs):
-        
+    def __init__(self, k=None, rng=None, solver=None, **kwargs):
         super().__init__(k=k, rng=rng, solver=solver)
-    
 
     def fit(self, data, **kwargs):
         """Estimate latent positions independently
@@ -36,7 +30,7 @@ class FitIndependent(BaseEstimationMethod):
         """
 
         self._process_input(data)
-        
+
         # For consisetncy with test methods
         self.pvalue = None
         self.reject_null = None

@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.linalg import blas, norm
 
+
 # ---------------------------------------------------------------------------
 # error functions
 # ---------------------------------------------------------------------------
@@ -21,6 +22,7 @@ def relative_frobenius_norm(X, Xhat, inplace=True):
     diff = np.copy(Xhat_flat)
     blas.daxpy(X_flat, diff, a=-1.0)
     return blas.dnrm2(diff) / den
+
 
 def relative_nuclear_error(X, Xhat):
     """
