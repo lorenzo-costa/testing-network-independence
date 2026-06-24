@@ -48,7 +48,7 @@ class CopulaGenerator:
         if kx is None:
             kx = k
             
-        self.k = k
+        self.kz = k
         self.kx = kx
         self.rho = rho
         self.copula_model = copula_model
@@ -99,7 +99,7 @@ class CopulaGenerator:
         if not self.column_covariance_x.shape == (self.kx, self.kx):
             raise ValueError(f"column_covariance_x must be a {self.kx}x{self.kx} matrix.")
     
-    def _generate_gaussian(self):
+    def _generate_gaussian(self, rho, size):
         """Helper function for generate_copula_uniforms to generate correlated Gaussian,
         with Z, X possibly having diff dimensions.
         
@@ -112,38 +112,42 @@ class CopulaGenerator:
         within Z and X (i.e. column covariance)
         
         """
-        
+
         Sigma_z = self.column_covariance_z
         Sigma_x = self.column_covariance_x
 
         if self.cross_covariance is None:
+            Lz = np.linalg.cholesky(Sigma_z)
+            Lx = np.linalg.cholesky(Sigma_x)
+            
             def _rectangular_identity(kz, kx):
                 R = np.zeros((kz, kx))
                 m = min(kz, kx)
                 R[np.arange(m), np.arange(m)] = 1.0
                 return R
-            
-            Lz = np.linalg.cholesky(Sigma_z)
-            Lx = np.linalg.cholesky(Sigma_x)
 
-            R = _rectangular_identity(self.kz, self.kx)
+            R = self.copula_params.get(
+                "cross_correlation_template",
+                _rectangular_identity(self.kz, self.kx),
+            )
 
-            Sigma_zx = self.rho * Lz @ R @ Lx.T
+            Sigma_zx = rho * Lz @ R @ Lx.T
         else:
+            # As written, this does not vary across mixture components.
             Sigma_zx = self.cross_covariance
 
         Sigma = np.block([
             [Sigma_z,    Sigma_zx],
             [Sigma_zx.T, Sigma_x ],
         ])
-
+        
         joint = self.rng.multivariate_normal(
             mean=np.zeros(self.kz + self.kx),
             cov=Sigma,
-            size=self.n,
+            size=size,
             check_valid="warn",
         )
-
+        
         return joint
 
     def _generate_copula_uniforms(self):
@@ -156,7 +160,7 @@ class CopulaGenerator:
             raise ValueError("rho must be passed for Copula model")
 
         if self.copula_model == "gaussian":
-            jj = self._generate_gaussian()
+            jj = self._generate_gaussian(rho=self.rho, size=self.n)
             z = jj[:, : self.kz]
             x = jj[:, self.kz :]
             
@@ -166,7 +170,7 @@ class CopulaGenerator:
         elif self.copula_model == "student_t":
             # Generate Gaussiana and scale by chi-sq
             
-            jj = self._generate_gaussian()
+            jj = self._generate_gaussian(rho=self.rho, size=self.n)
             g_z = jj[:, : self.kz]
             g_x = jj[:, self.kz :]
 
@@ -180,92 +184,108 @@ class CopulaGenerator:
             u_x = stats.t.cdf(t_x, df=df)
 
             self.is_null = False
-
+        
         elif self.copula_model == "clayton":
             # Cook & Johnson (1981) generator for Clayton
             # param is theta > 0. Larger theta = higher correlation.
             # covert rho to theta for consistency
-
             t_kendall = 2 / np.pi * np.arcsin(self.rho)
             theta = 2 * t_kendall / (1 - t_kendall)
 
-            # Generate Exponentials
-            e_z = self.rng.exponential(scale=1.0, size=(self.n, self.k))
-            e_x = self.rng.exponential(scale=1.0, size=(self.n, self.k))
+            gamma_sample = self.rng.gamma(shape=1 / theta, scale=1.0, size=(self.n, 1))
 
-            # Generate Gamma
-            # Shape (n, 1) so dependence is tied within the pair generation
+            d = self.kz + self.kx
+            
+            e = self.rng.exponential(scale=1.0, size=(self.n, d))
+
+            u = (1 + e / gamma_sample) ** (-1 / theta)
+
+            u_z = u[:, : self.kz]
+            u_x = u[:, self.kz :]
+
+            self.is_null = False
+
+        elif self.copula_model == "single_clayton":
+            # difference with previous fomrulation is that correlation is only 
+            # for columns pairs (i.e. Z_j independence X_i for i neq j)
+            t_kendall = 2 / np.pi * np.arcsin(self.rho)
+            theta = 2 * t_kendall / (1 - t_kendall)
+            
+            if self.kz != self.kx:
+                raise ValueError("single_clayton copula requires kz == kx")
+
+            e_z = self.rng.exponential(scale=1.0, size=(self.n, self.kz))
+            e_x = self.rng.exponential(scale=1.0, size=(self.n, self.kx))
+
             gamma_sample = self.rng.gamma(
-                shape=1 / theta, scale=1.0, size=(self.n, self.k)
+                shape=1 / theta, scale=1.0, size=(self.n, self.kz)
             )
 
             # 3. Transform
             u_z = (1 + e_z / gamma_sample) ** (-1 / theta)
             u_x = (1 + e_x / gamma_sample) ** (-1 / theta)
             self.is_null = False
-
-        elif self.copula_model == "full_clayton":
-            # multivariate clayton
-            t_kendall = 2 / np.pi * np.arcsin(self.rho)
-            theta = 2 * t_kendall / (1 - t_kendall)
-
-            gamma_sample = self.rng.gamma(shape=1 / theta, scale=1.0, size=(self.n, 1))
-
-            e = self.rng.exponential(scale=1.0, size=(self.n, 2 * self.k))
-
-            u = (1 + e / gamma_sample) ** (-1 / theta)
-
-            u_z = u[:, : self.k]
-            u_x = u[:, self.k :]
-
-            self.is_null = False
-
-        elif self.copula_model == "rotated_clayton":
-            # Generate standard Clayton
-            t_kendall = 2 / np.pi * np.arcsin(self.rho)
-            theta = 2 * t_kendall / (1 - t_kendall)
-
-            e_z = self.rng.exponential(scale=1.0, size=(self.n, self.k))
-            e_x = self.rng.exponential(scale=1.0, size=(self.n, self.k))
-            gamma_sample = self.rng.gamma(
-                shape=1 / theta, scale=1.0, size=(self.n, self.k)
-            )
-
-            u_z_raw = (1 + e_z / gamma_sample) ** (-1 / theta)
-            u_x_raw = (1 + e_x / gamma_sample) ** (-1 / theta)
-
-            # 180 degree flip
-            u_z = 1.0 - u_z_raw
-            u_x = 1.0 - u_x_raw
-
-            self.is_null = False
-
+        
         elif self.copula_model == "gumbel":
+            # Generate from Gumbel–Hougaard using Marshall–Olkin-style shared-frailty 
+            # sampler where we draw:
+            # S: from positive stable distribution with param 1/theta
+            # E: iid exp(1)
+            # set U_i = exp( - (E_i / S) ** alpha )
+            
+            tau = 2 / np.pi * np.arcsin(self.rho)
+            theta = 1 / (1 - tau)       
+            alpha = 1 / theta           
+
+            d = self.kz + self.kx
+
+            # genrate positive stable with the Chambers–Mallows–Stuck (CMS) method 
+            U = self.rng.uniform(
+                low=-np.pi / 2,
+                high=np.pi / 2,
+                size=(self.n, 1),
+            )
+            W = self.rng.exponential(scale=1.0, size=(self.n, 1))
+            
+            a = np.sin(alpha * (U + np.pi / 2))
+            b = np.cos(U) ** (1 / alpha)
+            c = np.cos(U - alpha * (U + np.pi / 2))
+
+            S = (a / b) * (c / W) ** ((1 - alpha) / alpha)
+
+
+            E = self.rng.exponential(scale=1.0, size=(self.n, d))
+
+            u = np.exp(-((E / S) ** alpha))
+
+            u_z = u[:, :self.kz]
+            u_x = u[:, self.kz:]
+
+        elif self.copula_model == "single_gumbel":
+            # difference with previous fomrulation is that correlation is only
+            # for columns pairs (i.e. Z_j independence X_i for i neq j)
             t_kendall = 2 / np.pi * np.arcsin(self.rho)
             theta = 1 / (1 - t_kendall)
 
             alpha = 1.0 / theta
-
-            # 1. Simulate Positive Stable Random Variables S ~ St(alpha, 1, ...)
-            # Using Chambers-Mallows-Stuck method
+            
+            if self.kz != self.kx:
+                raise ValueError("single_gumbel copula requires kz == kx")
+            
             U_stab = self.rng.uniform(
                 low=-np.pi / 2, high=np.pi / 2, size=(self.n, self.k)
             )
             W_stab = self.rng.exponential(scale=1.0, size=(self.n, self.k))
 
-            # Intermediate terms for stable generator
             a = np.sin(alpha * (U_stab + np.pi / 2))
             b = np.cos(U_stab) ** (1 / alpha)
             c = np.cos(U_stab - alpha * (U_stab + np.pi / 2))
 
             S = (a / b) * (c / W_stab) ** ((1 - alpha) / alpha)
 
-            # 2. Generate Exponentials
             E1 = self.rng.exponential(scale=1.0, size=(self.n, self.k))
             E2 = self.rng.exponential(scale=1.0, size=(self.n, self.k))
 
-            # 3. Transform to Uniforms
-            # Formula: u = exp( - (E / S)^alpha )
             u_z = np.exp(-((E1 / S) ** alpha))
             u_x = np.exp(-((E2 / S) ** alpha))
 
@@ -303,49 +323,36 @@ class CopulaGenerator:
             self.is_null = False
 
         elif self.copula_model == "mixture_uniform":
-            weights = self.copula_params["weights"]
-            correlations = self.copula_params["correlations"]
+            weights = np.asarray(self.copula_params["weights"])
+            correlations = np.asarray(self.copula_params["correlations"])
 
-            # 1. Assign each sample (row) to a specific mixture component
-            # This determines which 'rho' each row will use
+            # randomly assign indices to components
+            component_indices = self.rng.choice(
+                len(weights),
+                size=self.n,
+                p=weights,
+            )
 
-            component_indices = self.rng.choice(len(weights), size=self.n, p=weights)
+            z_full = np.empty((self.n, self.kz))
+            x_full = np.empty((self.n, self.kx))
 
-            # Initialize the full (n, k) latent Gaussian arrays
-            z_full = np.zeros((self.n, self.k))
-            x_full = np.zeros((self.n, self.k))
-
-            mean = np.zeros(self.k)
-
-            # 2. Generate data for each mixture component
-            for i, rho in enumerate(correlations):
-                # Find which of the 'n' rows belong to this mixture component
+            for i, rho_i in enumerate(correlations):
                 mask = component_indices == i
-                count = np.sum(mask)
+                count = mask.sum()
 
-                if count > 0:
-                    # Generate Correlated Gaussians for these specific rows
-                    # using the shared k x k column covariance
-                    z = self.rng.multivariate_normal(
-                        mean=mean, cov=self.column_covariance, size=count
-                    )
-                    e = self.rng.multivariate_normal(
-                        mean=mean, cov=self.column_covariance, size=count
-                    )
+                if count == 0:
+                    continue
+                # sample gaussian conditional on component assignment
+                joint = self._generate_gaussian(rho=rho_i, size=count)
 
-                    # Link Z and X using this component's specific rho
-                    if rho == 1:
-                        x = z
-                    elif rho == -1:
-                        x = -z
-                    else:
-                        x = rho * z + np.sqrt(1 - rho**2) * e
+                z_full[mask] = joint[:, :self.kz]
+                x_full[mask] = joint[:, self.kz:]
 
-                    # Place the generated rows back into the full arrays
-                    z_full[mask] = z
-                    x_full[mask] = x
+            u_z = ndtr(z_full)
+            u_x = ndtr(x_full)
 
-            # 3. Apply Gaussian CDF to the completed arrays to get Uniform margins
+            self.is_null = (correlations == 0).all()
+
             u_z = ndtr(z_full)
             u_x = ndtr(x_full)
 

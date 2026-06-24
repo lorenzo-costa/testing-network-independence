@@ -30,8 +30,8 @@ class SBMGenerator:
     def __init__(
         self,
         n,
-        kx,
-        kz,
+        k,
+        kx=None,
         block_probs_type=None,
         block_probs=None,
         community_assignment=None,
@@ -47,7 +47,9 @@ class SBMGenerator:
             k = community_assignment[0].shape[1]
 
         self.community_assignment = community_assignment
-        self.kz = kz
+        if kx is None:
+            kx = k
+        self.kz = k
         self.kx = kx
         self.assignment_mode = assignment_mode
         self.prob_switch = prob_switch

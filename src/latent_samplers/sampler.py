@@ -4,6 +4,7 @@ from .hyppo_sampler import HyppoSimSampler
 from .orthogonal_subspace import OrthogonalSubspaceSampler
 from .rdpg_sampler import RDPGGenerator
 from .sbm_sampler import SBMGenerator
+import numpy as np
 
 class LatentSampler:
     """Base class for sampling latent variables
@@ -33,6 +34,7 @@ class LatentSampler:
         self,
         n,
         k,
+        kx=None,
         copula_model=None,
         latent_sim=None,
         dim_common=None,
@@ -100,7 +102,7 @@ class LatentSampler:
                 )
 
             latent_sampler = SBMGenerator(
-                n=n, k=k, rng=rng, block_probs_type=block_probs_type, **kwargs
+                n=n, k=k, kx=kx, rng=rng, block_probs_type=block_probs_type, **kwargs
             )
 
         elif rdpg_distr is not None:
@@ -110,12 +112,12 @@ class LatentSampler:
                 )
 
             latent_sampler = RDPGGenerator(
-                n=n, k=k, rng=rng, rdpg_distr=rdpg_distr, **kwargs
+                n=n, k=k, kx=kx, rng=rng, rdpg_distr=rdpg_distr, **kwargs
             )
 
         else:
             latent_sampler = CopulaGenerator(
-                n=n, k=k, rng=rng, copula_model=copula_model, **kwargs
+                n=n, k=k, kx=kx, rng=rng, copula_model=copula_model, **kwargs
             )
 
         self.latent_sampler = latent_sampler
