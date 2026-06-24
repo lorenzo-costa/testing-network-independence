@@ -40,8 +40,9 @@ class RDPGGenerator:
             self.kx = k
         else:
             self.kx = kx
-            
+                
         self.kz = k
+        
         self.rho = rho
         self.rdpg_distr = rdpg_distr
         self.rdpg_params = rdpg_params if rdpg_params is not None else {}
@@ -59,7 +60,6 @@ class RDPGGenerator:
             # Default alpha is an array of ones (uniform over the simplex)
             alpha_x = self.rdpg_params.get("alpha_x", np.ones(self.kx))
             alpha_z = self.rdpg_params.get("alpha_z", np.ones(self.kz))
-
             # Dirichlet vectors inherently sum to 1 and are strictly non-negative.
             # Their dot products are guaranteed to be in [0, 1].
             X = self.rng.dirichlet(alpha_x, size=self.n)

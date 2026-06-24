@@ -286,7 +286,7 @@ def _validate_m(M: int, n: int) -> int:
     if isinstance(M, str):
         if M.lower() == "sqrt":
             M = int(np.sqrt(n))
-        if M.lower() == "log":
+        elif M.lower() == "log":
             M = int(np.log(n))
         else:
             raise ValueError("M must be a positive integer or 'sqrt' or 'log'.")
