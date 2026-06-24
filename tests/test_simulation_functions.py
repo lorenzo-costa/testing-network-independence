@@ -1,12 +1,12 @@
 import pytest
 import numpy as np
-from src.dgp import GaussianNetwork
+from src.helper_functions.dgp.dgp import GaussianNetwork
 from scipy import stats
 import sys
 from src.metrics import ComputeAll
 from src.helper_functions.simulation_functions import run_simulation
 from src.solvers import ASE, MLE_gaussian, MLE_logistic
-from src.dgp import GaussianNetwork, BernoulliNetwork
+from src.helper_functions.dgp.dgp import GaussianNetwork, BernoulliNetwork
 from src.methods import RVPermutationTest, LLKRatioTest, QAP
 from itertools import product
 

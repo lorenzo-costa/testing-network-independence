@@ -23,7 +23,7 @@ from functools import partial
 from itertools import product as iproduct
 
 # -- DGP classes --------------------------------------------------------------
-from src.dgp import GaussianNetwork, BernoulliNetwork
+from src.helper_functions.dgp.dgp import GaussianNetwork, BernoulliNetwork
 
 # -- Solvers ------------------------------------------------------------------
 from src.solvers.weighted_network import ASE
@@ -31,7 +31,7 @@ from src.solvers.MaMa_uuuuu import pgd_fit_wrapper
 
 # -- Test methods -------------------------------------------------------------
 from src.test_methods import RVtest, QAP, DiffusionCorrelation, ObservedCVM, MultivariateACTest, CanonicalCorrelationTest
-from src.helper_functions.metrics_functions import observed_cvm_dependency
+from src.test_functions.cvm_statistic import observed_cvm_dependency
 
 # -- Metrics ------------------------------------------------------------------
 from src.metrics import ComputeAll

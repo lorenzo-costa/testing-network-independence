@@ -1,5 +1,5 @@
 from scipy.linalg import norm
-from .helper_functions.metrics_functions import rv_coefficient, rv_coefficient_adjusted
+from .test_functions.rv_cca_coefficients import rv_coefficient, rv_coefficient_adjusted
 import numpy as np
 
 

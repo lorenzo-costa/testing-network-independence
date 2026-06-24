@@ -2,7 +2,7 @@ import numpy as np
 from scipy import stats
 from scipy.special import expit, ndtr
 
-from .helper_functions._latent_samplers import LatentSampler
+from .dgp._latent_samplers import LatentSampler
 
 class GaussianNetwork(LatentSampler):
     """

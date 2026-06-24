@@ -1,10 +1,10 @@
 import pytest
 import numpy as np
-from src.dgp import GaussianNetwork
+from src.helper_functions.dgp.dgp import GaussianNetwork
 from src.methods import RVPermutationTest, QAP
 from src.solvers import ASE, MLE_gaussian, MLE_logistic
 from src.metrics import rv_coefficient
-from src.dgp import GaussianNetwork, BernoulliNetwork
+from src.helper_functions.dgp.dgp import GaussianNetwork, BernoulliNetwork
 
 
 @pytest.fixture

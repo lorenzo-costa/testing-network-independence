@@ -1,5 +1,9 @@
 import numpy as np
 
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.getcwd(), "..")))
+
 
 class BaseMethod:
     def __init__(self):
