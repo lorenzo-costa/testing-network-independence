@@ -2,7 +2,7 @@ import numpy as np
 from scipy import stats
 from scipy.special import expit, ndtr
 
-from ._latent_samplers import LatentSampler
+from .latent_samplers import *
 
 
 class GaussianNetwork(LatentSampler):
@@ -53,8 +53,7 @@ class GaussianNetwork(LatentSampler):
         if rng is None:
             rng = np.random.default_rng()
 
-        LatentSampler.__init__(
-            self,
+        super().__init__(
             n=n,
             k=k,
             rng=rng,
@@ -150,7 +149,7 @@ class BernoulliNetwork(LatentSampler):
         Z=None,
         **kwargs,
     ):
-        LatentSampler.__init__(self, n=n, k=k, rng=rng, **kwargs)
+        super().__init__(n=n, k=k, rng=rng, **kwargs)
 
         self.symmetric = symmetric
         self.self_loops = self_loops

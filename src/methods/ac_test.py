@@ -16,14 +16,23 @@ class EstimateAC(BaseEstimationMethod):
         rng=None,
         solver=None,
         k=None,
-        use_true_latent=False,
-        M=1,
+        use_true_latent=False,    
         test_function=ac_coefficient,
+        
+        M=None, 
+        aggregate_coeff=None, 
+        use_permutation_coeff=False, 
+        use_right_neighbor=False, 
+        block_size=2048,
         **kwargs,
     ):
         super().__init__(k=k, rng=rng, solver=solver, use_true_latent=use_true_latent)
         self.M = M
         self.test_function = test_function
+        self.aggregate_coeff = aggregate_coeff
+        self.use_permutation_coeff = use_permutation_coeff
+        self.use_right_neighbor = use_right_neighbor
+        self.block_size = block_size
 
     def fit(self, data, **kwargs):
         """Estimate AC coefficient between the latent positions of two networks
@@ -41,7 +50,14 @@ class EstimateAC(BaseEstimationMethod):
         # for consistency keep the names as X and Z.
         # in _process_input when use_true_latent is True, Zhat copies true Z
         self.test_stat_estimate = self.test_function(
-            Y=self.X, Z=self.Zhat, M=self.M, rng=self.rng
+            Y=self.X, 
+            Z=self.Zhat, 
+            M=self.M, 
+            rng=self.rng, 
+            aggregate=self.aggregate_coeff,
+            permutation=self.use_permutation_coeff,
+            right_neighbor=self.use_right_neighbor,
+            block_size=self.block_size
         )
         self.pvalue = None
         self.reject_null = None
@@ -79,9 +95,12 @@ class MultivariateACTest(BasePermutationTest):
         solver=None,
         use_true_latent_x=False,
         use_true_latent_z=False,
-        right_neighbor=False,
-        M=1,
         k=None,
+        M=None, 
+        aggregate_coeff=None, 
+        use_permutation_coeff=False, 
+        use_right_neighbor=False, 
+        block_size=2048,
         **kwargs,
     ):
         super().__init__(
@@ -96,7 +115,10 @@ class MultivariateACTest(BasePermutationTest):
         )
 
         self.M = M
-        self.right_neighbor = right_neighbor
+        self.aggregate_coeff = aggregate_coeff
+        self.use_permutation_coeff = use_permutation_coeff
+        self.use_right_neighbor = use_right_neighbor
+        self.block_size = block_size
 
     def fit(self, data, **kwargs):
         """Compute multivariate AC coefficient. X is used as response variables (Y),
@@ -132,7 +154,10 @@ class MultivariateACTest(BasePermutationTest):
             Z=self.Zhat,
             M=self.M,
             rng=self.rng,
-            right_neighbor=self.right_neighbor,
+            aggregate=self.aggregate_coeff,
+            permutation=self.use_permutation_coeff,
+            right_neighbor=self.use_right_neighbor,
+            block_size=self.block_size
         )
 
         for _ in range(self.npermutations):
@@ -143,7 +168,10 @@ class MultivariateACTest(BasePermutationTest):
                 Z=Zhat_perm,
                 M=self.M,
                 rng=self.rng,
-                right_neighbor=self.right_neighbor,
+                aggregate=self.aggregate_coeff,
+                permutation=self.use_permutation_coeff,
+                right_neighbor=self.use_right_neighbor,
+                block_size=self.block_size
             )
             self.permutation_distribution.append(test_stat_perm)
 

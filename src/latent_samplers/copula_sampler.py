@@ -63,6 +63,7 @@ class CopulaGenerator:
         self.column_covariance_x = (
             np.eye(kx) if column_covariance_x is None else column_covariance_x
         )
+        self.cross_covariance = cross_covariance
             
         self.center_latent = center_latent
 

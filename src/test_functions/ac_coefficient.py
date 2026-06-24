@@ -8,12 +8,175 @@ estimator when Y is genuinely multivariate.
 from __future__ import annotations
 
 import numpy as np
-from scipy.spatial import cKDTree
 from scipy.stats import rankdata
-
+from math import isqrt
+from ._ac_helpers import (
+    _as_2d,
+    _neighbor_maps,
+    _neighbor_prefix_maps,
+    _orthant_counts,
+    _validate_aggregate,
+    _validate_m,
+    _make_permutations,
+    _aggregate_coefficients,
+)
 
 # Main function
-def ac_coefficient(
+def ac_coefficient(Y, Z, X=None, *, M=None, aggregate=None, permutation=False, 
+                   right_neighbor=False, rng=None, block_size=2048):
+    """Compute Azadkia-Chatterhee coefficient. 
+    
+    Depedign on the shape of X and Y different implementations are available:
+    - Chatterjee 2021 for univariate X and Y
+    - Azadkia& Chatterjee (2021) for multivariate Z and X
+    - Deb et al (2020) using more than 1 Nearest Neighbour for Y scalar and X, Z 
+    multivariate
+    - Some othr guy for Y, Z and X all multivariate using permutations 
+
+    Parameters
+    ----------
+    Y : array-like
+        Response variable(s). If Y is univariate, the scalar rank estimator is used.
+    Z : array-like
+        Predictor variable(s). If Z is multivariate, the coordinate-permutation estimator is used.
+    X : array-like, optional
+        Conditioning variable(s). If X is provided, the conditional version of the coefficient is computed. 
+    M : int, optional
+        Number of nearest neighbors to use. If None, the default is 1 for univariate Y and floor(sqrt(n)) for multivariate Y.
+    aggregate : str, optional
+        How to aggregate the coefficients over M. Options are "avg" (default), "max", or None (no aggregation). 
+    permutation : bool, optional
+        Whether to use the permutation-based estimator for multivariate Y. Default is False.
+    right_neighbor : bool, optional
+        Whether to use the right-neighbor version of the coefficient. Default is False.
+    rng : np.random.Generator, optional
+        Random number generator. If None, a new generator is created.
+    block_size : int, optional
+        Block size for orthant count computations. Default is 2048.
+    
+    Returns
+    -------
+    float
+        The computed Azadkia-Chatterjee coefficient.
+    """
+    if aggregate is None:
+        out = _single_m_ac_coefficient(
+            Y,
+            Z,
+            X=X,
+            M=M if M is not None else 1,
+            permutation=permutation,
+            right_neighbor=right_neighbor,
+            rng=rng,
+            block_size=block_size,
+        )
+    elif aggregate in ("avg", "mean", "max"):
+        out = _aggregate_m_ac_coefficient(
+            Y,
+            Z,
+            X=X,
+            M=M,
+            aggregate=aggregate,
+            permutation=permutation,
+            right_neighbor=right_neighbor,
+            rng=rng,
+            block_size=block_size,
+        )
+    else:
+        raise ValueError(f"aggregate must be one of 'avg', 'mean', or 'max', got {aggregate}")
+        
+    return out
+
+
+def _aggregate_m_ac_coefficient(
+    Y,
+    Z,
+    X=None,
+    *,
+    aggregate = "avg",
+    M=None,
+    permutation=False,
+    right_neighbor=False,
+    rng=None,
+    block_size = 2048,
+) -> float:
+    """Aggregate AC coefficients for every ``M`` in ``1, ..., floor(sqrt(n))``.
+
+    Parameters are the same as :func:`ac_coefficient`, except that ``M`` is
+    selected automatically. ``aggregate`` must be either:
+
+    - ``"avg"``: arithmetic mean of the coefficients across M;
+    - ``"max"``: largest coefficient across M.
+
+    The implementation computes the first ``floor(sqrt(n))`` neighbors and,
+    for multivariate Y, the needed orthant counts only once. It then derives
+    every M-specific coefficient from cumulative sums.
+
+    With exact distance ties, it uses one random tie-broken ordering of the
+    K-nearest neighbors, where K = floor(sqrt(n)). Each prefix is a valid
+    M-nearest-neighbor set. This may differ from repeatedly calling
+    :func:`ac_coefficient` with independently redrawn tie breaks for each M.
+    """
+    aggregate = _validate_aggregate(aggregate)
+
+    y = _as_2d(Y, name="Y")
+    n, d_y = y.shape
+    if n < 2:
+        raise ValueError("At least two observations are required.")
+    
+    if M is not None:
+        max_m = _validate_m(M, n)
+    else:
+        max_m = isqrt(n)
+        
+    z = _as_2d(Z, name="Z", n=n)
+
+    if d_y == 1:
+        if permutation is True:
+            raise ValueError("permutation is only used when Y is multivariate.")
+
+        m_idx, n_idx = _neighbor_prefix_maps(
+            z,
+            x=X,
+            n=n,
+            max_m=max_m,
+            rng=rng,
+            right_neighbor=right_neighbor,
+        )
+
+        if right_neighbor is True:
+            coefficients = _right_neighbor_coefficients_over_m(y[:, 0], m_idx)
+        else:
+            coefficients = _scalar_coefficients_over_m(y[:, 0], m_idx, n_idx)
+
+    else:
+        if right_neighbor is True:
+            raise ValueError("right_neighbor is only used when Y is univariate.")
+
+        if permutation is True:
+            perm = _make_permutations(n, d_y, rng=rng)
+            y_tilde = np.take_along_axis(y, perm.T, axis=0)
+        else:
+            y_tilde = y.copy()
+
+        m_idx, n_idx = _neighbor_prefix_maps(
+            z,
+            x=X,
+            n=n,
+            max_m=max_m,
+            rng=rng,
+        )
+        coefficients = _multivariate_coefficients_over_m(
+            y,
+            y_tilde,
+            m_idx,
+            n_idx,
+            block_size=block_size,
+        )
+
+    return _aggregate_coefficients(coefficients, aggregate)
+
+def _single_m_ac_coefficient(
     Y,
     Z,
     X=None,
@@ -157,234 +320,124 @@ def _multivariate_coefficient(
     return 0.0 if denominator == 0 else float(numerator / denominator)
 
 
-# NN-indices
-def _neighbor_maps(
-    z,
-    x,
-    *,
-    n: int,
-    M: int,
-    rng=None,
-    right_neighbor=False,
-) -> tuple[np.ndarray, np.ndarray | None]:
-    """Return neighbors in Z/(X,Z), and in X when conditioning is used."""
-    if right_neighbor is True:
-        if x is not None:
-            raise ValueError("right_neighbor is only used when X is None.")
-        m_idx = _right_neighbor_indices(z, M, rng=rng)
-        return m_idx, None
-    if x is None:
-        m_idx = _knn_indices(z, M, rng=rng)
-        return m_idx, None
-    else:
-        x = _as_2d(x, name="X", n=n)
-        m_idx = _knn_indices(np.hstack((x, z)), M, rng=rng)
-        n_idx = _knn_indices(x, M, rng=rng)
-        return m_idx, n_idx
-
-
-def _knn_indices(
-    points: np.ndarray,
-    M: int,
-    *,
-    rng=None,
+def _right_neighbor_coefficients_over_m(
+    y: np.ndarray,
+    m_idx: np.ndarray,
 ) -> np.ndarray:
-    """
-    Return the M nearest non-self neighbors for every row.
+    """Return the right-neighbor coefficient for every prefix length."""
+    n, max_m = m_idx.shape
+    ranks = rankdata(y, method="max").astype(np.int64)
+    rank_sums = np.cumsum(
+        np.minimum(ranks[:, None], ranks[m_idx]),
+        axis=1,
+        dtype=np.int64,
+    ).sum(axis=0)
 
-    Distance ties at the M-th cutoff are broken uniformly at random.
-    Passing the same seed gives reproducible results, independent of the
-    order returned by cKDTree for tied points.
-    """
-    points = np.asarray(points, dtype=float)
-    n = len(points)
+    m_values = np.arange(1, max_m + 1, dtype=float)
+    normalizers = (n + 1) * (n * m_values + m_values * (m_values + 1) / 4)
+    return -2.0 + 6.0 * rank_sums / normalizers
 
-    if not 1 <= M < n:
-        raise ValueError("Require 1 <= M < n.")
 
-    generator = (
-        rng if isinstance(rng, np.random.Generator) else np.random.default_rng(rng)
+def _multivariate_coefficients_over_m(
+    y: np.ndarray,
+    y_tilde: np.ndarray,
+    m_idx: np.ndarray,
+    n_idx: np.ndarray | None,
+    *,
+    block_size: int,
+) -> np.ndarray:
+    """Return the multivariate coefficient for every prefix length."""
+    n, max_m = m_idx.shape
+    divisors = np.arange(1, max_m + 1)
+
+    r_m = _orthant_counts(
+        y_tilde,
+        np.minimum(y[:, None, :], y[m_idx]),
+        relation="le",
+        block_size=block_size,
     )
+    r_m = np.cumsum(r_m, axis=1, dtype=np.int64) / divisors
 
-    tree = cKDTree(points)
-
-    # Query M+1 because one returned point is normally self.
-    distances, indices = tree.query(points, k=M + 1)
-    distances = np.atleast_2d(distances)
-    indices = np.atleast_2d(indices)
-
-    neighbors = np.empty((n, M), dtype=np.int64)
-
-    for i in range(n):
-        # Remove self, regardless of where cKDTree placed it.
-        mask = indices[i] != i
-        d = distances[i][mask]
-        idx = indices[i][mask]
-
-        # In duplicate-point cases, self might not be included among M+1
-        # returned entries. Re-query more broadly in that rare case.
-        if len(idx) < M:
-            d, idx = tree.query(points[i], k=n)
-            d = np.asarray(d)
-            idx = np.asarray(idx)
-
-            mask = idx != i
-            d = d[mask]
-            idx = idx[mask]
-
-        cutoff = d[M - 1]
-
-        # Radius is nudged upward so points exactly at cutoff are included.
-        radius = np.nextafter(cutoff, np.inf)
-        candidates = np.asarray(tree.query_ball_point(points[i], radius))
-
-        candidates = candidates[candidates != i]
-
-        candidate_distances = np.linalg.norm(
-            points[candidates] - points[i],
-            axis=1,
+    if n_idx is None:
+        l_dot = _orthant_counts(
+            y,
+            y_tilde,
+            relation="ge",
+            block_size=block_size,
         )
+        numerators = np.sum(
+            n * r_m - l_dot[:, None] ** 2,
+            axis=0,
+        )
+        denominator = np.sum((n - l_dot) * l_dot)
+        if denominator == 0:
+            return np.zeros(max_m, dtype=float)
+        return numerators / denominator
 
-        # Tolerance is needed because floating-point distance computations
-        # can differ slightly between KD-tree traversal and direct norm.
-        atol = np.finfo(float).eps * max(1.0, cutoff) * 16
+    r_n = _orthant_counts(
+        y_tilde,
+        np.minimum(y[:, None, :], y[n_idx]),
+        relation="le",
+        block_size=block_size,
+    )
+    r_n = np.cumsum(r_n, axis=1, dtype=np.int64) / divisors
+    r_self = _orthant_counts(y_tilde, y, relation="le", block_size=block_size)
 
-        strictly_closer = candidates[candidate_distances < cutoff - atol]
-        tied = candidates[np.abs(candidate_distances - cutoff) <= atol]
-
-        needed = M - len(strictly_closer)
-
-        if needed < 0:
-            # Numerical guard: retain exactly the M closest, with seeded
-            # random ordering only within nearly equal distances.
-            jitter = generator.random(len(candidates))
-            order = np.lexsort((jitter, candidate_distances))
-            neighbors[i] = candidates[order[:M]]
-            continue
-
-        if len(tied) < needed:
-            # Extremely unusual numerical mismatch; recover with an exact
-            # local sort, still avoiding a full n-by-n matrix.
-            jitter = generator.random(len(candidates))
-            order = np.lexsort((jitter, candidate_distances))
-            neighbors[i] = candidates[order[:M]]
-            continue
-
-        if needed == 0:
-            neighbors[i] = strictly_closer[:M]
-        else:
-            chosen_ties = generator.choice(tied, size=needed, replace=False)
-            neighbors[i] = np.concatenate((strictly_closer, chosen_ties))
-
-    return neighbors
-
-
-def _right_neighbor_indices(
-    z: np.ndarray,
-    M: int,
-    rng=None,
-) -> np.ndarray:
-    """
-    Return the m-th right neighbor of each scalar z_i.
-
-    Ties in z are broken uniformly at random, reproducibly when rng is given.
-    """
-
-    if z.ndim != 2 or z.shape[1] != 1:
-        raise ValueError("Right neighbors require a scalar ordering variable.")
-
-    values = z[:, 0]
-    n = len(values)
-
-    generator = (
-        rng if isinstance(rng, np.random.Generator) else np.random.default_rng(rng)
+    numerators = np.sum(r_m - r_n, axis=0)
+    denominators = np.sum(r_self[:, None] - r_n, axis=0)
+    return np.divide(
+        numerators,
+        denominators,
+        out=np.zeros(max_m, dtype=float),
+        where=denominators != 0,
     )
 
-    # Primary sort key: values.
-    # Secondary sort key: random numbers, used only within ties.
-    tie_breaker = generator.random(n)
-    order = np.lexsort((tie_breaker, values))
 
-    position = np.empty(n, dtype=np.int64)
-    position[order] = np.arange(n)
+def _scalar_coefficients_over_m(
+    y: np.ndarray,
+    m_idx: np.ndarray,
+    n_idx: np.ndarray | None,
+) -> np.ndarray:
+    """Return the scalar coefficient for every prefix length of m_idx."""
+    n, max_m = m_idx.shape
+    ranks = rankdata(y, method="max").astype(np.int64)
+    divisors = np.arange(1, max_m + 1)
 
-    targets = position[:, None] + np.arange(1, M + 1)
+    m_score = np.cumsum(
+        np.minimum(ranks[:, None], ranks[m_idx]),
+        axis=1,
+        dtype=np.int64,
+    ) / divisors
 
-    # Boundary convention: if the m-th right neighbor does not exist,
-    # map the observation to itself.
-    neighbors = np.broadcast_to(
-        np.arange(n)[:, None],
-        (n, M),
-    ).copy()
+    if n_idx is None:
+        upper_ranks = rankdata(-y, method="max").astype(np.int64)
+        numerators = np.sum(
+            n * m_score - upper_ranks[:, None] ** 2,
+            axis=0,
+        )
+        denominator = np.sum(upper_ranks * (n - upper_ranks))
+        if denominator == 0:
+            return np.zeros(max_m, dtype=float)
+        return numerators / denominator
 
-    valid = targets < n
-    neighbors[valid] = order[targets[valid]]
+    n_score = np.cumsum(
+        np.minimum(ranks[:, None], ranks[n_idx]),
+        axis=1,
+        dtype=np.int64,
+    ) / divisors
 
-    return neighbors
+    numerators = np.sum(m_score - n_score, axis=0)
+    denominators = np.sum(ranks[:, None] - n_score, axis=0)
+    return np.divide(
+        numerators,
+        denominators,
+        out=np.zeros(max_m, dtype=float),
+        where=denominators != 0,
+    )
+
+
 
 
 # Helpers
-def _as_2d(values, *, name: str, n: int | None = None) -> np.ndarray:
-    """Return a finite array with shape ``(n, d)``."""
-    values = np.asarray(values, dtype=float)
-    if values.ndim == 1:
-        values = values[:, None]
-    elif values.ndim != 2:
-        raise ValueError(f"{name} must have shape (n,) or (n, d).")
-
-    if values.shape[1] == 0:
-        raise ValueError(f"{name} must have at least one column.")
-    if n is not None and values.shape[0] != n:
-        raise ValueError(f"{name} must have {n} rows.")
-    if not np.isfinite(values).all():
-        raise ValueError(f"{name} must contain only finite values.")
-    return values
 
 
-def _validate_m(M: int, n: int) -> int:
-    if not isinstance(M, (int, np.integer)) or isinstance(M, bool) or M < 1:
-        raise ValueError("M must be a positive integer.")
-    if M >= n:
-        raise ValueError("M must be smaller than n.")
-    return int(M)
-
-
-def _make_permutations(n: int, d_y: int, rng=None) -> np.ndarray:
-    """Make coordinate permutations with distinct source rows per observation."""
-    if d_y > n:
-        raise ValueError("The multivariate permutation construction requires d_Y <= n.")
-
-    generator = (
-        rng if isinstance(rng, np.random.Generator) else np.random.default_rng(rng)
-    )
-    base = generator.permutation(n)
-    shifts = generator.choice(n, size=d_y, replace=False)
-    return np.array([np.roll(base, -shift) for shift in shifts], dtype=np.int64)
-
-
-def _orthant_counts(
-    sample: np.ndarray,
-    thresholds: np.ndarray,
-    *,
-    relation: str,
-    block_size: int,
-) -> np.ndarray:
-    """Count sample rows lying below or above each coordinatewise threshold."""
-    if block_size < 1:
-        raise ValueError("block_size must be positive.")
-
-    thresholds = np.asarray(thresholds)
-    if sample.ndim != 2 or thresholds.shape[-1] != sample.shape[1]:
-        raise ValueError("Incompatible sample and threshold shapes.")
-
-    compare = np.less_equal if relation == "le" else np.greater_equal
-    flat = thresholds.reshape(-1, sample.shape[1])
-    counts = np.empty(len(flat), dtype=np.int64)
-
-    for start in range(0, len(flat), block_size):
-        stop = min(start + block_size, len(flat))
-        counts[start:stop] = np.sum(
-            np.all(compare(sample[:, None, :], flat[None, start:stop, :]), axis=-1),
-            axis=0,
-        )
-    return counts.reshape(thresholds.shape[:-1])
