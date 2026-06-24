@@ -85,7 +85,8 @@ def _resolve_method(entry: dict):
         )
     if name == "MultivariateACTest":
         M = kwargs.get("M", 1)
-        return partial(cls, M=M)
+        aggregate_coeff = kwargs.get("aggregate_coeff", None)
+        return partial(cls, M=M, aggregate_coeff=aggregate_coeff) if kwargs else cls
 
     return partial(cls, **kwargs) if kwargs else cls
 
