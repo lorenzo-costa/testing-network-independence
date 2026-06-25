@@ -7,7 +7,7 @@
 # Simulation Setup
 # -----------------------------------------------------------------------------
 simulation:
-  nsim: 100          # Number of Monte Carlo repetitions per parameter combination
+  nsim: 1          # Number of Monte Carlo repetitions per parameter combination
   seed: 1                 # Master RNG seed for reproducibility (passed to np.random.default_rng)
  
   n: [100, 200, 300]      # Sample sizes (number of nodes)
@@ -15,7 +15,10 @@ simulation:
   rho: [0.2]              # Correlation parameter under H1 (signal strength); 0.0 = null hypothesis
   alpha: [0.05]           # Nominal significance level(s) for hypothesis tests
   edge_var: [3]           # Edge weight variance (used in Gaussian networks)
- 
+
+  marginals:
+    - gaussian
+    
 # -----------------------------------------------------------------------------
 # Testing Methods
 # -----------------------------------------------------------------------------
@@ -23,8 +26,7 @@ methods:
   npermutations: [200]      # Number of permutations used in permutation-based tests
   use_true_latent_x: [True]  
   use_true_latent_z: [True, False]  
-  marginals:
-    - gaussian
+  
  
   # List of test methods to benchmark. 'kwargs' are passed to the method constructor.
   list:
