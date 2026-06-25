@@ -23,6 +23,8 @@ methods:
   npermutations: [200]      # Number of permutations used in permutation-based tests
   use_true_latent_x: [True]  
   use_true_latent_z: [True, False]  
+  marginals:
+    - gaussian
  
   # List of test methods to benchmark. 'kwargs' are passed to the method constructor.
   list:

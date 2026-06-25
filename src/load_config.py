@@ -101,7 +101,7 @@ def _resolve_copula_setup(entry: dict):
     dgp_cls = DGP_REGISTRY[entry["dgp"]]
     solver = SOLVER_REGISTRY[entry["solver"]]
 
-    reserved = {"dgp", "solver", "copula_model"}
+    reserved = {"dgp", "solver", "copula_model", "rdgp", "rdpg_distr"}
 
     copula_params = {k: v for k, v in entry.items() if k not in reserved}
 
