@@ -107,6 +107,8 @@ def _resolve_copula_setup(entry: dict):
 
     dgp_kwargs = {
         "copula_model": entry.get("copula_model"),
+        "rdpg": entry.get("rdpg", False),
+        "rdpg_distr": entry.get("rdpg_distr", None),
         "copula_params": copula_params,
     }
 

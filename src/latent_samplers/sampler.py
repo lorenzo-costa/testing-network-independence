@@ -50,6 +50,7 @@ class LatentSampler:
         self.rng = rng
         self.n = n
         self.k = k
+        
 
         if latent_sim is not None:
             if copula_model is not None:
