@@ -63,6 +63,7 @@ methods:
 
     - name: MultivariateACTest
       kwargs:
+        M: sqrt
         aggregate_coeff: max                        
  
 # -----------------------------------------------------------------------------
