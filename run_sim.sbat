@@ -26,16 +26,20 @@ fi
 # Extract identifier from config_xxxx.yaml -> xxxx
 CONFIG_NAME=$(basename "$CONFIG_FILE")
 CONFIG_NAME="${CONFIG_NAME%.*}"      # Remove extension
-CONFIG_ID="${CONFIG_NAME#config_}"   # Remove "config_" prefix
+CONFIG_ID="${CONFIG_NAME#config_}"   # Remove config_ prefix
 
-# Ensure directories exist
+# Ensure directories exist before redirecting output
 mkdir -p results logs
 
-# Redirect stdout/stderr to config-specific log files
+# Rename the Slurm job to reflect the config
+scontrol update JobId="$SLURM_JOB_ID" JobName="sim_${CONFIG_ID}"
+
+# Redirect stdout and stderr to config-specific log files
 exec >"logs/sim_${CONFIG_ID}_${SLURM_JOB_ID}.out" \
      2>"logs/sim_${CONFIG_ID}_${SLURM_JOB_ID}.err"
 
 echo "Job ID: $SLURM_JOB_ID"
+echo "Job name: sim_${CONFIG_ID}"
 echo "Config: $CONFIG_FILE"
 echo "Start time: $(date)"
 
