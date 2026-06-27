@@ -13,7 +13,7 @@ simulation:
   nsim: 100                 
   seed: 1
 
-  n: [100, 200, 300]   # Includes n=50 to probe small-sample behaviour
+  n: [300, 500]   # Includes n=50 to probe small-sample behaviour
   k: [1]                    # Single latent dimension (scalar latent variable)
   alpha: [0.05]
   edge_var: [3]          # Two edge variances: standard and inflated noise
@@ -24,19 +24,19 @@ simulation:
 methods:
   npermutations: [200]
   use_true_latent_x: [True]  
-  use_true_latent_z: [True, False]  
+  use_true_latent_z: [False]  
 
   list:
-    - name: RVtest
-      kwargs:
-        permutation_type: latent  
-        approximation: permutation       
+    # - name: RVtest
+    #   kwargs:
+    #     permutation_type: latent  
+    #     approximation: permutation       
  
     - name: DiffusionCorrelation
       kwargs: {} 
 
-    - name: CanonicalCorrelation
-      kwargs: {}                   
+    # - name: CanonicalCorrelation
+    #   kwargs: {}                   
 
     - name: MultivariateACTest
       kwargs:
@@ -125,9 +125,9 @@ setups:
 # Sparsity (Lee 2019 specific)
 # Controls whether networks are made sparse before fitting.
 # -----------------------------------------------------------------------------
-sparsity:
-  make_sparse: [True, False]   # Sweep over sparse and dense variants
-  sparsity_bias: [1]           # Bias term controlling degree of sparsification
+# sparsity:
+#   make_sparse: [True, False]   # Sweep over sparse and dense variants
+#   sparsity_bias: [1]           # Bias term controlling degree of sparsification
 
 
 # -----------------------------------------------------------------------------
