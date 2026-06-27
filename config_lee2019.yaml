@@ -26,17 +26,9 @@ methods:
   use_true_latent_x: [True]  
   use_true_latent_z: [False]  
 
-  list:
-    # - name: RVtest
-    #   kwargs:
-    #     permutation_type: latent  
-    #     approximation: permutation       
- 
+  list: 
     - name: DiffusionCorrelation
-      kwargs: {} 
-
-    # - name: CanonicalCorrelation
-    #   kwargs: {}                   
+      kwargs: {}                 
 
     - name: MultivariateACTest
       kwargs:
@@ -119,15 +111,6 @@ setups:
     - multimodal_independence   # No noise kwarg for this one (see loader)
 
   bernoulli_rdpg: minmax        # RDPG rescaling strategy for Bernoulli networks
-
-
-# -----------------------------------------------------------------------------
-# Sparsity (Lee 2019 specific)
-# Controls whether networks are made sparse before fitting.
-# -----------------------------------------------------------------------------
-# sparsity:
-#   make_sparse: [True, False]   # Sweep over sparse and dense variants
-#   sparsity_bias: [1]           # Bias term controlling degree of sparsification
 
 
 # -----------------------------------------------------------------------------

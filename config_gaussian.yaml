@@ -37,17 +37,9 @@ methods:
   use_true_latent_z: [False]  
  
   # List of test methods to benchmark. 'kwargs' are passed to the method constructor.
-  list:
-    # - name: RVtest
-    #   kwargs:
-    #     permutation_type: latent  
-    #     approximation: permutation       
- 
+  list:    
     - name: DiffusionCorrelation
-      kwargs: {} 
-
-    # - name: CanonicalCorrelation
-    #   kwargs: {}                   
+      kwargs: {}                 
 
     - name: MultivariateACTest
       kwargs:
