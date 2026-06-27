@@ -1,4 +1,3 @@
-
 import numpy as np
 from scipy.spatial import cKDTree
 
@@ -80,6 +79,55 @@ def _neighbor_prefix_maps(
 
 
 # NN-indices
+
+def _cutoff_radii(
+    tree: cKDTree,
+    points: np.ndarray,
+    distances: np.ndarray,
+    indices: np.ndarray,
+    k: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return the original code's cutoff values and radii for every query point.
+
+    This batches only the rare full-tree fallback used when duplicate points
+    push ``self`` outside the initial ``k + 1`` query results.  The selected
+    cutoff in each row is exactly the one obtained by the original
+    ``d[indices != i][k - 1]`` logic.
+    """
+    n = len(points)
+    nonself = indices != np.arange(n)[:, None]
+    count = nonself.sum(axis=1)
+
+    cutoffs = np.empty(n, dtype=float)
+    regular = count >= k
+
+    # The k-th non-self item in each initial cKDTree query, preserving the
+    # original query ordering.  This also handles duplicate rows for which
+    # self is absent and there are k + 1 valid non-self entries.
+    rank = np.cumsum(nonself, axis=1)
+    regular_rows = np.flatnonzero(regular)
+    if regular_rows.size:
+        regular_cols = np.argmax(rank[regular] == k, axis=1)
+        cutoffs[regular_rows] = distances[regular_rows, regular_cols]
+
+    # This is rare: query all points for affected duplicate rows in one
+    # batched cKDTree call instead of one Python-level call per row.
+    short_rows = np.flatnonzero(~regular)
+    if short_rows.size:
+        full_distances, full_indices = tree.query(points[short_rows], k=n)
+        full_distances = np.atleast_2d(full_distances)
+        full_indices = np.atleast_2d(full_indices)
+
+        full_nonself = full_indices != short_rows[:, None]
+        full_rank = np.cumsum(full_nonself, axis=1)
+        full_cols = np.argmax(full_rank == k, axis=1)
+        cutoffs[short_rows] = full_distances[
+            np.arange(short_rows.size), full_cols
+        ]
+
+    return cutoffs, np.nextafter(cutoffs, np.inf)
+
+
 def _knn_indices(
     points: np.ndarray,
     M: int,
@@ -89,9 +137,14 @@ def _knn_indices(
     """
     Return the M nearest non-self neighbors for every row.
 
-    Distance ties at the M-th cutoff are broken uniformly at random.
-    Passing the same seed gives reproducible results, independent of the
-    order returned by cKDTree for tied points.
+    This is behaviorally identical to the reference implementation for a
+    fixed SciPy version and RNG state.  It keeps the reference tie-breaking
+    and candidate-processing logic, but performs all cutoff-radius searches
+    in one batched ``query_ball_point`` call.
+
+    ``return_sorted=False`` is essential: the original makes single-point
+    queries, whose default output is unsorted.  Preserving that order also
+    preserves the exact seeded tie outcomes and output layout.
     """
     points = np.asarray(points, dtype=float)
     n = len(points)
@@ -105,36 +158,28 @@ def _knn_indices(
 
     tree = cKDTree(points)
 
-    # Query M+1 because one returned point is normally self.
+    # Same initial query as the reference implementation.
     distances, indices = tree.query(points, k=M + 1)
     distances = np.atleast_2d(distances)
     indices = np.atleast_2d(indices)
 
+    cutoffs, radii = _cutoff_radii(tree, points, distances, indices, M)
+
+    # cKDTree treats batched queries differently under its default
+    # return_sorted=None, so request the single-query behavior explicitly.
+    candidate_lists = tree.query_ball_point(
+        points,
+        radii,
+        return_sorted=False,
+    )
+
     neighbors = np.empty((n, M), dtype=np.int64)
+    eps = np.finfo(float).eps
 
-    for i in range(n):
-        # Remove self, regardless of where cKDTree placed it.
-        mask = indices[i] != i
-        d = distances[i][mask]
-        idx = indices[i][mask]
-
-        # In duplicate-point cases, self might not be included among M+1
-        # returned entries. Re-query more broadly in that rare case.
-        if len(idx) < M:
-            d, idx = tree.query(points[i], k=n)
-            d = np.asarray(d)
-            idx = np.asarray(idx)
-
-            mask = idx != i
-            d = d[mask]
-            idx = idx[mask]
-
-        cutoff = d[M - 1]
-
-        # Radius is nudged upward so points exactly at cutoff are included.
-        radius = np.nextafter(cutoff, np.inf)
-        candidates = np.asarray(tree.query_ball_point(points[i], radius))
-
+    # This loop intentionally mirrors the reference code so RNG calls,
+    # candidate order, tolerance checks, and fallback behavior are unchanged.
+    for i, candidate_list in enumerate(candidate_lists):
+        candidates = np.asarray(candidate_list, dtype=np.int64)
         candidates = candidates[candidates != i]
 
         candidate_distances = np.linalg.norm(
@@ -142,26 +187,21 @@ def _knn_indices(
             axis=1,
         )
 
-        # Tolerance is needed because floating-point distance computations
-        # can differ slightly between KD-tree traversal and direct norm.
-        atol = np.finfo(float).eps * max(1.0, cutoff) * 16
+        cutoff = cutoffs[i]
 
+        atol = eps * max(1.0, cutoff) * 16
         strictly_closer = candidates[candidate_distances < cutoff - atol]
         tied = candidates[np.abs(candidate_distances - cutoff) <= atol]
 
         needed = M - len(strictly_closer)
 
         if needed < 0:
-            # Numerical guard: retain exactly the M closest, with seeded
-            # random ordering only within nearly equal distances.
             jitter = generator.random(len(candidates))
             order = np.lexsort((jitter, candidate_distances))
             neighbors[i] = candidates[order[:M]]
             continue
 
         if len(tied) < needed:
-            # Extremely unusual numerical mismatch; recover with an exact
-            # local sort, still avoiding a full n-by-n matrix.
             jitter = generator.random(len(candidates))
             order = np.lexsort((jitter, candidate_distances))
             neighbors[i] = candidates[order[:M]]
@@ -218,6 +258,7 @@ def _right_neighbor_indices(
     
     return neighbors
 
+
 def _knn_prefix_indices(
     points: np.ndarray,
     max_m: int,
@@ -226,9 +267,9 @@ def _knn_prefix_indices(
 ) -> np.ndarray:
     """Return an ordered K-NN map; column m is the (m+1)-th neighbor.
 
-    The ordering is by distance, with uniform random ordering within exact
-    distance ties. Therefore, the first M columns form a valid M-nearest-
-    neighbor map for every M <= max_m.
+    This retains the reference implementation's exact ordering and RNG
+    consumption, while batching the cutoff-radius searches across all rows.
+    Thus the first M columns match the reference output for every M.
     """
     points = np.asarray(points, dtype=float)
     n = len(points)
@@ -245,42 +286,34 @@ def _knn_prefix_indices(
     distances = np.atleast_2d(distances)
     indices = np.atleast_2d(indices)
 
+    _, radii = _cutoff_radii(tree, points, distances, indices, max_m)
+    candidate_lists = tree.query_ball_point(
+        points,
+        radii,
+        return_sorted=False,
+    )
+
     neighbors = np.empty((n, max_m), dtype=np.int64)
+    all_indices = np.arange(n, dtype=np.int64)
 
-    for i in range(n):
-        d = distances[i]
-        idx = indices[i]
-        keep = idx != i
-        d, idx = d[keep], idx[keep]
-
-        # In duplicate-point cases, self may be absent from the first K+1
-        # returned indices, or some returned entries may not be enough after
-        # self-removal. A full query is only needed in that rare situation.
-        if idx.size < max_m:
-            d, idx = tree.query(points[i], k=n)
-            d = np.asarray(d)
-            idx = np.asarray(idx)
-            keep = idx != i
-            d, idx = d[keep], idx[keep]
-
-        cutoff = d[max_m - 1]
-        radius = np.nextafter(cutoff, np.inf)
-        candidates = np.asarray(tree.query_ball_point(points[i], radius), dtype=np.int64)
+    for i, candidate_list in enumerate(candidate_lists):
+        candidates = np.asarray(candidate_list, dtype=np.int64)
         candidates = candidates[candidates != i]
 
+        # Preserve the reference numerical guard.
         if candidates.size < max_m:
-            # Guard against an exceptional KD-tree radius / floating-point
-            # mismatch by using direct distances to every other observation.
-            candidates = np.delete(np.arange(n, dtype=np.int64), i)
+            candidates = np.delete(all_indices, i)
 
-        candidate_distances = np.linalg.norm(points[candidates] - points[i], axis=1)
+        candidate_distances = np.linalg.norm(
+            points[candidates] - points[i],
+            axis=1,
+        )
         tie_breaker = generator.random(candidates.size)
         order = np.lexsort((tie_breaker, candidate_distances))
         neighbors[i] = candidates[order[:max_m]]
 
-    return neighbors    
-    
-    
+    return neighbors
+
 # validation functions 
 def _validate_m(M: int, n: int) -> int:
     if isinstance(M, str):
@@ -288,6 +321,12 @@ def _validate_m(M: int, n: int) -> int:
             M = int(np.sqrt(n))
         elif M.lower() == "log":
             M = int(np.log(n))
+        elif M.lower() == "half":
+            M = int(n / 2)
+        elif M.lower() == "third":
+            M = int(n / 3)
+        elif M.lower() == "quarter":
+            M = int(n / 4)
         else:
             raise ValueError("M must be a positive integer or 'sqrt' or 'log'.")
     elif isinstance(M, (int, np.integer)):
@@ -342,4 +381,3 @@ def _make_permutations(n: int, d_y: int, rng=None) -> np.ndarray:
     base = generator.permutation(n)
     shifts = generator.choice(n, size=d_y, replace=False)
     return np.array([np.roll(base, -shift) for shift in shifts], dtype=np.int64)
-

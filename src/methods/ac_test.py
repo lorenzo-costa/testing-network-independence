@@ -183,4 +183,4 @@ class MultivariateACTest(BasePermutationTest):
         self.reject_null = bool(self.pvalue < self.alpha)
 
     def get_name(self):
-        return "MultivariateAC_PermutationTest_" + str(self.M)
+        return "MultivariateAC_PermutationTest_" + str(self.M) + "_" + str(self.aggregate_coeff)
