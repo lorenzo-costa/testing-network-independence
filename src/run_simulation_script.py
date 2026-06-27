@@ -31,6 +31,7 @@ if __name__ == "__main__":
 
     cfgs = [load_config(p) for p in args.config]
     factorial = build_factorial_design_multi(cfgs)
+    print(f"Factorial design has {len(factorial)} rows → {factorial[0]}")
     sim = cfgs[0]["simulation"]
 
     start = datetime.now()
@@ -41,7 +42,7 @@ if __name__ == "__main__":
         metrics=cfgs[0]["metrics"],
         factorial_design=factorial,
         rng=cfgs[0]["rng"],
-        parallel=True,
+        parallel=False,
     )
 
     out = pd.DataFrame(out)

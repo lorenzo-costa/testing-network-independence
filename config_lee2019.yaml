@@ -30,26 +30,41 @@ methods:
     - name: RVtest
       kwargs:
         permutation_type: latent  
-        approximation: permutation              
+        approximation: permutation       
  
     - name: DiffusionCorrelation
-      kwargs: {}
+      kwargs: {} 
 
     - name: CanonicalCorrelation
-      kwargs: {}
+      kwargs: {}                   
 
     - name: MultivariateACTest
       kwargs:
-        M: 1     
+        M: half
 
     - name: MultivariateACTest
       kwargs:
-        M: sqrt 
+        M: third 
+
+    - name: MultivariateACTest
+      kwargs:
+        M: half
+        aggregate_coeff: max
+
+    - name: MultivariateACTest
+      kwargs:
+        M: half
+        aggregate_coeff: avg   
 
     - name: MultivariateACTest
       kwargs:
         M: sqrt
-        aggregate_coeff: max        
+        aggregate_coeff: max
+
+    - name: MultivariateACTest
+      kwargs:
+        M: sqrt
+        aggregate_coeff: avg       
 
 
 # -----------------------------------------------------------------------------
