@@ -272,23 +272,23 @@ def load_config(path: str = "config.yaml") -> dict:
     # -- Experiment-specific extra params -------------------------------------
     extra_params = {}
     if exp_type == "lee2019":
-        sp = raw["sparsity"]
+        sp = raw.get("sparsity", {"make_sparse": [False], "sparsity_bias": [1]})
         extra_params["sparsity"] = {
             "make_sparse": sp["make_sparse"],
             "sparsity_bias": sp["sparsity_bias"],
         }
     elif exp_type == "sbm":
-        sbm = raw["sbm"]
+        sbm = raw.get("sbm", {})
         extra_params["sbm"] = {
-            "assortativity": sbm["assortativity"],
-            "sparsity_bias": sbm["sparsity_bias"],
-            "prob_switch": sbm["prob_switch"],
-            "assignment_mode": sbm["assignment_mode"],
-            "block_probs_type": sbm["block_probs_type"],
+            "assortativity": sbm.get("assortativity"),
+            "sparsity_bias": sbm.get("sparsity_bias"),
+            "prob_switch": sbm.get("prob_switch"),
+            "assignment_mode": sbm.get("assignment_mode"),
+            "block_probs_type": sbm.get("block_probs_type"),
         }
     elif exp_type == "asymptotic":
         extra_params["asymptotic"] = {
-            "column_covariance": sim_raw["column_covariance"],
+            "column_covariance": sim_raw.get("column_covariance"),
         }
 
     out = {
@@ -299,7 +299,7 @@ def load_config(path: str = "config.yaml") -> dict:
         "setups": setups,
         "extra_params": extra_params,
         "metrics": metrics,
-        "output": raw["output"],
+        "output": raw.get("output"),
     }
 
     return out
