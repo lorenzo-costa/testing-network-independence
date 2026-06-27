@@ -10,3 +10,5 @@ __pycache__/
 *.h5
 *.DS_Store
 notebooks/
+githubkey.pub
+githubkey
