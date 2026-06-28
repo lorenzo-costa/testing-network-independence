@@ -42,7 +42,7 @@ if __name__ == "__main__":
         metrics=cfgs[0]["metrics"],
         factorial_design=factorial,
         rng=cfgs[0]["rng"],
-        parallel=False,
+        parallel=True,
     )
 
     out = pd.DataFrame(out)
