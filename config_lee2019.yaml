@@ -10,7 +10,7 @@
 # Simulation Control
 # -----------------------------------------------------------------------------
 simulation:
-  nsim: 1                
+  nsim: 100                
   seed: 1
 
   n: [100, 400]   # Includes n=50 to probe small-sample behaviour
