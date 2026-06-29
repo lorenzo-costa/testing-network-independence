@@ -177,6 +177,32 @@ def _resolve_methods_block(methods_cfg: dict) -> dict:
     }
 
 
+def _resolve_noise_options(simulation_cfg: dict) -> dict:
+    """Validate optional functional-noise controls from the simulation block.
+
+    ``noise_scale`` is an integer and ``noise_type`` is a string.  Both may
+    also be supplied as lists to sweep several values; scalar values are
+    normalised to one-element lists for the factorial design.
+    """
+    def _as_list(value):
+        return value if isinstance(value, list) else [value]
+
+    resolved = {}
+    if "noise_scale" in simulation_cfg:
+        scales = _as_list(simulation_cfg["noise_scale"])
+        if any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in scales):
+            raise TypeError("simulation.noise_scale must be a number or a list of numbers")
+        resolved["noise_scale"] = scales
+
+    if "noise_type" in simulation_cfg:
+        types = _as_list(simulation_cfg["noise_type"])
+        if any(not isinstance(value, str) for value in types):
+            raise TypeError("simulation.noise_type must be a string or a list of strings")
+        resolved["noise_type"] = types
+
+    return resolved
+
+
 def _resolve_functionals_block(functionals_cfg):
     """
     Normalise a ``simulation.functionals`` sweep.
@@ -202,7 +228,9 @@ def _resolve_functionals_block(functionals_cfg):
         kwargs = entry.get("kwargs") or {}
         if not isinstance(kwargs, dict):
             raise TypeError("functional kwargs must be a mapping")
-        resolved.append({"name": entry["name"], "kwargs": kwargs})
+        resolved.append(
+            {"functional_form": entry["name"], "function_params": kwargs}
+        )
     return resolved
 
 
@@ -294,6 +322,7 @@ def load_config(path: str = "config.yaml") -> dict:
     if "functionals" in sim_raw:
         sim_raw = dict(sim_raw)
         sim_raw["functionals"] = _resolve_functionals_block(sim_raw["functionals"])
+        sim_raw.update(_resolve_noise_options(sim_raw))
 
     methods = _resolve_methods_block(raw["methods"])
     metrics = [ComputeAll()] if raw.get("metrics", {}).get("compute_all") else []
@@ -410,12 +439,18 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
         
         vals.append(marginals)
 
-        # Optional named functional sweep.  Entries are compact descriptors
-        # such as {"name": "pareto", "kwargs": {"alpha": 0.8}}.
+        # Functional sweeps are stored as paired descriptors so each form stays
+        # attached to its own parameters (rather than forming a cross-product).
         if sim.get("functionals") is not None:
-            names.append("functional")
+            names.append("_functional")
             vals.append(sim["functionals"])
-            
+        if "noise_scale" in sim:
+            names.append("noise_scale")
+            vals.append(sim["noise_scale"])
+        if "noise_type" in sim:
+            names.append("noise_type")
+            vals.append(sim["noise_type"])
+
         if mth["approximation"] is not None:
             names.append("approximation")
             vals.append(mth["approximation"])
@@ -425,7 +460,13 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
         if mth["use_true_latent_z"] is not None:
             names.append("use_true_latent_z")
             vals.append(mth["use_true_latent_z"])
-        return [dict(zip(names, v)) for v in iproduct(*vals)]
+        rows = [dict(zip(names, v)) for v in iproduct(*vals)]
+        for row in rows:
+            functional = row.pop("_functional", None)
+            if functional is not None:
+                row["functional_form"] = functional["functional_form"]
+                row["function_params"] = functional["function_params"]
+        return rows
 
     # -- Multiness ------------------------------------------------------------
     if exp == "multiness":
@@ -632,3 +673,4 @@ def flatten_args_columns(df, extra_cols: dict = None):
             df[col] = df["args"].apply(fn)
 
     return df
+

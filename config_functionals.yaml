@@ -15,7 +15,8 @@ simulation:
   rho: [0.2]              # Correlation parameter under H1 (signal strength); 0.0 = null hypothesis
   alpha: [0.05]           # Nominal significance level(s) for hypothesis tests
   edge_var: [3]           # Edge weight variance (used in Gaussian networks)
- 
+  noise_scale : [2.0]
+
   functionals:
     - name: pareto
       kwargs: 
@@ -75,24 +76,11 @@ methods:
 setups:
   # --- Gaussian (continuous-weight) networks ---
   - dgp: BernoulliNetwork
-    copula_model: gaussian
     solver: pgd_fit_wrapper
  
-  - dgp: BernoulliNetwork
-    copula_model: clayton          # Lower-tail dependent copula
-    solver: pgd_fit_wrapper
+  - dgp: GaussianNetwork
+    solver: ASE
 
-  - dgp: BernoulliNetwork
-    copula_model: student_t
-    df: 3                          # Degrees of freedom for the Student-t copula
-    solver: pgd_fit_wrapper
- 
-  - dgp: BernoulliNetwork
-    copula_model: mixture_uniform
-    weights: [0.5, 0.5]           # Mixture weights for the two uniform components
-    correlations: [0.8, -0.8]     # Correlation of each mixture component
-    solver: pgd_fit_wrapper
- 
 # -----------------------------------------------------------------------------
 # Metrics
 # -----------------------------------------------------------------------------
