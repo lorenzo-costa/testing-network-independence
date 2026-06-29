@@ -436,8 +436,3 @@ def _scalar_coefficients_over_m(
     )
 
 
-
-
-# Helpers
-
-

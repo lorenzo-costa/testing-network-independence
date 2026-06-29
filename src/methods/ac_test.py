@@ -69,34 +69,43 @@ class EstimateAC(BaseEstimationMethod):
 class MultivariateACTest(BasePermutationTest):
     """Testing independence using the multivariate AC coefficient
 
-     Reference:
-
      Parameters
      ----------
-     npermutations : int
-        Number of permutations for significance testing.
-    alpha : float
-        Significance level for hypothesis testing.
-    solver : callable
-        Function to estimate latent positions from the adjacency matrix.
     k : int
-        Number of dimensions for the latent space.
-    use_true_latent : bool
-        Whether to use the true latent positions (if True, Z and X must be provided in data)
+        Embedding dimension to use (not necessarily the true one but one used for the test)
     M : int
-        Number of nearest neighbors to use.
+        Number of nearest neighbours to use for test
+    use_true_latent_x : bool
+        Whether to use the true latent positions for X (if True, X must be provided in data)
+    use_true_latent_z : bool
+        Whether to use the true latent positions for Z (if True, Z must be provided in data)
+    aggregate_coeff : bool
+        If None, use AC coeff with a single value of M. If 'avg' or 'max' aggregate AC coeff
+        across all valued of M in the interval [1, M] using the specified aggregation method.
+    use_right_neighbor : bool
+        If True, use the right neighbor of each point to compute the AC coefficient. 
+        Available only if both are univariate
+    use_permutation_coeff : bool
+        If True, use the permutation version of the AC coefficient. Used only for 
+        multivariate response. 
+    npermutations : int
+        Number of permutations to use for the permutation test
+    alpha : float
+        Significance level for the test
+    rng : np.random.Generator
+        Random number generator for reproducibility
     """
 
     def __init__(
         self,
+        k=None,
+        M=None, 
         npermutations=100,
         alpha=0.05,
         rng=None,
         solver=None,
         use_true_latent_x=False,
         use_true_latent_z=False,
-        k=None,
-        M=None, 
         aggregate_coeff=None, 
         use_permutation_coeff=False, 
         use_right_neighbor=False, 
@@ -124,7 +133,7 @@ class MultivariateACTest(BasePermutationTest):
         """Compute multivariate AC coefficient. X is used as response variables (Y),
         Z is the predictor. If use_true_latent is False, the function estimates
         the latent position Zhat from adj matrix A.
-
+ 
         Parameters
         ----------
         data : dict
@@ -149,6 +158,7 @@ class MultivariateACTest(BasePermutationTest):
         # X takes the role of response variable Y in the AC function, Z is the predictor.
         # for consistency keep the names as X and Z.
         # in _process_input when use_true_latent is True, Zhat and Xhat copy true latent
+        
         self.test_stat_estimate = self.test_function(
             Y=self.Xhat,
             Z=self.Zhat,

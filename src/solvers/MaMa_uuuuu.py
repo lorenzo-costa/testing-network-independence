@@ -355,7 +355,6 @@ def pgd_fit(
     -------
     Z_hat, alpha_hat, beta_hat  (or with history appended)
     """
-    print('inside pdg', k)
     if rng is None:
         rng = np.random.default_rng()
 

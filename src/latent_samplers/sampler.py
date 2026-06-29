@@ -4,6 +4,7 @@ from .hyppo_sampler import HyppoSimSampler
 from .orthogonal_subspace import OrthogonalSubspaceSampler
 from .rdpg_sampler import RDPGGenerator
 from .sbm_sampler import SBMGenerator
+from .functional_sampler import FunctionalGenerator
 import numpy as np
 
 class LatentSampler:
@@ -40,6 +41,7 @@ class LatentSampler:
         dim_common=None,
         block_probs_type=None,
         rdpg_distr=None,
+        functional_form=None,
         rng=None,
         force_x_single_dimension=False,
         **kwargs,
@@ -50,9 +52,29 @@ class LatentSampler:
         self.rng = rng
         self.n = n
         self.k = k
+        self.kx = kx if kx is not None else k  # default to same dimension as k
         
-
-        if latent_sim is not None:
+        if functional_form is not None:
+            if copula_model is not None:
+                raise Warning(
+                    "Both functional_form and copula_model specified. copula_model will be ignored."
+                )
+            if dim_common is not None:
+                raise Warning(
+                    "Both functional_form and dim_common specified. dim_common will be ignored."
+                )
+            if block_probs_type is not None:
+                raise Warning(
+                    "Both functional_form and block_probs_type specified. block_probs_type will be ignored."
+                )
+            if rdpg_distr is not None:
+                raise Warning(
+                    "Both functional_form and rdpg_distr specified. rdpg_distr will be ignored."
+                )
+            latent_sampler = FunctionalGenerator(n=n, k=k, kx=kx, functional_form=functional_form,
+                                                 rng=rng, **kwargs)
+            
+        elif latent_sim is not None:
             if copula_model is not None:
                 raise Warning(
                     "Both latent_sim and copula_model specified. copula_model will be ignored."
@@ -69,9 +91,9 @@ class LatentSampler:
                 raise Warning(
                     "Both latent_sim and rdpg_distr specified. rdpg_distr will be ignored."
                 )
-
+            # does not accept kx yet
             latent_sampler = HyppoSimSampler(
-                n=n, k=k, sim_name=latent_sim, rng=rng, **kwargs
+                n=n, k=k, sim_name=latent_sim, rng=rng, **kwargs 
             )
 
         elif dim_common is not None:
@@ -87,7 +109,7 @@ class LatentSampler:
                 raise Warning(
                     "Both dim_common and rdpg_distr specified. rdpg_distr will be ignored."
                 )
-
+            # does not accept kx yet
             latent_sampler = OrthogonalSubspaceSampler(
                 n=n, k=k, dim_common=dim_common, rng=rng, **kwargs
             )
@@ -131,18 +153,23 @@ class LatentSampler:
         self.rdpg_distr = rdpg_distr
 
         self.force_x_single_dimension = force_x_single_dimension
+        
+        self.functional_form = functional_form
 
     def _sample_latent(self):
         """Return X, Z each of shape (n, k).
         Hierarchy of generation is:
-        - if hyppo_sim is specified, use that to generate (X, Z) directly.
+        - if functional_form is specified, use that to generate (X, Z) directly.
+        - else if hyppo_sim is specified, use that to generate (X, Z) directly.
         - else if dim_common is specified, generate X and Z with some shared + individual structure.
         - else if block_probs_type is specified, generate X and Z with SBM structure according to the specified block probabilities.
         - else use the copula-based generation with the specified marginals and dependence structure.
         """
         Z, X = None, None
 
-        if self.latent_sim is not None:
+        if self.functional_form is not None:
+            Z, X = self.latent_sampler._sample_latent_functional()
+        elif self.latent_sim is not None:
             Z, X = self.latent_sampler._sample_latent_hyppo()
         elif self.dim_common is not None:
             Z, X = self.latent_sampler._sample_latent_orthogonal()

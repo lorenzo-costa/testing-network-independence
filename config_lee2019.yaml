@@ -45,18 +45,8 @@ methods:
 
     - name: MultivariateACTest
       kwargs:
-        M: third
-        aggregate_coeff: avg   
-
-    - name: MultivariateACTest
-      kwargs:
         M: sqrt
-        aggregate_coeff: max
-
-    - name: MultivariateACTest
-      kwargs:
-        M: sqrt
-        aggregate_coeff: avg       
+        aggregate_coeff: max       
 
 
 # -----------------------------------------------------------------------------
@@ -69,23 +59,23 @@ setups:
 
   # --- Gaussian (continuous-weight) networks ---
   gaussian_latent_sims:
-    # - linear
-    # - exponential
-    # - cubic
-    # - quadratic
-    # - w_shaped
-    # - spiral
-    # - step
-    # - fourth_root
-    # - joint_normal
-    # - logarithmic
-    # - sin_sixteen_pi
-    # - square
-    # - diamond
-    # - circle
-    # - ellipse
-    # - two_parabolas
-    # - uncorrelated_bernoulli
+    - linear
+    - exponential
+    - cubic
+    - quadratic
+    - w_shaped
+    - spiral
+    - step
+    - fourth_root
+    - joint_normal
+    - logarithmic
+    - sin_sixteen_pi
+    - square
+    - diamond
+    - circle
+    - ellipse
+    - two_parabolas
+    - uncorrelated_bernoulli
     - multimodal_independence   # No noise kwarg for this one (see loader)
 
   # --- Bernoulli (binary-edge) networks ---
