@@ -6,7 +6,7 @@
 # Simulation Setup
 # -----------------------------------------------------------------------------
 simulation:
-  nsim: 1          # Number of Monte Carlo repetitions per parameter combination
+  nsim: 100          # Number of Monte Carlo repetitions per parameter combination
   seed: 1                 # Master RNG seed for reproducibility (passed to np.random.default_rng)
  
   n: [100, 400]      # Sample sizes (number of nodes)
