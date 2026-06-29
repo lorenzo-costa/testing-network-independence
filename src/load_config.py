@@ -177,6 +177,35 @@ def _resolve_methods_block(methods_cfg: dict) -> dict:
     }
 
 
+def _resolve_functionals_block(functionals_cfg):
+    """
+    Normalise a ``simulation.functionals`` sweep.
+
+    Each entry is retained as a plain, serialisable descriptor so downstream
+    simulation code can dispatch the functional by name while receiving its
+    keyword arguments unchanged.  A bare string is also accepted as shorthand
+    for ``{"name": <string>, "kwargs": {}}``.
+    """
+    if functionals_cfg is None:
+        return None
+    if not isinstance(functionals_cfg, list):
+        raise TypeError("simulation.functionals must be a list of strings or mappings")
+
+    resolved = []
+    for entry in functionals_cfg:
+        if isinstance(entry, str):
+            entry = {"name": entry}
+        if not isinstance(entry, dict) or not entry.get("name"):
+            raise ValueError(
+                "Each simulation.functionals entry must contain a non-empty 'name'"
+            )
+        kwargs = entry.get("kwargs") or {}
+        if not isinstance(kwargs, dict):
+            raise TypeError("functional kwargs must be a mapping")
+        resolved.append({"name": entry["name"], "kwargs": kwargs})
+    return resolved
+
+
 # =============================================================================
 # Experiment-type detection
 # =============================================================================
@@ -207,6 +236,9 @@ def _detect_experiment_type(raw: dict) -> str:
     if marginals and isinstance(marginals[0], dict):
         return "diff_marginals"
 
+    if "functionals" in raw.get("simulation", {}):
+        return "functionals"
+
     if "column_covariance" in raw.get("simulation", {}):
         return "asymptotic"
 
@@ -225,7 +257,8 @@ def load_config(path: str = "config.yaml") -> dict:
     Returned keys
     -------------
     experiment_type : str
-        One of "standard", "lee2019", "diff_marginals", "sbm", "multiness".
+        One of "standard", "lee2019", "diff_marginals", "sbm", "multiness",
+        "functionals", or "asymptotic".
     simulation : dict
         Raw simulation block: nsim, n, k, rho, alpha, edge_var, marginals, seed.
         multiness also carries: dim_common, dim_individual, shared_latent_type.
@@ -256,6 +289,12 @@ def load_config(path: str = "config.yaml") -> dict:
 
     exp_type = _detect_experiment_type(raw)
     sim_raw = raw["simulation"]
+    # Keep the raw YAML shape, but normalise optional functional sweeps so
+    # callers receive a consistent descriptor format.
+    if "functionals" in sim_raw:
+        sim_raw = dict(sim_raw)
+        sim_raw["functionals"] = _resolve_functionals_block(sim_raw["functionals"])
+
     methods = _resolve_methods_block(raw["methods"])
     metrics = [ComputeAll()] if raw.get("metrics", {}).get("compute_all") else []
     rng = np.random.default_rng(sim_raw["seed"])
@@ -266,7 +305,8 @@ def load_config(path: str = "config.yaml") -> dict:
     elif exp_type == "sbm":
         setups = _resolve_sbm_setups(raw["setups"])
     else:
-        # standard, diff_marginals, multiness — all use copula-style setup entries
+        # standard, diff_marginals, multiness, functionals, asymptotic
+        # all use copula-style setup entries
         setups = [_resolve_copula_setup(e) for e in raw["setups"]]
 
     # -- Experiment-specific extra params -------------------------------------
@@ -328,11 +368,11 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             "k",
             "kx",
             "alpha",
-            "marginals",
             "rho",
             "edge_var",
             "npermutations",
             "df",
+            "marginals"
         ]
         vals = [
             setups_list,
@@ -341,12 +381,41 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             sim["k"],
             sim.get("kx", [None]),
             sim["alpha"],
-            sim["marginals"],
             rho_list,
             sim["edge_var"],
             mth["npermutations"],
             mth["df"],
         ]
+        marginals = sim.get("marginals", None)
+        marginals_x = sim.get("marginals_x", None)
+        marginals_z = sim.get("marginals_z", None)
+        
+        if marginals is None:
+            # Functional-dependence configs do not require a marginal sweep.
+            # Preserve a stable row schema by carrying an explicit None.
+            if exp == "functionals" and marginals_x is None and marginals_z is None:
+                marginals = [None]
+            elif marginals_x is None:
+                if marginals_z is None:
+                    raise ValueError("At least one of 'marginals', 'marginals_x', or 'marginals_z' must be specified.")
+                marginals_x = marginals_z
+            if marginals is None:
+                if marginals_z is None:
+                    marginals_z = marginals_x
+                
+                marginals = [
+                    {"x": marginal_x, "z": marginal_z}
+                    for marginal_x, marginal_z in iproduct(marginals_x, marginals_z)
+                ]
+        
+        vals.append(marginals)
+
+        # Optional named functional sweep.  Entries are compact descriptors
+        # such as {"name": "pareto", "kwargs": {"alpha": 0.8}}.
+        if sim.get("functionals") is not None:
+            names.append("functional")
+            vals.append(sim["functionals"])
+            
         if mth["approximation"] is not None:
             names.append("approximation")
             vals.append(mth["approximation"])

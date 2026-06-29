@@ -32,16 +32,7 @@ methods:
 
     - name: MultivariateACTest
       kwargs:
-        M: third
-
-    - name: MultivariateACTest
-      kwargs:
         M: sqrt 
-
-    - name: MultivariateACTest
-      kwargs:
-        M: third
-        aggregate_coeff: max
 
     - name: MultivariateACTest
       kwargs:
@@ -100,7 +91,7 @@ setups:
     - uncorrelated_bernoulli
     - multimodal_independence   # No noise kwarg for this one (see loader)
 
-  bernoulli_rdpg: minmax        # RDPG rescaling strategy for Bernoulli networks
+  bernoulli_rdpg: hypersphere        # RDPG rescaling strategy for Bernoulli networks
 
 
 # -----------------------------------------------------------------------------
