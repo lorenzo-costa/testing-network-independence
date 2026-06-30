@@ -40,6 +40,7 @@ class SBMGenerator:
         sparsity_bias=0.6,
         prob_switch=0.2,
         distance_probs=None,
+        rng=None,
         **kwargs,
     ):
         self.n = n
@@ -58,6 +59,7 @@ class SBMGenerator:
         self.distance_probs = distance_probs
         self.sparsity_bias = sparsity_bias
         self.assortativity = assortativity
+        self.rng = rng if rng is not None else np.random.default_rng()
 
         self.is_null = True
 
@@ -179,3 +181,7 @@ class SBMGenerator:
             self.block_probs_z,
             self.block_probs_x,
         )
+    
+    def get_name(self):
+        return f"SBM_n{self.n}_kz{self.kz}_kx{self.kx}_mode{self.assignment_mode}_block{self.block_probs_type}_assort{self.assortativity}_sparsity{self.sparsity_bias}"
+    
