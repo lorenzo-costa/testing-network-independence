@@ -5,7 +5,12 @@ from .orthogonal_subspace import OrthogonalSubspaceSampler
 from .rdpg_sampler import RDPGGenerator
 from .sbm_sampler import SBMGenerator
 from .functional_sampler import FunctionalGenerator
+from .sbm_cov_sampler import SBMCovariateGenerator
 import numpy as np
+
+
+import warnings
+
 
 class LatentSampler:
     """Base class for sampling latent variables
@@ -42,6 +47,7 @@ class LatentSampler:
         block_probs_type=None,
         rdpg_distr=None,
         functional_form=None,
+        sbm_covariate_sampling=None,
         rng=None,
         force_x_single_dimension=False,
         **kwargs,
@@ -54,94 +60,60 @@ class LatentSampler:
         self.k = k
         self.kx = kx if kx is not None else k  # default to same dimension as k
         
-        if functional_form is not None:
-            if copula_model is not None:
-                raise Warning(
-                    "Both functional_form and copula_model specified. copula_model will be ignored."
-                )
-            if dim_common is not None:
-                raise Warning(
-                    "Both functional_form and dim_common specified. dim_common will be ignored."
-                )
-            if block_probs_type is not None:
-                raise Warning(
-                    "Both functional_form and block_probs_type specified. block_probs_type will be ignored."
-                )
-            if rdpg_distr is not None:
-                raise Warning(
-                    "Both functional_form and rdpg_distr specified. rdpg_distr will be ignored."
-                )
-            latent_sampler = FunctionalGenerator(n=n, k=k, kx=kx, functional_form=functional_form,
-                                                 rng=rng, **kwargs)
-            
-        elif latent_sim is not None:
-            if copula_model is not None:
-                raise Warning(
-                    "Both latent_sim and copula_model specified. copula_model will be ignored."
-                )
-            if dim_common is not None:
-                raise Warning(
-                    "Both latent_sim and dim_common specified. dim_common will be ignored."
-                )
-            if block_probs_type is not None:
-                raise Warning(
-                    "Both latent_sim and block_probs_type specified. block_probs_type will be ignored."
-                )
-            if rdpg_distr is not None:
-                raise Warning(
-                    "Both latent_sim and rdpg_distr specified. rdpg_distr will be ignored."
-                )
-            # does not accept kx yet
-            latent_sampler = HyppoSimSampler(
-                n=n, k=k, sim_name=latent_sim, rng=rng, **kwargs 
+        sampler_options = [
+            ("sbm_covariate_sampling", sbm_covariate_sampling),
+            ("functional_form", functional_form),
+            ("latent_sim", latent_sim),
+            ("dim_common", dim_common),
+            ("block_probs_type", block_probs_type),
+            ("rdpg_distr", rdpg_distr),
+            ("copula_model", copula_model),
+        ]
+        
+       
+        selected_name, selected_value = next(
+            ((name, value) for name, value in sampler_options if value is not None),
+            ("copula_model", None),  # default construction
+        )
+
+        ignored = [
+            name
+            for name, value in sampler_options
+            if value is not None and name != selected_name
+        ]
+
+        if ignored:
+            warnings.warn(
+                f"{selected_name} was specified; ignoring: {', '.join(ignored)}.",
+                UserWarning,
+                stacklevel=2,
             )
 
-        elif dim_common is not None:
-            if copula_model is not None:
-                raise Warning(
-                    "Both dim_common and copula_model specified. copula_model will be ignored."
-                )
-            if block_probs_type is not None:
-                raise Warning(
-                    "Both dim_common and block_probs_type specified. block_probs_type will be ignored."
-                )
-            if rdpg_distr is not None:
-                raise Warning(
-                    "Both dim_common and rdpg_distr specified. rdpg_distr will be ignored."
-                )
-            # does not accept kx yet
-            latent_sampler = OrthogonalSubspaceSampler(
-                n=n, k=k, dim_common=dim_common, rng=rng, **kwargs
-            )
+        factories = {
+            "sbm_covariate_sampling": lambda value: SBMCovariateGenerator(
+                n=n, k=k, kx=kx, sampling=value, rng=rng, **kwargs
+            ),
+            "functional_form": lambda value: FunctionalGenerator(
+                n=n, k=k, kx=kx, functional_form=value, rng=rng, **kwargs
+            ),
+            "latent_sim": lambda value: HyppoSimSampler(
+                n=n, k=k, sim_name=value, rng=rng, **kwargs
+            ),
+            "dim_common": lambda value: OrthogonalSubspaceSampler(
+                n=n, k=k, dim_common=value, rng=rng, **kwargs
+            ),
+            "block_probs_type": lambda value: SBMGenerator(
+                n=n, k=k, kx=kx, block_probs_type=value, rng=rng, **kwargs
+            ),
+            "rdpg_distr": lambda value: RDPGGenerator(
+                n=n, k=k, kx=kx, rdpg_distr=value, rng=rng, **kwargs
+            ),
+            "copula_model": lambda value: CopulaGenerator(
+                n=n, k=k, kx=kx, copula_model=value, rng=rng, **kwargs
+            ),
+        }
 
-        elif block_probs_type is not None:
-            if copula_model is not None:
-                raise Warning(
-                    "Both block_probs_type and copula_model specified. copula_model will be ignored."
-                )
-            if rdpg_distr is not None:
-                raise Warning(
-                    "Both block_probs_type and rdpg_distr specified. rdpg_distr will be ignored."
-                )
-
-            latent_sampler = SBMGenerator(
-                n=n, k=k, kx=kx, rng=rng, block_probs_type=block_probs_type, **kwargs
-            )
-
-        elif rdpg_distr is not None:
-            if copula_model is not None:
-                raise Warning(
-                    "Both rdpg_distr and copula_model specified. copula_model will be ignored."
-                )
-
-            latent_sampler = RDPGGenerator(
-                n=n, k=k, kx=kx, rng=rng, rdpg_distr=rdpg_distr, **kwargs
-            )
-
-        else:
-            latent_sampler = CopulaGenerator(
-                n=n, k=k, kx=kx, rng=rng, copula_model=copula_model, **kwargs
-            )
+        latent_sampler = factories[selected_name](selected_value)
 
         self.latent_sampler = latent_sampler
         self.sampler_name = latent_sampler.get_name()
@@ -151,8 +123,7 @@ class LatentSampler:
         self.dim_common = dim_common
         self.block_probs_type = block_probs_type
         self.rdpg_distr = rdpg_distr
-
-        self.force_x_single_dimension = force_x_single_dimension
+        self.sbm_covariate_sampling = sbm_covariate_sampling
         
         self.functional_form = functional_form
 
@@ -182,6 +153,12 @@ class LatentSampler:
             ) = self.latent_sampler._sample_sbm_latent()
             X = community_assignment_x @ probs_matrix_x**0.5
             Z = community_assignment_z @ probs_matrix_z**0.5
+        elif self.sbm_covariate_sampling is not None:
+            X, community_assignment, block_probs = self.latent_sampler._sample_latent_sbm_covariate()
+            Z = community_assignment @ block_probs**0.5
+            if len(X.shape) == 1:
+                X = X.reshape(-1, 1)
+            
         elif self.rdpg_distr is not None:
             Z, X = self.latent_sampler._sample_latent_rdpg()
         elif self.copula_model is not None:
@@ -190,8 +167,5 @@ class LatentSampler:
             raise ValueError(
                 "No valid latent generation method specified. Please provide one of: latent_sim, dim_common, block_probs_type, or copula_model."
             )
-
-        if self.force_x_single_dimension:
-            X = X[:, 0:1]  # Keep only the first dimension of X
 
         return Z, X

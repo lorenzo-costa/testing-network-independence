@@ -22,10 +22,12 @@ simulation:
 # Testing Methods
 # -----------------------------------------------------------------------------
 methods:
-  npermutations: [200]
+  npermutations: [200]      # Number of permutations used in permutation-based tests
+  df: [3]                   # Degrees of freedom (used in Student-t approximations)
   use_true_latent_x: [True]  
   use_true_latent_z: [False]  
-
+ 
+  # List of test methods to benchmark. 'kwargs' are passed to the method constructor.
   list:    
     - name: DiffusionCorrelation
       kwargs: {}                 
@@ -47,7 +49,7 @@ methods:
       kwargs:
         M: quarter
         aggregate_coeff: max 
-
+  
 # -----------------------------------------------------------------------------
 # DGP & Solver Setups
 # All setups use ASE with k=2 (two-dimensional embedding regardless of latent k).

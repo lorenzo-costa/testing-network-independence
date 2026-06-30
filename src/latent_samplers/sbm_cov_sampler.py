@@ -7,13 +7,11 @@ as a PEP-8-friendly alias.
 
 from __future__ import annotations
 
-from typing import Dict, Optional, Sequence, Union
-
 import numpy as np
 
 
 
-class SBM_covarite_generator:
+class SBMCovariateGenerator:
     """Sample an SBM together with a univariate node covariate ``X``.
 
     Parameters
@@ -106,9 +104,10 @@ class SBM_covarite_generator:
         directed = False,
         self_loops = False,
         rng = None,
+        **kwargs,
     ) -> None:
-        self.n = self._validate_positive_integer("n", n)
-        self.k = self._validate_positive_integer("k", k)
+        self.n = n
+        self.k = k
 
         self.x_distribution = x_distribution
         self.x_upper_bound = x_upper_bound
@@ -122,7 +121,7 @@ class SBM_covarite_generator:
         self.sparsity_bias = float(sparsity_bias)
         self.directed = bool(directed)
         self.self_loops = bool(self_loops)
-        self.rng = self._coerce_rng(rng)
+        self.rng = rng if rng is not None else np.random.default_rng()
 
         self._validate_parameters()
         self.covariate_type = (
@@ -130,28 +129,12 @@ class SBM_covarite_generator:
         )
 
         # Convenience state populated by ``sample``.
-        self.X  = None
-        self.z: Optional[np.ndarray] = None
-        self.community_assignment: Optional[np.ndarray] = None
-        self.sampled_block_probs: Optional[np.ndarray] = None
-        self.adjacency: Optional[np.ndarray] = None
-        self.is_null = self.sampling == "random"
-
-    @staticmethod
-    def _validate_positive_integer(name: str, value: int) -> int:
-        if isinstance(value, (bool, np.bool_)) or int(value) != value or value < 1:
-            raise ValueError(f"{name} must be a positive integer; received {value!r}.")
-        return int(value)
-
-    @staticmethod
-    def _coerce_rng(
-        rng: Optional[Union[np.random.Generator, int]],
-    ) -> np.random.Generator:
-        if rng is None:
-            return np.random.default_rng()
-        if isinstance(rng, np.random.Generator):
-            return rng
-        return np.random.default_rng(rng)
+        self.X = None
+        self.z = None
+        self.community_assignment = None
+        self.sampled_block_probs = None
+        self.adjacency = None
+        self.is_null = (self.sampling == "random")
 
     def _validate_parameters(self) -> None:
         if self.sampling not in self._SAMPLING_MODES:
@@ -160,8 +143,8 @@ class SBM_covarite_generator:
 
         if not 0.0 <= self.rho <= 1.0:
             raise ValueError("rho must lie in [0, 1].")
-        if not 0.0 <= self.assortativity <= 1.0:
-            raise ValueError("assortativity must lie in [0, 1].")
+        if not -1.0 <= self.assortativity <= 1.0:
+            raise ValueError("assortativity must lie in [-1, 1].")
         if not 0.0 <= self.sparsity_bias <= 1.0:
             raise ValueError("sparsity_bias must lie in [0, 1].")
 
@@ -236,14 +219,6 @@ class SBM_covarite_generator:
                 )
             self.block_probs = block_probs
 
-    @staticmethod
-    def _validate_nonnegative_integer(name: str, value: int) -> int:
-        if isinstance(value, (bool, np.bool_)) or int(value) != value or value < 0:
-            raise ValueError(
-                f"{name} must be a nonnegative integer; received {value!r}."
-            )
-        return int(value)
-
     @classmethod
     def _parse_continuous_distribution(
         cls, specification: str
@@ -271,9 +246,9 @@ class SBM_covarite_generator:
             "gaussian": (0, 2),
             "normal": (0, 2),
             "cauchy": (0, 2),
-            "uniform": (2,),
-            "pareto": (1, 2),
-            "t": (1, 3),
+            "uniform": (0, 2),
+            "pareto": (0, 1, 2),
+            "t": (0, 1, 3),
         }[name]
         if params.size not in expected:
             examples = {
@@ -293,19 +268,22 @@ class SBM_covarite_generator:
             if params[1] <= 0:
                 raise ValueError(f"The scale for {name!r} must be positive.")
         elif name == "uniform":
-            if not params[0] < params[1]:
-                raise ValueError(
-                    "For uniform, the lower endpoint must be smaller than the "
-                    "upper endpoint."
-                )
+            if params.size == 2:
+                if not params[0] < params[1]:
+                    raise ValueError(
+                        "For uniform, the lower endpoint must be smaller than the "
+                        "upper endpoint."
+                    )
         elif name == "pareto":
-            if params[0] <= 0 or (params.size == 2 and params[1] <= 0):
-                raise ValueError("Pareto shape and scale must be positive.")
+            if params.size > 0:
+                if params[0] <= 0 or (params.size == 2 and params[1] <= 0):
+                    raise ValueError("Pareto shape and scale must be positive.")
         elif name == "t":
-            if params[0] <= 0:
-                raise ValueError("Student-t degrees of freedom must be positive.")
-            if params.size == 3 and params[2] <= 0:
-                raise ValueError("Student-t scale must be positive.")
+            if params.size > 0:
+                if params[0] <= 0:
+                    raise ValueError("Student-t degrees of freedom must be positive.")
+                if params.size == 3 and params[2] <= 0:
+                    raise ValueError("Student-t scale must be positive.")
 
         return name, params
 
@@ -324,15 +302,15 @@ class SBM_covarite_generator:
             loc, scale = (0.0, 1.0) if params.size == 0 else params
             return loc + scale * self.rng.standard_cauchy(size=self.n)
         if name == "uniform":
-            low, high = params
+            low, high = (0.0, 1.0) if params.size == 0 else params
             return self.rng.uniform(low=low, high=high, size=self.n)
         if name == "pareto":
-            shape = params[0]
-            scale = 1.0 if params.size == 1 else params[1]
+            shape = 1.5 if params.size == 0 else params[0]
+            scale = 1.0 if params.size <= 1 else params[1]
             # NumPy's pareto returns support [0, inf); rescale to [scale, inf).
             return scale * (self.rng.pareto(a=shape, size=self.n) + 1.0)
         if name == "t":
-            df = params[0]
+            df = 3 if params.size == 0 else params[0]
             loc, scale = (0.0, 1.0) if params.size == 1 else params[1:]
             return loc + scale * self.rng.standard_t(df=df, size=self.n)
 
@@ -392,11 +370,11 @@ class SBM_covarite_generator:
 
     def _coerce_softmax_parameter(
         self,
-        parameter: Optional[ArrayLike],
+        parameter,
         *,
-        default: np.ndarray,
-        name: str,
-    ) -> np.ndarray:
+        default,
+        name,
+    ):
         if parameter is None:
             return default.astype(float, copy=True)
 
@@ -411,20 +389,32 @@ class SBM_covarite_generator:
             raise ValueError(f"{name} must contain only finite values.")
         return values
 
-    def _generate_probability_matrix(self) -> np.ndarray:
-        """Sample a block matrix while honoring sparsity and assortativity."""
+    def _generate_probability_matrix(self):
+        """Sample a block-probability matrix honoring sparsity and assortativity.
+
+        Assortativity must lie in [-1, 1]:
+            -  1.0: strongly assortative
+            -  0.0: no within/between preference
+            - -1.0: strongly disassortative
+        """
+        if not -1.0 <= self.assortativity <= 1.0:
+            raise ValueError(
+                "assortativity must lie in [-1, 1], where negative values "
+                "produce disassortative block structure."
+            )
+
         density = 1.0 - self.sparsity_bias
         random_scale = self.rng.uniform(0.5, 1.5, size=(self.k, self.k))
         diagonal_mask = np.eye(self.k, dtype=bool)
 
-        # At assortativity=0.5 both multipliers equal one.  Above it, diagonal
-        # entries become larger relative to off-diagonal entries; below it, the
-        # reverse holds.
+        # Positive assortativity favors within-community edges.
+        # Negative assortativity favors between-community edges.
         multipliers = np.where(
             diagonal_mask,
-            2.0 * self.assortativity,
-            2.0 * (1.0 - self.assortativity),
+            1.0 + self.assortativity,
+            1.0 - self.assortativity,
         )
+
         probs = np.clip(density * random_scale * multipliers, 0.0, 1.0)
 
         if not self.directed:
@@ -438,57 +428,7 @@ class SBM_covarite_generator:
             return self.block_probs.copy()
         return self._generate_probability_matrix()
 
-    def _sample_adjacency(self, z: np.ndarray, block_probs: np.ndarray) -> np.ndarray:
-        """Sample the adjacency matrix conditional on labels and block probabilities."""
-        edge_probs = block_probs[z[:, None], z[None, :]]
-
-        if self.directed:
-            adjacency = (
-                self.rng.random((self.n, self.n)) < edge_probs
-            ).astype(np.int8)
-            if not self.self_loops:
-                np.fill_diagonal(adjacency, 0)
-            return adjacency
-
-        upper = self.rng.random((self.n, self.n)) < edge_probs
-        adjacency = np.triu(upper, k=0 if self.self_loops else 1).astype(np.int8)
-        adjacency = adjacency + np.triu(adjacency, k=1).T
-        if not self.self_loops:
-            np.fill_diagonal(adjacency, 0)
-        return adjacency
-
-    def sample(self) -> Dict[str, np.ndarray]:
-        """Sample X, SBM labels, block probabilities, and the adjacency matrix.
-
-        Returns
-        -------
-        dict
-            ``{"X", "z", "community_assignment", "block_probs", "adjacency"}``.
-            Here ``X`` and ``z`` have shape ``(n,)``,
-            ``community_assignment`` has shape ``(n, k)``, ``block_probs`` has
-            shape ``(k, k)``, and ``adjacency`` has shape ``(n, n)``.
-        """
-        x = self._sample_x()
-        z = self._sample_community_labels(x)
-        community_assignment = np.eye(self.k, dtype=np.int8)[z]
-        block_probs = self._sample_block_probs()
-        adjacency = self._sample_adjacency(z, block_probs)
-
-        self.X = x
-        self.z = z
-        self.community_assignment = community_assignment
-        self.sampled_block_probs = block_probs
-        self.adjacency = adjacency
-
-        return {
-            "X": x,
-            "z": z,
-            "community_assignment": community_assignment,
-            "block_probs": block_probs,
-            "adjacency": adjacency,
-        }
-
-    def _sample_sbm_latent(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _sample_latent_sbm_covariate(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Sample and return X, one-hot labels, and block probabilities.
 
         This mirrors the latent-sampling style of ``SBMGenerator`` while
@@ -517,10 +457,3 @@ class SBM_covarite_generator:
             f"sampling{self.sampling}_assort{self.assortativity}_"
             f"sparsity{self.sparsity_bias}"
         )
-
-
-# PEP-8-friendly alias; the requested class name remains the primary API.
-SBMCovariateGenerator = SBM_covarite_generator
-
-
-__all__ = ["SBM_covarite_generator", "SBMCovariateGenerator"]

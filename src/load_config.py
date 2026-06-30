@@ -3,17 +3,17 @@ load_config.py
 --------------
 Universal config loader for all simulation experiments.
 
-Supports five experiment types, auto-detected from YAML structure:
+Supports six experiment types, auto-detected from YAML structure:
   - "standard"       -> main study + observed CVM sweep (same structure, different values)
   - "lee2019"        -> latent functional-relationship study (Lee et al. 2019)
   - "diff_marginals" -> asymmetric per-network marginal distributions
-  - "sbm"            -> stochastic block model misspecification study
+  - "sbm"            -> covariate-aware stochastic block model study
   - "multiness"      -> multi-network study with common/individual latent dimensions
 
 Public API
 ----------
     cfg          = load_config("config.yaml")      # auto-detects type
-    h1, h0       = build_factorial_design(cfg)     # h0 is None for lee2019 / sbm
+    h1, h0       = build_factorial_design(cfg)     # h0 is None for lee2019 
     df           = flatten_args_columns(df)        # common post-processing
 """
 
@@ -153,14 +153,92 @@ def _resolve_lee2019_setups(setups_cfg: dict) -> list:
     return result
 
 
-def _resolve_sbm_setups(setups_list: list) -> list:
+def _as_sweep(value, name: str) -> list:
+    """Normalise a scalar or list-valued config field into a factorial sweep."""
+    if value is None:
+        return [None]
+    if isinstance(value, list):
+        if not value:
+            raise ValueError(f"{name} must not be an empty list")
+        return value
+    return [value]
+
+
+def _resolve_sbm_setups(setups_cfg: list) -> list:
+    """Resolve SBM DGP/solver pairs.
+
+    An SBM config may omit ``sbm: true`` in each setup because the top-level
+    ``sbm`` block already identifies the experiment.  The flag is injected
+    unconditionally here, while any other setup-specific DGP keyword arguments
+    are preserved.
     """
-    Resolve SBM setups: sbm=True is injected automatically; no copula params.
+    if not isinstance(setups_cfg, list) or not setups_cfg:
+        raise TypeError("SBM setups must be a non-empty list of mappings")
+
+    resolved = []
+    for entry in setups_cfg:
+        if not isinstance(entry, dict):
+            raise TypeError("Each SBM setup must be a mapping")
+        try:
+            dgp_cls = DGP_REGISTRY[entry["dgp"]]
+            solver = SOLVER_REGISTRY[entry["solver"]]
+        except KeyError as exc:
+            raise ValueError(
+                "Each SBM setup must name a registered 'dgp' and 'solver'"
+            ) from exc
+
+        dgp_kwargs = {
+            key: value for key, value in entry.items() if key not in {"dgp", "solver"}
+        }
+        dgp_kwargs["sbm"] = True
+        resolved.append((partial(dgp_cls, **dgp_kwargs), solver))
+
+    return resolved
+
+
+def _resolve_sbm_block(sbm_cfg: dict) -> dict:
+    """Normalise optional SBM-specific sweeps.
+
+    ``assortativity`` defaults to ``0.5`` when it is not specified.  The
+    covariate-aware fields (``sbm_covariate_sampling`` and ``x_distribution``) are optional
+    as a pair so this loader accepts both the supplied covariate-aware setup and
+    earlier block/assignment-style SBM configurations.
     """
-    return [
-        (partial(DGP_REGISTRY[e["dgp"]], sbm=True), SOLVER_REGISTRY[e["solver"]])
-        for e in setups_list
-    ]
+    if not isinstance(sbm_cfg, dict):
+        raise TypeError("sbm must be a mapping")
+
+    has_sampling = "sbm_covariate_sampling" in sbm_cfg
+    has_x_distribution = "x_distribution" in sbm_cfg
+    if has_sampling != has_x_distribution:
+        raise ValueError(
+            "sbm.sbm_covariate_sampling and sbm.x_distribution must be supplied together"
+        )
+
+    resolved = {
+        "assortativity": _as_sweep(
+            sbm_cfg.get("assortativity", 0.5), "sbm.assortativity"
+        )
+    }
+
+    for name in (
+        "sbm_covariate_sampling",
+        "x_distribution",
+        "sparsity_bias",
+        "prob_switch",
+        "assignment_mode",
+        "block_probs_type",
+        "block_probs",
+        "x_upper_bound",
+        "x_probabilities",
+        "softmax_intercept",
+        "softmax_slope",
+        "directed",
+        "self_loops",
+    ):
+        if name in sbm_cfg:
+            resolved[name] = _as_sweep(sbm_cfg[name], f"sbm.{name}")
+
+    return resolved
 
 
 def _resolve_methods_block(methods_cfg: dict) -> dict:
@@ -244,11 +322,13 @@ def _detect_experiment_type(raw: dict) -> str:
     Infer experiment type from YAML structure (no explicit tag required).
 
     Detection priority (most specific first):
-      1. "sbm"           -- top-level `sbm:` key is present
-      2. "lee2019"       -- `setups` is a dict with a `gaussian_latent_sims` key
-      3. "multiness"     -- simulation block contains `dim_common` key
-      4. "diff_marginals"-- first marginals entry is a dict (has 'x'/'y' keys)
-      5. "standard"      -- everything else (main study + observed CVM sweep)
+      1. "sbm"           -- top-level ``sbm`` block is present
+      2. "lee2019"       -- ``setups`` is a dict with ``gaussian_latent_sims``
+      3. "multiness"     -- simulation block contains ``dim_common``
+      4. "diff_marginals"-- first marginals entry is a mapping
+      5. "functionals"   -- simulation block contains ``functionals``
+      6. "asymptotic"    -- simulation block contains ``column_covariance``
+      7. "standard"      -- everything else
     """
     if "sbm" in raw:
         return "sbm"
@@ -295,8 +375,8 @@ def load_config(path: str = "config.yaml") -> dict:
     methods : dict
         list            -- resolved callables
         npermutations   -- list of ints
-        df              -- list of ints (None for sbm / multiness)
-        approximation   -- list of strings or None when absent (multiness / sbm)
+        df              -- list of ints (None for  multiness)
+        approximation   -- list of strings or None when absent (multiness )
         use_true_latent_x -- list of bools or None when not applicable
         use_true_latent_z -- list of bools or None when not applicable
     setups : list
@@ -305,7 +385,6 @@ def load_config(path: str = "config.yaml") -> dict:
         {"rho": [...], "setups": [...]} for H0 runs, or None.
     extra_params : dict
         lee2019   -> {"sparsity": {"make_sparse": [...], "sparsity_bias": [...]}}
-        sbm       -> {"sbm": {"assortativity": [...], ...}}
         multiness -> {}   (extra dims live directly in cfg["simulation"])
         others    -> {}
     metrics : list
@@ -347,14 +426,7 @@ def load_config(path: str = "config.yaml") -> dict:
             "sparsity_bias": sp["sparsity_bias"],
         }
     elif exp_type == "sbm":
-        sbm = raw.get("sbm", {})
-        extra_params["sbm"] = {
-            "assortativity": sbm.get("assortativity"),
-            "sparsity_bias": sbm.get("sparsity_bias"),
-            "prob_switch": sbm.get("prob_switch"),
-            "assignment_mode": sbm.get("assignment_mode"),
-            "block_probs_type": sbm.get("block_probs_type"),
-        }
+        extra_params["sbm"] = _resolve_sbm_block(raw["sbm"])
     elif exp_type == "asymptotic":
         extra_params["asymptotic"] = {
             "column_covariance": sim_raw.get("column_covariance"),
@@ -548,7 +620,7 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
 
         return [dict(zip(names, v)) for v in iproduct(*vals)]
 
-    # -- SBM ------------------------------------------------------------------
+    # -- Covariate-aware SBM ---------------------------------------------------
     if exp == "sbm":
         sbm = cfg["extra_params"]["sbm"]
         names = [
@@ -558,14 +630,10 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             "k",
             "kx",
             "alpha",
-            "marginals",
             "rho",
             "edge_var",
             "npermutations",
-            "sparsity_bias",
-            "prob_switch",
-            "assignment_mode",
-            "block_probs_type",
+            "df",
             "assortativity",
         ]
         vals = [
@@ -575,16 +643,50 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             sim["k"],
             sim.get("kx", [None]),
             sim["alpha"],
-            sim["marginals"],
-            sim["rho"],
-            sim["edge_var"],
+            sim.get("rho", [None]),
+            sim.get("edge_var", [None]),
             mth["npermutations"],
-            sbm["sparsity_bias"],
-            sbm["prob_switch"],
-            sbm["assignment_mode"],
-            sbm["block_probs_type"],
+            mth["df"],
             sbm["assortativity"],
         ]
+
+        # Covariate-aware and legacy SBM controls are included only when the
+        # YAML supplies them, so neither family needs dummy parameters.
+        for name in (
+            "sbm_covariate_sampling",
+            "x_distribution",
+            "sparsity_bias",
+            "prob_switch",
+            "assignment_mode",
+            "block_probs_type",
+            "block_probs",
+            "x_upper_bound",
+            "x_probabilities",
+            "softmax_intercept",
+            "softmax_slope",
+            "directed",
+            "self_loops",
+        ):
+            if name in sbm:
+                names.append(name)
+                vals.append(sbm[name])
+
+        # A marginal sweep is not required for SBM configs, but preserve it
+        # when a hybrid config explicitly supplies one.
+        if "marginals" in sim:
+            names.append("marginals")
+            vals.append(sim["marginals"])
+
+        if mth["approximation"] is not None:
+            names.append("approximation")
+            vals.append(mth["approximation"])
+        if mth["use_true_latent_x"] is not None:
+            names.append("use_true_latent_x")
+            vals.append(mth["use_true_latent_x"])
+        if mth["use_true_latent_z"] is not None:
+            names.append("use_true_latent_z")
+            vals.append(mth["use_true_latent_z"])
+
         return [dict(zip(names, v)) for v in iproduct(*vals)]
 
     # -- Standard / observed / diff_marginals ---------------------------------
@@ -673,4 +775,3 @@ def flatten_args_columns(df, extra_cols: dict = None):
             df[col] = df["args"].apply(fn)
 
     return df
-
