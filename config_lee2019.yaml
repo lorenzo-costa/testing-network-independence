@@ -26,19 +26,27 @@ methods:
   use_true_latent_x: [True]  
   use_true_latent_z: [False]  
 
-  list: 
+  list:    
     - name: DiffusionCorrelation
       kwargs: {}                 
 
     - name: MultivariateACTest
       kwargs:
-        M: sqrt 
+        M: sqrt
+    
+    - name: MultivariateACTest
+      kwargs:
+        M: quarter
 
     - name: MultivariateACTest
       kwargs:
         M: sqrt
-        aggregate_coeff: max       
+        aggregate_coeff: max
 
+    - name: MultivariateACTest
+      kwargs:
+        M: quarter
+        aggregate_coeff: max 
 
 # -----------------------------------------------------------------------------
 # DGP & Solver Setups

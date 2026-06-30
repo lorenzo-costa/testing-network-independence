@@ -51,11 +51,20 @@ methods:
     - name: MultivariateACTest
       kwargs:
         M: sqrt
+    
+    - name: MultivariateACTest
+      kwargs:
+        M: quarter
 
     - name: MultivariateACTest
       kwargs:
         M: sqrt
-        aggregate_coeff: max                   
+        aggregate_coeff: max
+
+    - name: MultivariateACTest
+      kwargs:
+        M: quarter
+        aggregate_coeff: max                
  
 # -----------------------------------------------------------------------------
 # DGP & Solver Setups (H1: rho > 0)
