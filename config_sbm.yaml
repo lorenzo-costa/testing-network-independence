@@ -39,31 +39,9 @@ methods:
  
   # List of test methods to benchmark. 'kwargs' are passed to the method constructor.
   list:    
-    - name: DiffusionCorrelation
-      kwargs: {}   
-
     - name: MultivariateACTest
       kwargs:
         M: 1              
-
-    - name: MultivariateACTest
-      kwargs:
-        M: sqrt
-    
-    - name: MultivariateACTest
-      kwargs:
-        M: quarter
-
-    - name: MultivariateACTest
-      kwargs:
-        M: sqrt
-        aggregate_coeff: max
-
-    - name: MultivariateACTest
-      kwargs:
-        M: quarter
-        aggregate_coeff: max 
-
 
 # -----------------------------------------------------------------------------
 # DGP & Solver Setups

@@ -55,31 +55,10 @@ methods:
   use_true_latent_z: [False]  
  
   # List of test methods to benchmark. 'kwargs' are passed to the method constructor.
-  list:    
-    - name: DiffusionCorrelation
-      kwargs: {}    
-
+  list:        
     - name: MultivariateACTest
       kwargs:
-        M: 1             
-
-    - name: MultivariateACTest
-      kwargs:
-        M: sqrt
-    
-    - name: MultivariateACTest
-      kwargs:
-        M: quarter
-
-    - name: MultivariateACTest
-      kwargs:
-        M: sqrt
-        aggregate_coeff: max
-
-    - name: MultivariateACTest
-      kwargs:
-        M: quarter
-        aggregate_coeff: max                   
+        M: 1                           
  
 # -----------------------------------------------------------------------------
 # DGP & Solver Setups (H1: rho > 0)
