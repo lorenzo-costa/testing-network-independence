@@ -49,7 +49,6 @@ class LatentSampler:
         functional_form=None,
         sbm_covariate_sampling=None,
         rng=None,
-        force_x_single_dimension=False,
         **kwargs,
     ):
         if rng is None:
