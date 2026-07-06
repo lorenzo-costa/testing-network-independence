@@ -1,0 +1,117 @@
+UNIT AND INTEGRATION TEST INVENTORY
+===================================
+
+This file documents the tests added for src/latent_samplers and src/dgp.
+The tests use small sample sizes and fixed NumPy random generators wherever the
+implementation accepts one, keeping the suite fast and repeatable.
+
+Total implemented cases: 75
+  - Latent sampler unit cases: 54
+  - DGP unit cases: 9
+  - Network generation integration cases: 12
+
+
+LATENT SAMPLER UNIT TESTS
+-------------------------
+
+test_latent_samplers_init.py
+  - Imports the src.latent_samplers package.
+  - Checks that LatentSampler is the package's public export.
+
+test_copula_sampler.py
+  - Imports CopulaGenerator from its module.
+  - Checks that a Student-t copula requires degrees of freedom.
+  - Checks mixture-uniform requirements: required keys, equal component-list
+    lengths, and weights summing to one.
+  - Checks covariance matrices have the requested latent dimensions.
+  - Checks that unknown marginal distributions are rejected.
+
+test_functional_sampler.py
+  - Imports FunctionalGenerator from its module.
+  - Checks positive n and k, scalar response dimension, nonnegative noise,
+    supported noise types, and supported predictor distributions.
+  - Checks that unknown functional forms are rejected.
+  - Checks covariance shape, symmetry, and positive semidefiniteness.
+
+test_hyppo_sampler.py
+  - Imports HyppoSimSampler and its simulation registry.
+  - Checks that the linear simulation is registered and callable.
+  - Checks that unknown simulation names and RDPG normalizations are rejected.
+
+test_orthogonal_subspace.py
+  - Imports OrthogonalSubspaceSampler from its module.
+  - Checks that the common dimension cannot exceed the total dimension.
+  - Checks that unknown shared-latent types are rejected.
+
+test_rdpg_sampler.py
+  - Imports RDPGGenerator from its module.
+  - Checks that unknown latent distributions are rejected.
+  - Checks that unknown dependence types are rejected when dependence is used.
+
+test_sampler.py
+  - Imports LatentSampler from its module.
+  - Checks dispatch to copula, RDPG, SBM, orthogonal-subspace, Hyppo,
+    functional, and SBM-covariate generators.
+  - Checks selector priority and the warning listing ignored selectors.
+  - Checks that sampling without a selected generation method is rejected.
+
+test_sbm_cov_sampler.py
+  - Imports SBMCovariateGenerator from its module.
+  - Checks sampling mode, rho, assortativity, sparsity, and covariate-source
+    validation.
+  - Checks that discrete probabilities are rejected for continuous covariates.
+  - Checks the dimensions of a supplied block-probability matrix.
+
+test_sbm_sampler.py
+  - Imports SBMGenerator from its module.
+  - Checks that unknown assignment and block-probability modes are rejected.
+  - Checks that linked block structures require matching X and Z dimensions.
+
+
+DGP UNIT TESTS
+--------------
+
+test_dgp.py
+  - Imports GaussianNetwork and BernoulliNetwork from src.dgp.
+  - Checks basic Gaussian generation from supplied latent positions, including
+    the exact zero-noise adjacency matrices.
+  - Checks basic Bernoulli generation from supplied latent positions, including
+    matrix dimensions and binary entries.
+  - Checks that generation requires a latent-position method.
+  - Checks that an unknown RDPG distribution is rejected through the complete
+    DGP entry point.
+  - Checks that names and representations identify the chosen latent sampler
+    and the main network dimensions.
+
+
+NETWORK GENERATION INTEGRATION TESTS
+------------------------------------
+
+test_network_generation_pipeline.py
+  - Runs the user-facing pipeline for both GaussianNetwork and
+    BernoulliNetwork.
+  - Exercises six latent-position selections for each network type:
+      1. Gaussian copula
+      2. Dirichlet RDPG
+      3. Hyppo linear simulation
+      4. Gaussian orthogonal shared subspace
+      5. Linear functional response
+      6. SBM with a continuous Gaussian covariate and step assignment
+  - For every combination, checks routing to the requested latent sampler,
+    output keys, adjacency and latent dimensions, finite values, symmetry, and
+    removal of self-loops.
+  - For Bernoulli networks, additionally checks that every edge is binary.
+
+
+KNOWN ENVIRONMENT AND IMPLEMENTATION NOTES
+------------------------------------------
+
+  - hyppo is listed in requirements.txt and is required to import the full
+    latent-sampler package. Install the project requirements before running the
+    suite in a fresh environment.
+  - The discrete SBM-covariate route currently calls an undefined
+    _validate_nonnegative_integer helper. Tests use the working continuous
+    covariate route and do not alter production code.
+  - The older two-network SBM route currently references unset generator
+    attributes. Its validation is unit tested, but it is not included in the
+    successful end-to-end pipeline matrix.
