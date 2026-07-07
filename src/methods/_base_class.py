@@ -142,14 +142,18 @@ class BasePermutationTest(BaseMethod):
             raise ValueError("Test function must be provided")
         self.test_function = test_function
 
+        if permutation_type not in ["latent", "observed"]:
+            raise ValueError(
+                "Invalid permutation_type. Must be 'latent' or 'observed'."
+            )
         self.permutation_type = permutation_type
-
-        self.permutation_distribution = []
 
     def _fit_permutation(self):
         """Get pvalue using permutation test"""
         # A technically not needed but looks cleaner
         A, B, Zhat, Xhat = self.A, self.B, self.Zhat, self.Xhat
+        
+        self.permutation_distribution = []
 
         test_stat_estimate = self.test_function(Zhat, Xhat)
         self.test_stat_estimate = test_stat_estimate

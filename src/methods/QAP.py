@@ -70,7 +70,7 @@ class QAP(BaseMethod):
         self.test_stat_estimate = self._compute_test_stat(A, B)
 
         for i in range(self.npermutations):
-            permutation = np.random.permutation(n)
+            permutation = self.rng.permutation(n)
             B_perm = B[permutation, :][:, permutation]
             test_stat_perm = self._compute_test_stat(A, B_perm)
             self.permutation_distribution.append(test_stat_perm)
@@ -89,7 +89,7 @@ class QAP(BaseMethod):
 
     def _compute_test_stat(self, A, B):
         """Returns sqrt(n)rho if null hypothesis is independence (H0s) and sqrt(n)rho/v_w
-        if null hypothesis is un-correlated (H0w)"""
+        if null hypothesis is un-correlated (H0w). Test stats from SHi & Peng 2025"""
 
         n = A.shape[0]
         A_centered = A - A.mean(axis=0)

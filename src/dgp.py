@@ -103,8 +103,8 @@ class GaussianNetwork(LatentSampler):
             expected_A = expected_A * self.n ** (-self.sparsity_exponent)
             expected_B = expected_B * self.n ** (-self.sparsity_exponent)
 
-        A = self.rng.normal(loc=expected_A, scale=self.edge_var)
-        B = self.rng.normal(loc=expected_B, scale=self.edge_var)
+        A = self.rng.normal(loc=expected_A, scale=np.sqrt(self.edge_var))
+        B = self.rng.normal(loc=expected_B, scale=np.sqrt(self.edge_var))
 
         if self.self_loops is False:
             A[np.diag_indices_from(A)] = 0
@@ -180,33 +180,32 @@ class BernoulliNetwork(LatentSampler):
         """
         if self.X is not None and self.Z is not None:
             X, Z = self.X, self.Z
-            expected_A = Z @ Z.T
-            expected_B = X @ X.T
         else:
             Z, X = self._sample_latent()
-            expected_A = Z @ Z.T
-            expected_B = X @ X.T
-            if self.rdpg:
-                # sparsity applied directly to inner product,
-                if self.sparsity_exponent > 0:
-                    expected_A = expected_A * np.log(self.n) ** (
-                        -self.sparsity_exponent
-                    )
-                    expected_B = expected_B * np.log(self.n) ** (
-                        -self.sparsity_exponent
-                    )
-            else:
-                # apply logit link to get probabilities
-                if self.sparsity_exponent > 0:
-                    expected_A = expected_A * np.log(self.n) ** (
-                        -self.sparsity_exponent
-                    )
-                    expected_B = expected_B * np.log(self.n) ** (
-                        -self.sparsity_exponent
-                    )
+        
+        expected_A = Z @ Z.T
+        expected_B = X @ X.T
+        if self.rdpg:
+            # sparsity applied directly to inner product,
+            if self.sparsity_exponent > 0:
+                expected_A = expected_A * np.log(self.n) ** (
+                    -self.sparsity_exponent
+                )
+                expected_B = expected_B * np.log(self.n) ** (
+                    -self.sparsity_exponent
+                )
+        else:
+            # apply logit link to get probabilities
+            if self.sparsity_exponent > 0:
+                expected_A = expected_A * np.log(self.n) ** (
+                    -self.sparsity_exponent
+                )
+                expected_B = expected_B * np.log(self.n) ** (
+                    -self.sparsity_exponent
+                )
 
-                expected_A = expit(expected_A)
-                expected_B = expit(expected_B)
+            expected_A = expit(expected_A)
+            expected_B = expit(expected_B)
 
         # to be safe clip in 0, 1
         expected_A = np.clip(expected_A, 0, 1)
@@ -215,14 +214,18 @@ class BernoulliNetwork(LatentSampler):
         try:
             if self.symmetric is True:
                 # generate only lower half and then sum to ensure symmetry
-                A = np.tril(self.rng.binomial(1, expected_A), k=-1)
-                B = np.tril(self.rng.binomial(1, expected_B), k=-1)
+                A = np.tril(self.rng.binomial(1, expected_A), k=0)
+                B = np.tril(self.rng.binomial(1, expected_B), k=0)
 
                 A = A + A.T
                 B = B + B.T
             else:
                 A = self.rng.binomial(1, expected_A)
                 B = self.rng.binomial(1, expected_B)
+            
+            if self.self_loops is False:
+                A[np.diag_indices_from(A)] = 0
+                B[np.diag_indices_from(B)] = 0
         except ValueError as e:
             # safeguard for probs not on 0, 1
             print(f"Error generating samples: {e}")

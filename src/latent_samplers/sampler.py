@@ -1,9 +1,20 @@
 
+import warnings
+
 from .copula_sampler import CopulaGenerator
-from .hyppo_sampler import HyppoSimSampler
+
+try:
+    from .hyppo_sampler import HyppoSimSampler
+except ImportError:
+    warnings.warn(
+        "Hyppo package not found. HyppoSimSampler will not be available. Please install hyppo to use this feature.",
+        ImportWarning,
+        stacklevel=2,
+    )
+
 from .orthogonal_subspace import OrthogonalSubspaceSampler
 from .rdpg_sampler import RDPGGenerator
-from .sbm_sampler import SBMGenerator
+#from .sbm_sampler import SBMGenerator
 from .functional_sampler import FunctionalGenerator
 from .sbm_cov_sampler import SBMCovariateGenerator
 import numpy as np
@@ -137,7 +148,12 @@ class LatentSampler:
         """
         Z, X = None, None
 
-        if self.functional_form is not None:
+        if self.sbm_covariate_sampling is not None:
+            X, community_assignment, block_probs = self.latent_sampler._sample_latent_sbm_covariate()
+            Z = community_assignment @ block_probs**0.5
+            if len(X.shape) == 1:
+                X = X.reshape(-1, 1)
+        elif self.functional_form is not None:
             Z, X = self.latent_sampler._sample_latent_functional()
         elif self.latent_sim is not None:
             Z, X = self.latent_sampler._sample_latent_hyppo()
@@ -152,12 +168,6 @@ class LatentSampler:
             ) = self.latent_sampler._sample_sbm_latent()
             X = community_assignment_x @ probs_matrix_x**0.5
             Z = community_assignment_z @ probs_matrix_z**0.5
-        elif self.sbm_covariate_sampling is not None:
-            X, community_assignment, block_probs = self.latent_sampler._sample_latent_sbm_covariate()
-            Z = community_assignment @ block_probs**0.5
-            if len(X.shape) == 1:
-                X = X.reshape(-1, 1)
-            
         elif self.rdpg_distr is not None:
             Z, X = self.latent_sampler._sample_latent_rdpg()
         elif self.copula_model is not None:

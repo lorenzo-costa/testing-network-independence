@@ -66,11 +66,11 @@ class SBMCovariateGenerator:
         below 0.5 favor between-community edges.
     sparsity_bias
         Number in [0, 1]. Larger values lower all sampled edge probabilities.
-    directed
-        Whether to sample a directed graph. Undirected graphs are symmetric and
+    symmetric
+        Whether to sample a symmetric graph. Asymmetric graphs are directed and
         have no self-loops.
     self_loops
-        Whether to permit self-loops. Ignored for undirected graphs unless set
+        Whether to permit self-loops. Ignored for symmetric graphs unless set
         to True.
     rng
         Optional NumPy ``Generator`` or seed.
@@ -101,7 +101,7 @@ class SBMCovariateGenerator:
         block_probs = None,
         assortativity = 0.5,
         sparsity_bias = 0.6,
-        directed = False,
+        symmetric = False,
         self_loops = False,
         rng = None,
         **kwargs,
@@ -119,7 +119,7 @@ class SBMCovariateGenerator:
         self.block_probs = block_probs
         self.assortativity = float(assortativity)
         self.sparsity_bias = float(sparsity_bias)
-        self.directed = bool(directed)
+        self.symmetric = bool(symmetric)
         self.self_loops = bool(self_loops)
         self.rng = rng if rng is not None else np.random.default_rng()
 
@@ -171,9 +171,10 @@ class SBMCovariateGenerator:
                     "(use x_upper_bound)."
                 )
         else:
-            self.x_upper_bound = self._validate_nonnegative_integer(
-                "x_upper_bound", self.x_upper_bound
-            )
+            if not isinstance(self.x_upper_bound, int) or self.x_upper_bound < 0:
+                raise ValueError(
+                    "x_upper_bound must be a nonnegative integer for a discrete covariate."
+                )
             if self.sampling in {"step", "softmax"}:
                 raise ValueError(
                     f'sampling="{self.sampling}" requires a continuous covariate '
@@ -213,7 +214,7 @@ class SBMCovariateGenerator:
                 (block_probs < 0.0) | (block_probs > 1.0)
             ):
                 raise ValueError("block_probs entries must lie in [0, 1].")
-            if not self.directed and not np.allclose(block_probs, block_probs.T):
+            if not self.symmetric and not np.allclose(block_probs, block_probs.T):
                 raise ValueError(
                     "An undirected graph requires a symmetric block_probs matrix."
                 )
@@ -417,7 +418,7 @@ class SBMCovariateGenerator:
 
         probs = np.clip(density * random_scale * multipliers, 0.0, 1.0)
 
-        if not self.directed:
+        if not self.symmetric:
             probs = (probs + probs.T) / 2.0
 
         return probs

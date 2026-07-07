@@ -143,6 +143,8 @@ class FunctionalGenerator:
 
         self.n = int(n)
         self.kz = int(k)
+        if kx is None:
+            kx = 1
         if kx != 1:
             raise ValueError("FunctionalGenerator only supports scalar responses (kx=1), received kx={kx}.")
         self.kx = 1       # response is scalar
