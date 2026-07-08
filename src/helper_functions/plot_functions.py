@@ -144,12 +144,19 @@ def plot_with_bands(x_axis, y_axis, **kwargs):
     if hue_variable is not None:
         for hue_var in data[hue_variable].unique():
             subset = data[data[hue_variable] == hue_var].sort_values(x_axis)
+            color = (
+                colors[hue_var] if (colors is not None and hue_var in colors) else None
+            )
+            linestyles = (
+                linestyles[hue_var] if (linestyles is not None and hue_var in linestyles) else "-"
+            )
+            
             line = ax.plot(
                 subset[x_axis],
                 subset[y_axis],
                 marker="o",
-                linestyle=linestyles[hue_var] if linestyles is not None else "-",
-                color=colors[hue_var] if colors is not None else None,
+                linestyle=linestyles,
+                color=color,
                 label=hue_var,
             )
             color = line[0].get_color()
