@@ -2,7 +2,7 @@ import importlib
 
 import numpy as np
 
-from src.solvers.passtthrough import placeholder_method
+from src.solvers.placeholder import placeholder_method
 
 
 def test_module_imports_placeholder_solver():

@@ -71,13 +71,13 @@ def visualise_latent(
         ax.set_title(title, fontsize=14, weight="bold")
         # ax.set_xlim(-4, 4)
         # ax.set_ylim(-4, 4)
-        ax.set_xlabel("Latent Z", fontsize=12)
+        ax.set_xlabel("Latent X", fontsize=12)
         ax.grid(True, linestyle="--", alpha=0.5)
 
         # diagonal perfect correlation line
         # ax.plot([-4, 4], [-4, 4], 'r--', alpha=0.5, label='Perfect Correlation')
 
-        ax.set_ylabel("Latent X", fontsize=12)
+        ax.set_ylabel("Latent Z", fontsize=12)
 
     # axes[0].set_ylabel("Latent X", fontsize=12)
     plt.tight_layout()

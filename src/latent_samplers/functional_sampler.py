@@ -302,7 +302,8 @@ class FunctionalGenerator:
     def _functional_sigmoid(self, Z: np.ndarray) -> np.ndarray:
         threshold = float(self.function_params.get("threshold", 0.0))
         slope = float(self.function_params.get("slope", 1.0))
-        return expit(slope * (self._index(Z) - threshold))
+        global_scale = float(self.function_params.get("global_scale", 1))
+        return expit(slope * (self._index(Z) - threshold)) * global_scale
 
     def _functional_piecewise(self, Z: np.ndarray) -> np.ndarray:
         switch_feature = int(self.function_params.get("switch_feature", 0))
@@ -314,7 +315,8 @@ class FunctionalGenerator:
 
     def _functional_oscillatory(self, Z: np.ndarray) -> np.ndarray:
         frequency = float(self.function_params.get("frequency", 5.0))
-        return np.sin(frequency * self._index(Z))
+        global_scale = float(self.function_params.get("global_scale", 1.0))
+        return np.sin(frequency * self._index(Z)) * global_scale
 
     def _functional_max(self, Z: np.ndarray) -> np.ndarray:
         return np.max(Z, axis=1)
@@ -324,7 +326,8 @@ class FunctionalGenerator:
 
     def _functional_tanh_product(self, Z: np.ndarray) -> np.ndarray:
         scale = float(self.function_params.get("input_scale", 1.0))
-        return np.prod(np.tanh(scale * Z), axis=1)
+        global_scale = float(self.function_params.get("global_scale", 1.0))
+        return np.prod(np.tanh(scale * Z), axis=1) * global_scale
 
     def _functional_sparse_nonlinear(self, Z: np.ndarray) -> np.ndarray:
         active = self._active_columns()

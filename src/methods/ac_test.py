@@ -169,6 +169,8 @@ class MultivariateACTest(BasePermutationTest):
             right_neighbor=self.use_right_neighbor,
             block_size=self.block_size
         )
+        
+        self.permutation_distribution = []
 
         for _ in range(self.npermutations):
             perm = self.rng.permutation(self.Zhat.shape[0])

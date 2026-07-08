@@ -8,7 +8,7 @@ def test_solver_namespace_and_modules_are_importable():
     for module_name in (
         "weighted_network",
         "binary_network",
-        "passtthrough",
+        "placeholder",
         "MaMa_uuuuu",
     ):
         module = importlib.import_module(f"src.solvers.{module_name}")
