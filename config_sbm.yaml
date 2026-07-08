@@ -21,7 +21,7 @@ simulation:
   nsim: 100
   seed: 2
 
-  n: [100, 400]
+  n: [100, 300, 500]
   k: [3]
   kx : [1]
   rho: [0.2]
@@ -39,9 +39,30 @@ methods:
  
   # List of test methods to benchmark. 'kwargs' are passed to the method constructor.
   list:    
+    - name: DiffusionCorrelation
+      kwargs: {}    
+
     - name: MultivariateACTest
       kwargs:
-        M: 1              
+        M: 1             
+
+    - name: MultivariateACTest
+      kwargs:
+        M: sqrt
+    
+    - name: MultivariateACTest
+      kwargs:
+        M: quarter
+
+    - name: MultivariateACTest
+      kwargs:
+        M: sqrt
+        aggregate_coeff: max
+
+    - name: MultivariateACTest
+      kwargs:
+        M: quarter
+        aggregate_coeff: max            
 
 # -----------------------------------------------------------------------------
 # DGP & Solver Setups

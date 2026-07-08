@@ -13,3 +13,4 @@ notebooks/
 githubkey.pub
 githubkey
 *.txt
+.logs/
