@@ -13,7 +13,7 @@ simulation:
   nsim: 100                
   seed: 1
 
-  n: [100, 400]   # Includes n=50 to probe small-sample behaviour
+  n: [100, 300, 500]   # Includes n=50 to probe small-sample behaviour
   k: [1]                    # Single latent dimension (scalar latent variable)
   alpha: [0.05]
   edge_var: [3]          # Two edge variances: standard and inflated noise
@@ -29,9 +29,31 @@ methods:
  
   # List of test methods to benchmark. 'kwargs' are passed to the method constructor.
   list:    
+    - name: DiffusionCorrelation
+      kwargs: {}    
+
     - name: MultivariateACTest
       kwargs:
-        M: 1              
+        M: 1             
+
+    - name: MultivariateACTest
+      kwargs:
+        M: sqrt
+    
+    - name: MultivariateACTest
+      kwargs:
+        M: quarter
+
+    - name: MultivariateACTest
+      kwargs:
+        M: sqrt
+        aggregate_coeff: max
+
+    - name: MultivariateACTest
+      kwargs:
+        M: quarter
+        aggregate_coeff: max                   
+         
   
 # -----------------------------------------------------------------------------
 # DGP & Solver Setups

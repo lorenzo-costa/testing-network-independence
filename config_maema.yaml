@@ -9,7 +9,7 @@ simulation:
   nsim: 100          # Number of Monte Carlo repetitions per parameter combination
   seed: 1                 # Master RNG seed for reproducibility (passed to np.random.default_rng)
  
-  n: [100, 400]      # Sample sizes (number of nodes)
+  n: [100, 300, 500]      # Sample sizes (number of nodes)
   k: [3]                  # Number of latent dimensions for the network embedding
   kx: [1]                 
   rho: [0.2]              # Correlation parameter under H1 (signal strength); 0.0 = null hypothesis
@@ -22,11 +22,12 @@ simulation:
     # - cauchy
     # - "t 5"
     - "chi 5"
+
   marginals_x:
     - gaussian
     - cauchy
     # - "t 5"
-    # - "chi 5"
+    - "chi 5"
  
   # column_covariance:
   #   - [[1, 0.99, 0], [0.99, 1, 0], [0, 0, 1]] # highly correlated dimensions
@@ -44,9 +45,30 @@ methods:
  
   # List of test methods to benchmark. 'kwargs' are passed to the method constructor.
   list:    
+    - name: DiffusionCorrelation
+      kwargs: {}    
+
     - name: MultivariateACTest
       kwargs:
-        M: 1                
+        M: 1             
+
+    - name: MultivariateACTest
+      kwargs:
+        M: sqrt
+    
+    - name: MultivariateACTest
+      kwargs:
+        M: quarter
+
+    - name: MultivariateACTest
+      kwargs:
+        M: sqrt
+        aggregate_coeff: max
+
+    - name: MultivariateACTest
+      kwargs:
+        M: quarter
+        aggregate_coeff: max                              
 
 # -----------------------------------------------------------------------------
 # DGP & Solver Setups (H1: rho > 0)
