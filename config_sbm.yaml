@@ -33,7 +33,6 @@ simulation:
 # -----------------------------------------------------------------------------
 methods:
   npermutations: [200]      # Number of permutations used in permutation-based tests
-  df: [3]                   # Degrees of freedom (used in Student-t approximations)
   use_true_latent_x: [True]  
   use_true_latent_z: [False]  
  
