@@ -6,7 +6,7 @@
 # Simulation Setup
 # -----------------------------------------------------------------------------
 simulation:
-  nsim: 100          # Number of Monte Carlo repetitions per parameter combination
+  nsim: 50          # Number of Monte Carlo repetitions per parameter combination
   seed: 1                 # Master RNG seed for reproducibility (passed to np.random.default_rng)
  
   n: [1000]      # Sample sizes (number of nodes)
@@ -39,7 +39,7 @@ methods:
   npermutations: [200]      # Number of permutations used in permutation-based tests
   df: [3]                   # Degrees of freedom (used in Student-t approximations)
   use_true_latent_x: [True]  
-  use_true_latent_z: [True, False]  
+  use_true_latent_z: [False]  
  
   # List of test methods to benchmark. 'kwargs' are passed to the method constructor.
   list:    
