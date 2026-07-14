@@ -23,7 +23,7 @@ simulation:
 
   n: [100, 300, 500]
   k: [3]
-  kx : [1]
+  ky : [1]
   rho: [0.2]
   alpha: [0.05]
   edge_var: [3]
@@ -33,22 +33,21 @@ simulation:
 # -----------------------------------------------------------------------------
 methods:
   npermutations: [200]      # Number of permutations used in permutation-based tests
-  use_true_latent_x: [True]  
-  use_true_latent_z: [False]  
- 
+  use_true_latent: [False]
+
   # List of test methods to benchmark. 'kwargs' are passed to the method constructor.
-  list:    
+  list:
     - name: DiffusionCorrelation
-      kwargs: {}    
+      kwargs: {}
 
     - name: MultivariateACTest
       kwargs:
-        M: 1             
+        M: 1
 
     - name: MultivariateACTest
       kwargs:
         M: sqrt
-    
+
     - name: MultivariateACTest
       kwargs:
         M: quarter
@@ -61,7 +60,7 @@ methods:
     - name: MultivariateACTest
       kwargs:
         M: quarter
-        aggregate_coeff: max            
+        aggregate_coeff: max
 
 # -----------------------------------------------------------------------------
 # DGP & Solver Setups
@@ -87,10 +86,10 @@ sbm:
     - random
     - step
     - softmax
-  
-  x_distribution:
+
+  y_distribution:
     - gaussian
-    - "pareto 1" 
+    - "pareto 1"
     - cauchy
     - "t 5"
 

@@ -12,7 +12,7 @@ import numpy as np
 
 
 class SBMCovariateGenerator:
-    """Sample an SBM together with a univariate node covariate ``X``.
+    """Sample an SBM together with a univariate node covariate ``Y``.
 
     Parameters
     ----------
@@ -20,7 +20,7 @@ class SBMCovariateGenerator:
         Number of nodes.
     k
         Number of SBM communities.
-    x_distribution
+    y_distribution
         Continuous covariate specification. It is a single whitespace-separated
         string. Supported forms are:
 
@@ -33,24 +33,24 @@ class SBMCovariateGenerator:
         Bracketed values are optional only where stated. For example,
         ``"uniform 0 1"`` and ``"gaussian 0 1"`` are valid specifications.
         Set this argument to ``None`` for a discrete covariate.
-    x_upper_bound
+    y_upper_bound
         Inclusive upper bound for a discrete covariate. A discrete covariate is
-        sampled from ``{0, ..., x_upper_bound}``. Required when
-        ``x_distribution`` is ``None``.
-    x_probabilities
-        Optional probability vector for values ``0, ..., x_upper_bound``.
+        sampled from ``{0, ..., y_upper_bound}``. Required when
+        ``y_distribution`` is ``None``.
+    y_probabilities
+        Optional probability vector for values ``0, ..., y_upper_bound``.
         When omitted, the discrete covariate is sampled uniformly.
     sampling
-        Relationship between X and SBM labels Z:
+        Relationship between Y and SBM labels Z:
 
-        - ``"random"``: Z is independent of X.
-        - ``"identical"``: for discrete X, use ``Z = X``.
-        - ``"correlated"``: for discrete X, retain ``Z = X`` with probability
+        - ``"random"``: Z is independent of Y.
+        - ``"identical"``: for discrete Y, use ``Z = Y``.
+        - ``"correlated"``: for discrete Y, retain ``Z = Y`` with probability
           ``rho`` and otherwise switch to a uniformly selected different label.
-        - ``"step"``: for continuous X, partition the observed range of X into
+        - ``"step"``: for continuous Y, partition the observed range of Y into
           k equal-width intervals and use the interval index as Z.
-        - ``"softmax"``: for continuous X, sample Z using
-          ``P(Z=j | X=x) ∝ exp(a_j + b_j x)``.
+        - ``"softmax"``: for continuous Y, sample Z using
+          ``P(Z=j | Y=y) ∝ exp(a_j + b_j y)``.
     rho
         Probability of retaining the same discrete label under
         ``sampling="correlated"``. Must lie in [0, 1].
@@ -90,10 +90,11 @@ class SBMCovariateGenerator:
         self,
         n: int,
         k: int,
+        ky: int = 1,
         *,
-        x_distribution = None,
-        x_upper_bound = None,
-        x_probabilities = None,
+        y_distribution = None,
+        y_upper_bound = None,
+        y_probabilities = None,
         sampling = "random",
         rho = 0.8,
         softmax_intercept = None,
@@ -108,10 +109,13 @@ class SBMCovariateGenerator:
     ) -> None:
         self.n = n
         self.k = k
+        if ky != 1:
+            raise ValueError("SBMCovariateGenerator only supports ky=1.")
+        self.ky = ky
 
-        self.x_distribution = x_distribution
-        self.x_upper_bound = x_upper_bound
-        self.x_probabilities = x_probabilities
+        self.y_distribution = y_distribution
+        self.y_upper_bound = y_upper_bound
+        self.y_probabilities = y_probabilities
         self.sampling = str(sampling).lower()
         self.rho = float(rho)
         self.softmax_intercept = softmax_intercept
@@ -125,11 +129,11 @@ class SBMCovariateGenerator:
 
         self._validate_parameters()
         self.covariate_type = (
-            "continuous" if self.x_distribution is not None else "discrete"
+            "continuous" if self.y_distribution is not None else "discrete"
         )
 
         # Convenience state populated by ``sample``.
-        self.X = None
+        self.Y = None
         self.z = None
         self.community_assignment = None
         self.sampled_block_probs = None
@@ -148,60 +152,60 @@ class SBMCovariateGenerator:
         if not 0.0 <= self.sparsity_bias <= 1.0:
             raise ValueError("sparsity_bias must lie in [0, 1].")
 
-        if self.x_distribution is not None and self.x_upper_bound is not None:
+        if self.y_distribution is not None and self.y_upper_bound is not None:
             raise ValueError(
-                "Specify either x_distribution (continuous X) or "
-                "x_upper_bound (discrete X), not both."
+                "Specify either y_distribution (continuous Y) or "
+                "y_upper_bound (discrete Y), not both."
             )
-        if self.x_distribution is None and self.x_upper_bound is None:
+        if self.y_distribution is None and self.y_upper_bound is None:
             raise ValueError(
-                "Specify x_distribution for continuous X or x_upper_bound "
-                "for discrete X."
+                "Specify y_distribution for continuous Y or y_upper_bound "
+                "for discrete Y."
             )
 
-        if self.x_distribution is not None:
-            self._parse_continuous_distribution(self.x_distribution)
-            if self.x_probabilities is not None:
+        if self.y_distribution is not None:
+            self._parse_continuous_distribution(self.y_distribution)
+            if self.y_probabilities is not None:
                 raise ValueError(
-                    "x_probabilities is only valid for a discrete covariate."
+                    "y_probabilities is only valid for a discrete covariate."
                 )
             if self.sampling in {"identical", "correlated"}:
                 raise ValueError(
                     f'sampling="{self.sampling}" requires a discrete covariate '
-                    "(use x_upper_bound)."
+                    "(use y_upper_bound)."
                 )
         else:
-            if not isinstance(self.x_upper_bound, int) or self.x_upper_bound < 0:
+            if not isinstance(self.y_upper_bound, int) or self.y_upper_bound < 0:
                 raise ValueError(
-                    "x_upper_bound must be a nonnegative integer for a discrete covariate."
+                    "y_upper_bound must be a nonnegative integer for a discrete covariate."
                 )
             if self.sampling in {"step", "softmax"}:
                 raise ValueError(
                     f'sampling="{self.sampling}" requires a continuous covariate '
-                    "(use x_distribution)."
+                    "(use y_distribution)."
                 )
             if self.sampling in {"identical", "correlated"} and self.k != (
-                self.x_upper_bound + 1
+                self.y_upper_bound + 1
             ):
                 raise ValueError(
                     'For sampling="identical" or "correlated", k must equal '
-                    "x_upper_bound + 1 so every X value is a valid community "
+                    "y_upper_bound + 1 so every Y value is a valid community "
                     "label."
                 )
-            if self.x_probabilities is not None:
-                probs = np.asarray(self.x_probabilities, dtype=float)
-                if probs.ndim != 1 or probs.size != self.x_upper_bound + 1:
+            if self.y_probabilities is not None:
+                probs = np.asarray(self.y_probabilities, dtype=float)
+                if probs.ndim != 1 or probs.size != self.y_upper_bound + 1:
                     raise ValueError(
-                        "x_probabilities must be a 1D vector of length "
-                        "x_upper_bound + 1."
+                        "y_probabilities must be a 1D vector of length "
+                        "y_upper_bound + 1."
                     )
                 if np.any(probs < 0) or not np.isfinite(probs).all():
                     raise ValueError(
-                        "x_probabilities must contain finite, nonnegative values."
+                        "y_probabilities must contain finite, nonnegative values."
                     )
                 if not np.isclose(probs.sum(), 1.0):
-                    raise ValueError("x_probabilities must sum to 1.")
-                self.x_probabilities = probs
+                    raise ValueError("y_probabilities must sum to 1.")
+                self.y_probabilities = probs
 
         if self.block_probs is not None:
             block_probs = np.asarray(self.block_probs, dtype=float)
@@ -225,7 +229,7 @@ class SBMCovariateGenerator:
         cls, specification: str
     ) -> tuple[str, np.ndarray]:
         if not isinstance(specification, str) or not specification.strip():
-            raise ValueError("x_distribution must be a non-empty string.")
+            raise ValueError("y_distribution must be a non-empty string.")
 
         tokens = specification.split()
         name = tokens[0].lower()
@@ -240,7 +244,7 @@ class SBMCovariateGenerator:
         except ValueError as exc:
             raise ValueError(
                 "Distribution hyperparameters must be numeric values in the "
-                "x_distribution string."
+                "y_distribution string."
             ) from exc
 
         expected = {
@@ -288,13 +292,13 @@ class SBMCovariateGenerator:
 
         return name, params
 
-    def _sample_x(self) -> np.ndarray:
-        """Sample the univariate covariate vector X of shape (n,)."""
-        if self.x_distribution is None:
-            values = np.arange(self.x_upper_bound + 1)
-            return self.rng.choice(values, size=self.n, p=self.x_probabilities)
+    def _sample_y(self) -> np.ndarray:
+        """Sample the univariate covariate vector Y of shape (n,)."""
+        if self.y_distribution is None:
+            values = np.arange(self.y_upper_bound + 1)
+            return self.rng.choice(values, size=self.n, p=self.y_probabilities)
 
-        name, params = self._parse_continuous_distribution(self.x_distribution)
+        name, params = self._parse_continuous_distribution(self.y_distribution)
 
         if name in {"gaussian", "normal"}:
             loc, scale = (0.0, 1.0) if params.size == 0 else params
@@ -318,16 +322,16 @@ class SBMCovariateGenerator:
         # This can only be reached if the distribution registry is changed.
         raise RuntimeError(f"Unhandled distribution: {name!r}.")
 
-    def _sample_community_labels(self, x: np.ndarray) -> np.ndarray:
-        """Sample SBM community labels Z from X under the selected mechanism."""
+    def _sample_community_labels(self, y: np.ndarray) -> np.ndarray:
+        """Sample SBM community labels Z from Y under the selected mechanism."""
         if self.sampling == "random":
             return self.rng.integers(0, self.k, size=self.n)
 
         if self.sampling == "identical":
-            return x.astype(int, copy=True)
+            return y.astype(int, copy=True)
 
         if self.sampling == "correlated":
-            z = x.astype(int, copy=True)
+            z = y.astype(int, copy=True)
             # With a single community there is no alternative label to switch to.
             if self.k == 1:
                 return z
@@ -335,20 +339,20 @@ class SBMCovariateGenerator:
             switch_mask = self.rng.random(self.n) > self.rho
             n_switch = int(switch_mask.sum())
             if n_switch:
-                # Draw uniformly from labels excluding the original X label.
+                # Draw uniformly from labels excluding the original Y label.
                 alternatives = self.rng.integers(0, self.k - 1, size=n_switch)
                 original = z[switch_mask]
                 z[switch_mask] = alternatives + (alternatives >= original)
             return z
 
         if self.sampling == "step":
-            x_min = float(np.min(x))
-            x_max = float(np.max(x))
-            if np.isclose(x_min, x_max):
+            y_min = float(np.min(y))
+            y_max = float(np.max(y))
+            if np.isclose(y_min, y_max):
                 return np.zeros(self.n, dtype=int)
-            edges = np.linspace(x_min, x_max, self.k + 1)
+            edges = np.linspace(y_min, y_max, self.k + 1)
             # Values at the upper endpoint belong to community k - 1.
-            return np.clip(np.digitize(x, edges[1:-1], right=False), 0, self.k - 1)
+            return np.clip(np.digitize(y, edges[1:-1], right=False), 0, self.k - 1)
 
         if self.sampling == "softmax":
             intercept = self._coerce_softmax_parameter(
@@ -359,7 +363,7 @@ class SBMCovariateGenerator:
                 default=np.linspace(-1.0, 1.0, self.k),
                 name="softmax_slope",
             )
-            logits = intercept[None, :] + x[:, None] * slope[None, :]
+            logits = intercept[None, :] + y[:, None] * slope[None, :]
             logits -= logits.max(axis=1, keepdims=True)
             probabilities = np.exp(logits)
             probabilities /= probabilities.sum(axis=1, keepdims=True)
@@ -430,31 +434,31 @@ class SBMCovariateGenerator:
         return self._generate_probability_matrix()
 
     def _sample_latent_sbm_covariate(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Sample and return X, one-hot labels, and block probabilities.
+        """Sample and return Y, one-hot labels, and block probabilities.
 
         This mirrors the latent-sampling style of ``SBMGenerator`` while
         retaining the sampled values as instance attributes.
         """
-        x = self._sample_x()
-        z = self._sample_community_labels(x)
+        y = self._sample_y()
+        z = self._sample_community_labels(y)
         community_assignment = np.eye(self.k, dtype=np.int8)[z]
         block_probs = self._sample_block_probs()
 
-        self.X = x
+        self.Y = y
         self.z = z
         self.community_assignment = community_assignment
         self.sampled_block_probs = block_probs
-        return x, community_assignment, block_probs
+        return y, community_assignment, block_probs
 
     def get_name(self) -> str:
         """Return a compact, descriptive sampler identifier."""
-        x_spec = (
-            self.x_distribution.replace(" ", "-")
-            if self.x_distribution is not None
-            else f"discrete0-{self.x_upper_bound}"
+        y_spec = (
+            self.y_distribution.replace(" ", "-")
+            if self.y_distribution is not None
+            else f"discrete0-{self.y_upper_bound}"
         )
         return (
-            f"SBM_covariate_n{self.n}_k{self.k}_x{x_spec}_"
+            f"SBM_covariate_n{self.n}_k{self.k}_y{y_spec}_"
             f"sampling{self.sampling}_assort{self.assortativity}_"
             f"sparsity{self.sparsity_bias}"
         )

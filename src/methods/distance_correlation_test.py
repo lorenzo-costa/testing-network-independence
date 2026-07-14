@@ -1,33 +1,40 @@
 import numpy as np
-from ._base_class import BasePermutationTest, BaseEstimationMethod
 from scipy.spatial.distance import pdist, squareform
-import warnings
 from scipy.stats import multiscale_graphcorr
+import warnings
+
+from ._base_class import BasePermutationTest
 
 
-import sys
-import os
+def _distance_correlation(Z, Y):
+    """Biased sample distance correlation, used as a permutation statistic."""
+    distance_z = squareform(pdist(Z, metric="euclidean"))
+    distance_y = squareform(pdist(Y, metric="euclidean"))
 
-sys.path.append(os.path.abspath(os.path.join(os.getcwd(), "..")))
+    def center(distance):
+        return (
+            distance
+            - distance.mean(axis=0, keepdims=True)
+            - distance.mean(axis=1, keepdims=True)
+            + distance.mean()
+        )
+
+    centered_z = center(distance_z)
+    centered_y = center(distance_y)
+    covariance = np.mean(centered_z * centered_y)
+    variance_z = np.mean(centered_z**2)
+    variance_y = np.mean(centered_y**2)
+    denominator = np.sqrt(variance_z * variance_y)
+    return 0.0 if denominator == 0 else covariance / denominator
+
+
+def _mgc_statistic(Z, Y):
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=RuntimeWarning)
+        return multiscale_graphcorr(Z, Y, reps=0, workers=1).statistic
 
 
 class DistanceCorrelationTest(BasePermutationTest):
-    """Implementation of Diffusion Correlation algorithm.
-
-    Parameters
-    ----------
-    k : int
-        Dimensionality of the latent space.
-    test_method : str
-        Statistical test method to use. Options: "mgc", "dcorr".
-    npermutations : int
-        Number of permutations for significance testing.
-    alpha : float
-        Significance level for hypothesis testing.
-    rng : np.random.Generator, optional
-        Random number generator for reproducibility.
-    """
-
     def __init__(
         self,
         k=None,
@@ -36,82 +43,39 @@ class DistanceCorrelationTest(BasePermutationTest):
         alpha=0.05,
         rng=None,
         solver=None,
-        use_true_latent_x=False,
-        use_true_latent_z=False,
+        use_true_latent=False,
+        permutation_type="covariate",
         **kwargs,
     ):
+        if test_method not in {"dcorr", "mgc"}:
+            raise ValueError("test_method must be 'dcorr' or 'mgc'.")
+        self.test_method = test_method
+        test_function = _mgc_statistic if test_method == "mgc" else _distance_correlation
         super().__init__(
             k=k,
             npermutations=npermutations,
             alpha=alpha,
             rng=rng,
             solver=solver,
-            test_function=lambda x: x,
-            use_true_latent_x=use_true_latent_x,
-            use_true_latent_z=use_true_latent_z,
+            test_function=test_function,
+            use_true_latent=use_true_latent,
+            permutation_type=permutation_type,
         )
 
-        self.rng = np.random.default_rng() if rng is None else rng
+    def compute_distance_matrix(self, values):
+        return squareform(pdist(values, metric="euclidean"))
 
-        self.test_method = test_method
-
-        self.eps = 1e-10
-
-    def compute_distance_matrix(self, U):
-        return squareform(pdist(U, metric="euclidean"))
-
-    def _double_center(self, D):
-        """
-        Double centering of distance matrix
-        """
-        n = D.shape[0]
-        row_mean = np.mean(D, axis=1, keepdims=True)
-        col_mean = np.mean(D, axis=0, keepdims=True)
-        total_mean = np.mean(D)
-
-        return D - row_mean - col_mean + total_mean
+    def _double_center(self, distance):
+        return (
+            distance
+            - distance.mean(axis=0, keepdims=True)
+            - distance.mean(axis=1, keepdims=True)
+            + distance.mean()
+        )
 
     def fit(self, data):
-        """Compute p-value using permutation test
-
-        Parameters
-        ----------
-        data : dict
-            A dictionary containing keys 'A', 'B', 'X', 'Z' where 'A' and 'B' are adjacency matrices
-            and 'X' and 'Z' are latent positions.
-        """
-
         self._process_input(data)
-
-        distances_A = self.compute_distance_matrix(self.Xhat)
-        distances_B = self.compute_distance_matrix(self.Zhat)
-
-        if self.test_method == "mgc":
-            # get rid of warning for number of permutations too small
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", category=RuntimeWarning)
-                try:
-                    out_mgc = multiscale_graphcorr(
-                        distances_A,
-                        distances_B,
-                        random_state=self.rng,
-                        reps=self.npermutations,
-                    )
-                    pvalue = out_mgc.pvalue
-                    test_stat_estimate = out_mgc.statistic
-
-                except IndexError:
-                    pvalue = 1.0
-                    print("Error in computing MGC. Check the distance matrices.")
-                    print(distances_A.sum(), distances_B.sum())
-        else:
-            print(self.test_method)
-            raise ValueError("Unknown method for computing test statistic.")
-
-        self.pvalue = pvalue
-        self.test_stat_estimate = test_stat_estimate
-
-        self.reject_null = bool(self.pvalue < self.alpha)
+        self._fit_permutation()
 
     def get_name(self):
-        return "DistanceCorrelation"
+        return "DistanceCorrelation_" + self.permutation_type

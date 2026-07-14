@@ -34,7 +34,7 @@ import numpy as np
 #         self,
 #         n,
 #         k,
-#         kx=None,
+#         ky=None,
 #         block_probs_type=None,
 #         block_probs=None,
 #         community_assignment=None,
@@ -51,10 +51,10 @@ import numpy as np
 #             k = community_assignment[0].shape[1]
 
 #         self.community_assignment = community_assignment
-#         if kx is None:
-#             kx = k
+#         if ky is None:
+#             ky = k
 #         self.kz = k
-#         self.kx = kx
+#         self.ky = ky
 #         self.assignment_mode = assignment_mode
 #         self.prob_switch = prob_switch
 #         self.block_probs_type = block_probs_type
@@ -68,13 +68,13 @@ import numpy as np
 
 #     def _sample_community_assignment(self):
 #         assignment_z = np.zeros((self.n, self.kz))
-#         assignment_x = np.zeros((self.n, self.kx))
+#         assignment_y = np.zeros((self.n, self.ky))
 
 #         if self.assignment_mode == "random":
 #             idxs_z = self.rng.integers(low=0, high=self.kz, size=self.n)
-#             idxs_x = self.rng.integers(low=0, high=self.kx, size=self.n)
+#             idxs_y = self.rng.integers(low=0, high=self.ky, size=self.n)
 #             assignment_z[np.arange(self.n), idxs_z] = 1
-#             assignment_x[np.arange(self.n), idxs_x] = 1
+#             assignment_y[np.arange(self.n), idxs_y] = 1
 
 #         elif self.assignment_mode == "correlated":
 #             idxs_z = self.rng.integers(low=0, high=self.kz, size=self.n)
@@ -83,20 +83,20 @@ import numpy as np
 #             switch_mask = self.rng.random(self.n) < self.prob_switch
 #             n_switching_nodes = np.sum(switch_mask)
 #             if n_switching_nodes > 0:
-#                 shift = self.rng.integers(1, self.kx, size=n_switching_nodes)
+#                 shift = self.rng.integers(1, self.ky, size=n_switching_nodes)
 #                 new_assignment = idxs_z.copy()
 #                 new_assignment[switch_mask] = (idxs_z[switch_mask] + shift) % self.kz
 
-#             assignment_x[np.arange(self.n), new_assignment] = 1
+#             assignment_y[np.arange(self.n), new_assignment] = 1
 
 #             self.is_null = False
 #         else:
 #             raise ValueError(f"Unknown assignment_mode: {self.assignment_mode}")
 
 #         self.assignment_z = assignment_z
-#         self.assignment_x = assignment_x
+#         self.assignment_y = assignment_y
 
-#         return assignment_z, assignment_x
+#         return assignment_z, assignment_y
 
 #     def _generate_probability_matrix(self, k, assortativity=None):
 #         if assortativity is None:
@@ -119,39 +119,39 @@ import numpy as np
 
 #     def _sample_block_probs(self):
 #         if self.block_probs_type == "random":
-#             probs_x = self._generate_probability_matrix(self.kx)
+#             probs_y = self._generate_probability_matrix(self.ky)
 #             probs_z = self._generate_probability_matrix(self.kz)
 #         elif self.block_probs_type == "identical":
 #             # Generate one matrix and use it for all networks
-#             if self.kx != self.kz:
+#             if self.ky != self.kz:
 #                 raise ValueError(
-#                     "For 'identical' block_probs_type, kx and kz must be the same."
+#                     "For 'identical' block_probs_type, ky and kz must be the same."
 #                 )
-#             probs_z = self._generate_probability_matrix(self.kx)
-#             probs_x = probs_z.copy()
+#             probs_z = self._generate_probability_matrix(self.ky)
+#             probs_y = probs_z.copy()
 
 #             self.is_null = False
 
 #         elif self.block_probs_type == "correlated":
-#             if self.kx != self.kz:
+#             if self.ky != self.kz:
 #                 raise ValueError(
-#                     "For 'correlated' block_probs_type, kx and kz must be the same."
+#                     "For 'correlated' block_probs_type, ky and kz must be the same."
 #                 )
 #             probs_z = self._generate_probability_matrix(self.kz)
 #             for i in range(1, self.num_networks):
 #                 # Introduce some correlation by adding noise
 #                 noise = self.rng.normal(loc=0.0, scale=0.1, size=probs_z.shape)
-#                 probs_x.append(np.clip(probs_z + noise, 0.0, 1.0))
+#                 probs_y.append(np.clip(probs_z + noise, 0.0, 1.0))
 
 #             self.is_null = False
 
 #         elif self.block_probs_type == "switched":
-#             if self.kx != self.kz:
+#             if self.ky != self.kz:
 #                 raise ValueError(
-#                     "For 'switched' block_probs_type, kx and kz must be the same."
+#                     "For 'switched' block_probs_type, ky and kz must be the same."
 #                 )
 #             probs_z = self._generate_probability_matrix(self.kz, self.assortativity)
-#             probs_x = self._generate_probability_matrix(self.kx, 1 - self.assortativity)
+#             probs_y = self._generate_probability_matrix(self.ky, 1 - self.assortativity)
 
 #             self.is_null = False
 
@@ -161,30 +161,29 @@ import numpy as np
 #         else:
 #             raise ValueError(f"Unknown block_probs_type: {self.block_probs_type}")
 
-#         self.block_probs_x = probs_x
+#         self.block_probs_y = probs_y
 #         self.block_probs_z = probs_z
 
-#         return probs_z, probs_x
+#         return probs_z, probs_y
 
 #     def _sample_sbm_latent(self):
 #         if self.community_assignment is None:
-#             community_assignment_z, community_assignment_x = (
+#             community_assignment_z, community_assignment_y = (
 #                 self._sample_community_assignment()
 #             )
 #             self.community_assignment_z = community_assignment_z
-#             self.community_assignment_x = community_assignment_x
+#             self.community_assignment_y = community_assignment_y
 #         if self.block_probs is None:
-#             block_probs_z, block_probs_x = self._sample_block_probs()
+#             block_probs_z, block_probs_y = self._sample_block_probs()
 #             self.block_probs_z = block_probs_z
-#             self.block_probs_x = block_probs_x
+#             self.block_probs_y = block_probs_y
 
 #         return (
 #             self.community_assignment_z,
-#             self.community_assignment_x,
+#             self.community_assignment_y,
 #             self.block_probs_z,
-#             self.block_probs_x,
+#             self.block_probs_y,
 #         )
-    
+
 #     def get_name(self):
-#         return f"SBM_n{self.n}_kz{self.kz}_kx{self.kx}_mode{self.assignment_mode}_block{self.block_probs_type}_assort{self.assortativity}_sparsity{self.sparsity_bias}"
-    
+#         return f"SBM_n{self.n}_kz{self.kz}_ky{self.ky}_mode{self.assignment_mode}_block{self.block_probs_type}_assort{self.assortativity}_sparsity{self.sparsity_bias}"

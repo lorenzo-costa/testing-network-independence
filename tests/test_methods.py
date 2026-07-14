@@ -9,10 +9,7 @@ def test_methods_package_exports_public_components():
         "EstimateAC",
         "MultivariateACTest",
         "CanonicalCorrelationTest",
-        "ObservedCVM",
         "DistanceCorrelationTest",
-        "LLKRatioTest",
-        "QAP",
         "EstimateRV",
         "RVTest",
     }

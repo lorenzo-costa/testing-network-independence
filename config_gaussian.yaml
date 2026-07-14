@@ -8,54 +8,53 @@
 simulation:
   nsim: 50          # Number of Monte Carlo repetitions per parameter combination
   seed: 1                 # Master RNG seed for reproducibility (passed to np.random.default_rng)
- 
+
   n: [1000]      # Sample sizes (number of nodes)
   k: [3]                  # Number of latent dimensions for the network embedding
-  kx: [1]                 
+  ky: [1]
   rho: [0.2]              # Correlation parameter under H1 (signal strength); 0.0 = null hypothesis
   alpha: [0.05]           # Nominal significance level(s) for hypothesis tests
   edge_var: [3]           # Edge weight variance (used in Gaussian networks)
- 
+
   marginals_z::
     - gaussian
     - "uniform -1 1"
     # - cauchy
     # - "t 5"
     - "chi 5"
-  
-  marginals_x:
+
+  marginals_y:
     - gaussian
     - cauchy
     # - "t 5"
     - "chi 5"
- 
+
   # column_covariance:
   #   - [[1, 0.99, 0], [0.99, 1, 0], [0, 0, 1]] # highly correlated dimensions
   #   - [[3, 0, 0], [0, 1, 0], [0, 0, 0.5]] # one dominant dimension
   #   - [[1, 0, 0], [0, 1, 0], [0, 0, 1]] # identitfy
- 
+
 # -----------------------------------------------------------------------------
 # Testing Methods
 # -----------------------------------------------------------------------------
 methods:
   npermutations: [200]      # Number of permutations used in permutation-based tests
   df: [3]                   # Degrees of freedom (used in Student-t approximations)
-  use_true_latent_x: [True]  
-  use_true_latent_z: [False]  
- 
+  use_true_latent: [False]
+
   # List of test methods to benchmark. 'kwargs' are passed to the method constructor.
-  list:    
+  list:
     - name: DiffusionCorrelation
-      kwargs: {}    
+      kwargs: {}
 
     - name: MultivariateACTest
       kwargs:
-        M: 1             
+        M: 1
 
     - name: MultivariateACTest
       kwargs:
         M: sqrt
-    
+
     - name: MultivariateACTest
       kwargs:
         M: quarter
@@ -68,8 +67,8 @@ methods:
     - name: MultivariateACTest
       kwargs:
         M: quarter
-        aggregate_coeff: max                   
-             
+        aggregate_coeff: max
+
 # -----------------------------------------------------------------------------
 # DGP & Solver Setups (H1: rho > 0)
 # Each entry pairs a data-generating process (network type + copula) with a solver.
@@ -80,31 +79,31 @@ setups:
   - dgp: GaussianNetwork
     copula_model: gaussian
     solver: ASE
- 
+
   - dgp: GaussianNetwork
     copula_model: clayton          # Lower-tail dependent copula
     solver: ASE
- 
+
   - dgp: GaussianNetwork
     copula_model: gumbel           # Upper-tail dependent copula
     solver: ASE
- 
+
   - dgp: GaussianNetwork
     copula_model: student_t
     df: 3                          # Degrees of freedom for the Student-t copula
     solver: ASE
- 
+
   - dgp: GaussianNetwork
     copula_model: mixture_uniform
     weights: [0.5, 0.5]           # Mixture weights for the two uniform components
     correlations: [0.8, -0.8]     # Correlation of each mixture component
     solver: ASE
- 
+
 # -----------------------------------------------------------------------------
 # Metrics
 # -----------------------------------------------------------------------------
 metrics:
-  compute_all: true   
- 
+  compute_all: true
+
 output:
   results_dir: results   # Files are named: simulation_results_<YYYYMMDD_HHMM>.csv

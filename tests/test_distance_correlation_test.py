@@ -14,7 +14,7 @@ def dummy_solver(matrix, k, rng=None):
 def latent_data(seed=40):
     rng = np.random.default_rng(seed)
     return {
-        "X": rng.normal(size=(14, 2)),
+        "Y": rng.normal(size=(14, 2)),
         "Z": rng.normal(size=(14, 2)),
     }
 
@@ -37,8 +37,7 @@ def test_distance_matrix_helper_runs_by_itself():
 def test_distance_correlation_runs_mgc_by_itself():
     method = DistanceCorrelationTest(
         solver=dummy_solver,
-        use_true_latent_x=True,
-        use_true_latent_z=True,
+        use_true_latent=True,
         npermutations=3,
         rng=np.random.default_rng(5),
     )
@@ -46,21 +45,17 @@ def test_distance_correlation_runs_mgc_by_itself():
     method.fit(latent_data())
     result = method.get_estimated()
 
-    assert method.get_name() == "DistanceCorrelation"
+    assert method.get_name() == "DistanceCorrelation_covariate"
     assert np.isfinite(result["test_stat"])
     assert 0.0 <= result["p-value"] <= 1.0
     assert isinstance(result["reject_null"], bool)
 
 
 def test_distance_correlation_rejects_unknown_method():
-    method = DistanceCorrelationTest(
-        solver=dummy_solver,
-        test_method="invalid",
-        use_true_latent_x=True,
-        use_true_latent_z=True,
-        npermutations=1,
-    )
-
-    with pytest.raises(ValueError, match="Unknown method for computing test statistic"):
-        method.fit(latent_data())
-
+    with pytest.raises(ValueError, match="test_method must be"):
+        DistanceCorrelationTest(
+            solver=dummy_solver,
+            test_method="invalid",
+            use_true_latent=True,
+            npermutations=1,
+        )

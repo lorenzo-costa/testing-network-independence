@@ -15,14 +15,14 @@ def test_module_imports_sbm_covariate_generator():
 @pytest.mark.parametrize(
     "kwargs, message",
     [
-        ({"x_upper_bound": 1, "sampling": "invalid"}, "sampling must be one of"),
-        ({"x_upper_bound": 1, "rho": 1.1}, "rho must lie in"),
-        ({"x_upper_bound": 1, "assortativity": 1.1}, "assortativity must lie in"),
-        ({"x_upper_bound": 1, "sparsity_bias": -0.1}, "sparsity_bias must lie in"),
-        ({}, "Specify x_distribution for continuous X or x_upper_bound"),
+        ({"y_upper_bound": 1, "sampling": "invalid"}, "sampling must be one of"),
+        ({"y_upper_bound": 1, "rho": 1.1}, "rho must lie in"),
+        ({"y_upper_bound": 1, "assortativity": 1.1}, "assortativity must lie in"),
+        ({"y_upper_bound": 1, "sparsity_bias": -0.1}, "sparsity_bias must lie in"),
+        ({}, "Specify y_distribution for continuous Y or y_upper_bound"),
         (
-            {"x_upper_bound": 1, "x_distribution": "gaussian"},
-            "Specify either x_distribution.*or x_upper_bound",
+            {"y_upper_bound": 1, "y_distribution": "gaussian"},
+            "Specify either y_distribution.*or y_upper_bound",
         ),
     ],
 )
@@ -36,8 +36,8 @@ def test_probabilities_are_rejected_for_continuous_covariates():
         SBMCovariateGenerator(
             n=10,
             k=2,
-            x_distribution="gaussian",
-            x_probabilities=[0.5, 0.5],
+            y_distribution="gaussian",
+            y_probabilities=[0.5, 0.5],
         )
 
 
@@ -46,6 +46,6 @@ def test_block_probability_matrix_must_match_number_of_communities():
         SBMCovariateGenerator(
             n=10,
             k=2,
-            x_distribution="gaussian",
+            y_distribution="gaussian",
             block_probs=np.eye(3),
         )

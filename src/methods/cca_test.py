@@ -36,9 +36,8 @@ class CanonicalCorrelationTest(BasePermutationTest):
         alpha=0.05,
         rng=None,
         solver=None,
-        use_true_latent_x=False,
-        use_true_latent_z=False,
-        permutation_type="latent",
+        use_true_latent=False,
+        permutation_type="covariate",
         k=None,
         **kwargs,
     ):
@@ -47,8 +46,7 @@ class CanonicalCorrelationTest(BasePermutationTest):
             npermutations=npermutations,
             alpha=alpha,
             permutation_type=permutation_type,
-            use_true_latent_x=use_true_latent_x,
-            use_true_latent_z=use_true_latent_z,
+            use_true_latent=use_true_latent,
             solver=solver,
             test_function=first_cca_component,
             rng=rng,
@@ -60,8 +58,8 @@ class CanonicalCorrelationTest(BasePermutationTest):
         Parameters
         ----------
         data : dict
-            A dictionary containing keys 'A', 'B', 'X', 'Z' where 'A' and 'B' are adjacency matrices
-            and 'X' and 'Z' are latent positions.
+            A dictionary containing observed ``Y`` and either true ``Z`` or
+            adjacency matrix ``A``.
         """
 
         self._process_input(data)

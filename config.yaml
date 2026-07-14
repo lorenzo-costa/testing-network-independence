@@ -13,7 +13,7 @@
 # - using both true and estimated latent positions for testing methods
 # - marginals: Gaussian, uniform, cauchy, t, chi-squared
 # - copula models: gaussian, clayton, gumbel, student_t, mixture_uniform
-# - testing methods: RVPermutationTest, QAP, DiffusionCorrelation, ObservedCVM (degree 1 and 2)
+# - testing methods: RV, distance correlation, CCA, and multivariate AC
 # - DGPs: GaussianNetwork, BernoulliNetwork
 # - Solvers: ASE for Gaussian, pgd_fit_wrapper for Bernoulli
 
@@ -23,59 +23,58 @@
 simulation:
   nsim: 100            # Number of Monte Carlo repetitions per parameter combination
   seed: 2                 # Master RNG seed for reproducibility (passed to np.random.default_rng)
- 
+
   n: [100, 200, 300]      # Sample sizes (number of nodes)
   k: [3]                  # Number of latent dimensions for the network embedding
   rho: [0.2]              # Correlation parameter under H1 (signal strength); 0.0 = null hypothesis
   alpha: [0.05]           # Nominal significance level(s) for hypothesis tests
   edge_var: [3]           # Edge weight variance (used in Gaussian networks)
- 
+
   marginals:
     - gaussian
     - "uniform -1 1"
     - cauchy
     - "t 5"
     - "chi 5"
- 
+
   column_covariance:
     - [[1, 0.99, 0], [0.99, 1, 0], [0, 0, 1]] # highly correlated dimensions
     - [[3, 0, 0], [0, 1, 0], [0, 0, 0.5]] # one dominant dimension
     - [[1, 0, 0], [0, 1, 0], [0, 0, 1]] # identitfy
- 
+
 # -----------------------------------------------------------------------------
 # Testing Methods
 # -----------------------------------------------------------------------------
 methods:
   npermutations: [200]      # Number of permutations used in permutation-based tests
   df: [3]                   # Degrees of freedom (used in Student-t approximations)
-  use_true_latent_x: [True]  
-  use_true_latent_z: [True, False]  
- 
+  use_true_latent: [True, False]
+
   # List of test methods to benchmark. 'kwargs' are passed to the method constructor.
   list:
     - name: RVtest
       kwargs:
-        permutation_type: latent  
-        approximation: permutation       
+        permutation_type: latent
+        approximation: permutation
 
     - name: RVtest
       kwargs:
-        approximation: asymptotic   
- 
+        approximation: asymptotic
+
     - name: DiffusionCorrelation
-      kwargs: {} 
+      kwargs: {}
 
     - name: CanonicalCorrelation
-      kwargs: {}                  
+      kwargs: {}
 
     - name: MultivariateACTest
       kwargs:
-        M: 1     
-                      
+        M: 1
+
     - name: MultivariateACTest
       kwargs:
-        M: 20                         
- 
+        M: 20
+
 # -----------------------------------------------------------------------------
 # DGP & Solver Setups (H1: rho > 0)
 # Each entry pairs a data-generating process (network type + copula) with a solver.
@@ -86,55 +85,55 @@ setups:
   - dgp: GaussianNetwork
     copula_model: gaussian
     solver: ASE
- 
+
   - dgp: GaussianNetwork
     copula_model: clayton          # Lower-tail dependent copula
     solver: ASE
- 
+
   - dgp: GaussianNetwork
     copula_model: gumbel           # Upper-tail dependent copula
     solver: ASE
- 
+
   - dgp: GaussianNetwork
     copula_model: student_t
     df: 3                          # Degrees of freedom for the Student-t copula
     solver: ASE
- 
+
   - dgp: GaussianNetwork
     copula_model: mixture_uniform
     weights: [0.5, 0.5]           # Mixture weights for the two uniform components
     correlations: [0.5, -0.5]     # Correlation of each mixture component
     solver: ASE
- 
+
   # --- Bernoulli (binary-edge) networks ---
   - dgp: BernoulliNetwork
     copula_model: gaussian
     solver: pgd_fit_wrapper
- 
+
   - dgp: BernoulliNetwork
     copula_model: clayton
     solver: pgd_fit_wrapper
- 
+
   - dgp: BernoulliNetwork
     copula_model: gumbel
     solver: pgd_fit_wrapper
- 
+
   - dgp: BernoulliNetwork
     copula_model: student_t
     df: 3
     solver: pgd_fit_wrapper
- 
+
   - dgp: BernoulliNetwork
     copula_model: mixture_uniform
     weights: [0.5, 0.5]
     correlations: [0.5, -0.5]
     solver: pgd_fit_wrapper
- 
+
 # -----------------------------------------------------------------------------
 # Metrics
 # -----------------------------------------------------------------------------
 metrics:
-  compute_all: true   
- 
+  compute_all: true
+
 output:
   results_dir: results   # Files are named: simulation_results_<YYYYMMDD_HHMM>.csv

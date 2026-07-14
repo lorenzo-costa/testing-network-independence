@@ -2,7 +2,6 @@ import pytest
 import sys
 from pathlib import Path
 import numpy as np
-from src.helper_functions.dgp.dgp import GaussianNetwork
 from scipy import stats
 import sys
 from pathlib import Path
@@ -18,10 +17,10 @@ from src.metrics import (
 @pytest.mark.parametrize(
     "A, B, expected",
     [
-        (np.array([[1, 2, 3], [1, 2, 3]]), np.array([[1, 2, 3], [1, 2, 3]]), 1),
-        (np.array([[1, 2, 3], [1, 2, 3]]), np.array([[4, 5, 6], [4, 5, 6]]), 1),
+        (np.array([[1, 2, 3], [1, 2, 3]]), np.array([[1, 2, 3], [1, 2, 3]]), 0),
+        (np.array([[1, 2, 3], [1, 2, 3]]), np.array([[4, 5, 6], [4, 5, 6]]), 0),
         (np.array([[0, 0], [0, 0]]), np.array([[0, 0], [0, 0]]), 0),
-        (np.array([[1, 2, 3], [4, 5, 6]]), np.array([[4, 5, 6], [1, 2, 3]]), 0.5143766),
+        (np.array([[1, 2, 3], [4, 5, 6]]), np.array([[4, 5, 6], [1, 2, 3]]), 1),
     ],
 )
 def test_rv_coef(A, B, expected):
@@ -48,7 +47,7 @@ def test_false_rejection(reject_null, null):
             expected = False
     else:
         expected = False
-    assert FalseRejection()(results) == expected
+    assert FalseRejection()(results, is_null=null) == expected
 
 
 @pytest.mark.parametrize(
@@ -63,7 +62,7 @@ def test_true_rejection(reject_null, null):
             expected = False
     else:
         expected = False
-    assert TrueRejection()(results) == expected
+    assert TrueRejection()(results, is_null=null) == expected
 
 
 class TestRelativeFrobeniusNorm:

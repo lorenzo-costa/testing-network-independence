@@ -1,242 +1,133 @@
 import numpy as np
-from scipy import stats
-from scipy.special import expit, ndtr
+from scipy.special import expit
 
-from .latent_samplers import *
+from .latent_samplers import LatentSampler
 
 
 class GaussianNetwork(LatentSampler):
-    """
-    Weighted network DGP with Gaussian weights on edges.
-
-    Allows for arbitrary marginal distributions for the latent positions Z and X,
-    while maintaining a gaussian copula correlation structure.
-
-    Parameters
-    ----------
-    n : int
-        Number of nodes.
-    k : int
-        Dimensionality of the latent space.
-    edge_var : float, optional
-        Variance of the edges (default is 1).
-    symmetric : bool, optional
-        Whether the adjacency matrix should be symmetric (default is True).
-    self_loops : bool, optional
-        Whether to allow self-loops (default is False).
-    sparsity_exponent: float
-        Controls sparsity level by multiplying expected adj matrix by n^(-sparsity_exponent).
-        Higher values = sparser.
-    Y : np.ndarray, optional
-        Pre-specified latent positions for X. If provided, these will be used instead of sampling
-    Z : np.ndarray, optional
-        Pre-specified latent positions for Z. If provided, these will be used instead of sampling
-
-    rng : np.random.Generator, optional
-        Random number generator.
-    """
+    """Weighted single-network DGP with observed node covariates."""
 
     def __init__(
         self,
         n,
         k,
+        ky=1,
         edge_var=1,
         symmetric=True,
         self_loops=False,
         sparsity_exponent=0,
         rng=None,
-        X=None,
+        Y=None,
         Z=None,
-        force_x_single_dimension=False,
         **kwargs,
     ):
-        if rng is None:
-            rng = np.random.default_rng()
-
-        super().__init__(
-            n=n,
-            k=k,
-            rng=rng,
-            force_x_single_dimension=force_x_single_dimension,
-            **kwargs,
-        )
-
+        rng = rng if rng is not None else np.random.default_rng()
+        super().__init__(n=n, k=k, ky=ky, rng=rng, **kwargs)
         self.edge_var = edge_var
         self.symmetric = symmetric
         self.self_loops = self_loops
         self.sparsity_exponent = sparsity_exponent
-
-        self.X = X
+        self.Y = Y
         self.Z = Z
-
-        self.force_x_single_dimension = force_x_single_dimension
 
     def __repr__(self):
         return (
-            self.get_name() + f"(n={self.n}, k={self.k}, edge_var={self.edge_var}, "
-            f"symmetric={self.symmetric}, self_loops={self.self_loops}, sparsity_exponent={self.sparsity_exponent})"
+            self.get_name()
+            + f"(n={self.n}, k={self.k}, ky={self.ky}, edge_var={self.edge_var}, "
+            f"symmetric={self.symmetric}, self_loops={self.self_loops}, "
+            f"sparsity_exponent={self.sparsity_exponent})"
         )
 
     def get_name(self):
-        return f"GaussianNetwork_" + self.sampler_name
+        return "GaussianNetwork_" + self.sampler_name
+
+    def _get_latent_and_covariate(self):
+        if (self.Z is None) != (self.Y is None):
+            raise ValueError("Z and Y must either both be supplied or both be sampled.")
+        Z, Y = (self.Z, self.Y) if self.Z is not None else self._sample_latent()
+        Z = np.asarray(Z)
+        Y = np.asarray(Y)
+        if Y.ndim == 1:
+            Y = Y.reshape(-1, 1)
+        if Z.shape != (self.n, self.k):
+            raise ValueError(f"Z must have shape ({self.n}, {self.k}); got {Z.shape}.")
+        if Y.shape != (self.n, self.ky):
+            raise ValueError(f"Y must have shape ({self.n}, {self.ky}); got {Y.shape}.")
+        return Z, Y
 
     def generate(self):
-        """Sample matrix and latent positions. Model definiton specifies options for:
-        - latent postion type (SBM or general copula-based)
-        - symmetric adjacency or not (default symmetric)
-        - self loops or not (default no self loops)
-
-        Returns
-        -------
-        out: dict
-            dictionary with keys 'A', 'B' for adjacency matrices, 'Z', 'X' for the latent positions
-        """
-        if self.X is not None and self.Z is not None:
-            Z, X = self.Z, self.X
-        else:
-            Z, X = self._sample_latent()
-
+        Z, Y = self._get_latent_and_covariate()
         expected_A = Z @ Z.T
-        expected_B = X @ X.T
-
         if self.sparsity_exponent > 0:
-            expected_A = expected_A * self.n ** (-self.sparsity_exponent)
-            expected_B = expected_B * self.n ** (-self.sparsity_exponent)
+            expected_A *= self.n ** (-self.sparsity_exponent)
 
         A = self.rng.normal(loc=expected_A, scale=np.sqrt(self.edge_var))
-        B = self.rng.normal(loc=expected_B, scale=np.sqrt(self.edge_var))
-
-        if self.self_loops is False:
+        if not self.self_loops:
             A[np.diag_indices_from(A)] = 0
-            B[np.diag_indices_from(B)] = 0
-
-        # Symmetrise
-        if self.symmetric is True:
+        if self.symmetric:
             A = (A + A.T) / 2
-            B = (B + B.T) / 2
-
-        out = {"A": A, "B": B, "Z": Z, "X": X}
-
-        return out
+        return {"A": A, "Z": Z, "Y": Y}
 
 
-class BernoulliNetwork(LatentSampler):
-    """
-    Network Data Generating Process using Bernoulli likelihood.
-
-    Parameters
-    ----------
-    n : int
-        Number of nodes.
-    k : int
-        Dimensionality of the latent space.
-    edge_var : float, optional
-        Variance of the edges (default is 1).
-    rng : np.random.Generator, optional
-        Random number generator.
-    """
+class BernoulliNetwork(GaussianNetwork):
+    """Single-network Bernoulli DGP with observed node covariates."""
 
     def __init__(
         self,
         n,
         k,
+        ky=1,
         rng=None,
         symmetric=True,
         self_loops=False,
         rdpg=False,
         sparsity_exponent=0,
-        X=None,
+        Y=None,
         Z=None,
         **kwargs,
     ):
-        super().__init__(n=n, k=k, rng=rng, **kwargs)
-
-        self.symmetric = symmetric
-        self.self_loops = self_loops
-        self.sparsity_exponent = sparsity_exponent
+        super().__init__(
+            n=n,
+            k=k,
+            ky=ky,
+            rng=rng,
+            symmetric=symmetric,
+            self_loops=self_loops,
+            sparsity_exponent=sparsity_exponent,
+            Y=Y,
+            Z=Z,
+            **kwargs,
+        )
         self.rdpg = rdpg
-        self.X = X
-        self.Z = Z
 
     def get_name(self):
-        return f"BernoulliNetwork_" + self.sampler_name
+        return "BernoulliNetwork_" + self.sampler_name
 
     def __repr__(self):
         return (
-            self.get_name() + f"(n={self.n}, k={self.k}, rdpg={self.rdpg}, "
-            f"symmetric={self.symmetric}, self_loops={self.self_loops}, sparsity_exponent={self.sparsity_exponent})"
+            self.get_name()
+            + f"(n={self.n}, k={self.k}, ky={self.ky}, rdpg={self.rdpg}, "
+            f"symmetric={self.symmetric}, self_loops={self.self_loops}, "
+            f"sparsity_exponent={self.sparsity_exponent})"
         )
 
     def generate(self):
-        """Sample matrix and latent positions. Model definiton specifies options for:
-        - latent postion type (SBM, RDPG, or general copula-based)
-        - symmetric adjacency or not (default symmetric)
-        - self loops or not (default no self loops)
-
-        Returns
-        -------
-        out: dict
-            dictionary with keys 'A', 'B' for adjacency matrices, 'Z', 'X' for the latent positions
-        """
-        if self.X is not None and self.Z is not None:
-            X, Z = self.X, self.Z
-        else:
-            Z, X = self._sample_latent()
-        
+        Z, Y = self._get_latent_and_covariate()
         expected_A = Z @ Z.T
-        expected_B = X @ X.T
-        if self.rdpg:
-            # sparsity applied directly to inner product,
-            if self.sparsity_exponent > 0:
-                expected_A = expected_A * np.log(self.n) ** (
-                    -self.sparsity_exponent
-                )
-                expected_B = expected_B * np.log(self.n) ** (
-                    -self.sparsity_exponent
-                )
-        else:
-            # apply logit link to get probabilities
-            if self.sparsity_exponent > 0:
-                expected_A = expected_A * np.log(self.n) ** (
-                    -self.sparsity_exponent
-                )
-                expected_B = expected_B * np.log(self.n) ** (
-                    -self.sparsity_exponent
-                )
-
+        if self.sparsity_exponent > 0:
+            expected_A *= np.log(self.n) ** (-self.sparsity_exponent)
+        if not self.rdpg:
             expected_A = expit(expected_A)
-            expected_B = expit(expected_B)
-
-        # to be safe clip in 0, 1
         expected_A = np.clip(expected_A, 0, 1)
-        expected_B = np.clip(expected_B, 0, 1)
 
-        try:
-            if self.symmetric is True:
-                # generate only lower half and then sum to ensure symmetry
-                A = np.tril(self.rng.binomial(1, expected_A), k=0)
-                B = np.tril(self.rng.binomial(1, expected_B), k=0)
-
-                A = A + A.T
-                B = B + B.T
-            else:
-                A = self.rng.binomial(1, expected_A)
-                B = self.rng.binomial(1, expected_B)
-            
-            if self.self_loops is False:
+        if self.symmetric:
+            triangle = self.rng.binomial(1, expected_A)
+            triangle = np.tril(triangle, k=0 if self.self_loops else -1)
+            A = triangle + triangle.T
+            if self.self_loops:
+                A[np.diag_indices_from(A)] //= 2
+        else:
+            A = self.rng.binomial(1, expected_A)
+            if not self.self_loops:
                 A[np.diag_indices_from(A)] = 0
-                B[np.diag_indices_from(B)] = 0
-        except ValueError as e:
-            # safeguard for probs not on 0, 1
-            print(f"Error generating samples: {e}")
-            print(f"Expected probabilities (A): {expected_A}")
-            print(f"Expected probabilities (B): {expected_B}")
-            raise ValueError
-
-        if self.self_loops is False:
-            A[np.diag_indices_from(A)] = 0
-            B[np.diag_indices_from(B)] = 0
-
-        out = {"A": A, "B": B, "Z": Z, "X": X}
-
-        return out
+        return {"A": A, "Z": Z, "Y": Y}

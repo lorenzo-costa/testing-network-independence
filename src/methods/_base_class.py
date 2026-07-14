@@ -1,15 +1,7 @@
 import numpy as np
 
-import sys
-import os
-
-sys.path.append(os.path.abspath(os.path.join(os.getcwd(), "..")))
-
 
 class BaseMethod:
-    def __init__(self):
-        pass
-
     def fit(self, *args, **kwargs):
         raise NotImplementedError("Subclasses should implement this!")
 
@@ -17,99 +9,82 @@ class BaseMethod:
         raise NotImplementedError("Subclasses should implement this!")
 
     def get_estimated(self):
-        """Get fit results
-
-        Returns
-        -------
-        A dictionary with 'estimated_latent', 'true_latent', 'p-value', 'reject_null', and 'null' keys.
-        """
-        results = {
-            "estimated_latent": (self.Xhat, self.Zhat),
-            "true_latent": (self.X, self.Z),
+        """Return the common result structure for estimation and test methods."""
+        return {
+            "estimated_latent": self.Zhat,
+            "true_latent": self.Z,
+            "observed_Y": getattr(self, "Y", None),
             "p-value": self.pvalue,
             "reject_null": self.reject_null,
             "test_stat": self.test_stat_estimate,
         }
-        return results
 
 
 class BaseEstimationMethod(BaseMethod):
-    """Base class for estimation methods"""
+    """Shared input processing for one-network methods."""
 
     def __init__(self, rng=None, solver=None, k=None, use_true_latent=False, **kwargs):
-        super().__init__()
-
         self.rng = rng if rng is not None else np.random.default_rng()
-        if solver is None:
-            raise ValueError("Solver must be provided")
         self.solver = solver
         self.k = k
         self.use_true_latent = use_true_latent
+        if not use_true_latent and solver is None:
+            raise ValueError("Solver must be provided when use_true_latent is False")
+
+    @staticmethod
+    def _observed_y(data):
+        if "Y" not in data:
+            raise ValueError("Observed covariates Y must be provided.")
+        Y = np.asarray(data["Y"])
+        if Y.ndim == 1:
+            Y = Y.reshape(-1, 1)
+        if Y.ndim != 2:
+            raise ValueError("Y must be a 2D array with shape (n, ky).")
+        return Y
 
     def _process_input(self, data):
-        """Utility function to extract and process input data, estimate latent
-        positions if needed, and store results in the object."""
-
         if not isinstance(data, dict):
-            raise ValueError(
-                "Invalid data format. Expected a dictionary with keys 'A', 'B'."
-            )
+            raise ValueError("Invalid data format. Expected a dictionary with keys 'A', 'Z', and 'Y'.")
+
+        Y = self._observed_y(data)
+        A = data.get("A")
+        Z = data.get("Z")
+
         if self.use_true_latent:
-            if "X" not in data.keys() or "Z" not in data.keys():
-                raise ValueError(
-                    "True latent positions must be provided when use_true_latent is True."
-                )
-            X = data["X"]
-            Z = data["Z"]
-            A = data.get("A", None)
-            B = data.get("B", None)
-            Xhat = X.copy()
-            Zhat = Z.copy()
+            if Z is None:
+                raise ValueError("True Z must be provided when use_true_latent is True.")
+            Zhat = np.asarray(Z).copy()
+        elif "estimated_Z" in data:
+            Zhat = np.asarray(data["estimated_Z"])
         else:
-            if "estimated_X" not in data.keys():
-                # need to estimate latent positions
-                A = data.get("A", None)
-                B = data.get("B", None)
-                self.A = A
-                self.B = B
-                # true latent positions may not be provided
-                X = data.get("X", None)
-                Z = data.get("Z", None)
+            if A is None:
+                raise ValueError("A must be provided to estimate Z when use_true_latent is False.")
+            if self.solver is None:
+                raise ValueError("Solver must be provided to estimate Z.")
+            if self.k is None:
+                if Z is None:
+                    raise ValueError("Number of dimensions (k) must be specified.")
+                self.k = np.asarray(Z).shape[1]
+            Zhat = self.solver(A, k=self.k, rng=self.rng)[0]
 
-                # get the number of dimensions (k). If X or Z is provided, use its
-                # shape (i.e. the "true" value of k)
-                if X is not None or Z is not None:
-                    self.k = X.shape[1] if X is not None else Z.shape[1]
-                else:
-                    if self.k is None:
-                        raise ValueError(
-                            "Number of dimensions (k) must be specified if X and Z are not provided."
-                        )
-                    self.k = self.k
-
-                Zhat = self.solver(A, k=self.k, rng=self.rng)[
-                    0
-                ]  # 0 is the xhat, 1 are the evalues
-                Xhat = self.solver(B, k=self.k, rng=self.rng)[0]
-
-            else:
-                Zhat = data.get("estimated_Z")
-                Xhat = data.get("estimated_X")
-                Z = data.get("Z", None)
-                X = data.get("X", None)
-                A = data.get("A", None)
-                B = data.get("B", None)
+        Zhat = np.asarray(Zhat)
+        if Zhat.ndim != 2:
+            raise ValueError("The tested latent representation must be a 2D array.")
+        if self.k is None:
+            self.k = Zhat.shape[1]
+        if Zhat.shape[0] != Y.shape[0]:
+            raise ValueError("A/Z and Y must contain the same number of nodes.")
+        if A is not None and np.asarray(A).shape != (Y.shape[0], Y.shape[0]):
+            raise ValueError("A must have shape (n, n), matching the rows of Y.")
 
         self.A = A
-        self.B = B
-        self.X = X
-        self.Z = Z
+        self.Y = Y
+        self.Z = None if Z is None else np.asarray(Z)
         self.Zhat = Zhat
-        self.Xhat = Xhat
 
 
-class BasePermutationTest(BaseMethod):
-    """Base class for permutation tests"""
+class BasePermutationTest(BaseEstimationMethod):
+    """Permutation test for independence between network latent Z and observed Y."""
 
     def __init__(
         self,
@@ -118,139 +93,50 @@ class BasePermutationTest(BaseMethod):
         alpha=0.05,
         rng=None,
         solver=None,
-        use_true_latent_x=False,
-        use_true_latent_z=False,
+        use_true_latent=False,
         test_function=None,
-        permutation_type="latent",
+        permutation_type="covariate",
         **kwargs,
     ):
-        super().__init__()
-
-        self.rng = rng if rng is not None else np.random.default_rng()
-
-        if solver is None:
-            raise ValueError("Solver must be provided")
-
-        self.k = k
-        self.solver = solver
-        self.npermutations = npermutations
-        self.alpha = alpha
-        self.use_true_latent_x = use_true_latent_x
-        self.use_true_latent_z = use_true_latent_z
-
+        super().__init__(
+            rng=rng,
+            solver=solver,
+            k=k,
+            use_true_latent=use_true_latent,
+        )
         if test_function is None:
             raise ValueError("Test function must be provided")
-        self.test_function = test_function
-
-        if permutation_type not in ["latent", "observed"]:
+        if permutation_type not in {"covariate", "latent", "observed"}:
             raise ValueError(
-                "Invalid permutation_type. Must be 'latent' or 'observed'."
+                "Invalid permutation_type. Must be 'covariate', 'latent', or 'observed'."
             )
+        if permutation_type == "observed" and use_true_latent:
+            raise ValueError(
+                "permutation_type='observed' requires use_true_latent=False."
+            )
+        self.npermutations = npermutations
+        self.alpha = alpha
+        self.test_function = test_function
         self.permutation_type = permutation_type
 
     def _fit_permutation(self):
-        """Get pvalue using permutation test"""
-        # A technically not needed but looks cleaner
-        A, B, Zhat, Xhat = self.A, self.B, self.Zhat, self.Xhat
-        
+        self.test_stat_estimate = self.test_function(self.Zhat, self.Y)
         self.permutation_distribution = []
 
-        test_stat_estimate = self.test_function(Zhat, Xhat)
-        self.test_stat_estimate = test_stat_estimate
+        for _ in range(self.npermutations):
+            perm = self.rng.permutation(self.Y.shape[0])
+            if self.permutation_type == "covariate":
+                statistic = self.test_function(self.Zhat, self.Y[perm, :])
+            elif self.permutation_type == "latent":
+                statistic = self.test_function(self.Zhat[perm, :], self.Y)
+            else:
+                if self.A is None:
+                    raise ValueError("A is required for observed permutations.")
+                A_perm = self.A[perm][:, perm]
+                Zhat_perm = self.solver(A_perm, k=self.k, rng=self.rng)[0]
+                statistic = self.test_function(Zhat_perm, self.Y)
+            self.permutation_distribution.append(statistic)
 
-        if self.permutation_type == "observed":
-            for _ in range(self.npermutations):
-                perm = self.rng.permutation(B.shape[0])
-                # permute only one of the two
-                B_perm = B[perm][:, perm]
-
-                Xhat_perm = self.solver(B_perm, k=self.k, rng=self.rng)[0]
-                test_stat_perm = self.test_function(Zhat, Xhat_perm)
-                self.permutation_distribution.append(test_stat_perm)
-
-        # estimate latent positions once, permute them and compute stat
-        elif self.permutation_type == "latent":
-            for _ in range(self.npermutations):
-                perm = self.rng.permutation(Zhat.shape[0])
-                Xhat_perm = Xhat[perm, :]
-                test_stat_perm = self.test_function(Zhat, Xhat_perm)
-                self.permutation_distribution.append(test_stat_perm)
-
-        # get and store pvalue
-        self.pvalue = np.mean(
-            np.abs(self.permutation_distribution) >= np.abs(self.test_stat_estimate)
-        )
-
+        null = np.asarray(self.permutation_distribution)
+        self.pvalue = np.mean(np.abs(null) >= np.abs(self.test_stat_estimate))
         self.reject_null = bool(self.pvalue < self.alpha)
-
-    def _process_input(self, data):
-        """Utility function to extract and process input data, estimate latent
-        positions if needed, and store results in the object."""
-
-        if not isinstance(data, dict):
-            raise ValueError(
-                "Invalid data format. Expected a dictionary with keys 'A', 'B'."
-            )
-
-        # split between using true latent for x or z
-        if self.use_true_latent_x is True:
-            if "X" not in data.keys():
-                raise ValueError(
-                    "True latent positions for X must be provided when use_true_latent_x is True."
-                )
-            X = data["X"]
-            Xhat = X.copy()
-            B = data.get("B", None)
-        else:
-            if "estimated_X" not in data.keys():
-                # estimate Xhat
-                if "B" not in data.keys():
-                    raise ValueError(
-                        "Adjacency matrix B must be provided to estimate Xhat when use_true_latent_x is False."
-                    )
-                B = data["B"]
-                # true latent positions may not be provided
-                X = data.get("X", None)
-                if self.k is None:
-                    raise ValueError("Number of dimensions (k) must be specified")
-
-                Xhat = self.solver(B, k=self.k, rng=self.rng)[0]
-            else:
-                Xhat = data.get("estimated_X")
-                B = data.get("B", None)
-                X = data.get("X", None)
-
-        if self.use_true_latent_z is True:
-            if "Z" not in data.keys():
-                raise ValueError(
-                    "True latent positions for Z must be provided when use_true_latent_z is True."
-                )
-            Z = data["Z"]
-            Zhat = Z.copy()
-            A = data.get("A", None)
-        else:
-            if "estimated_Z" not in data.keys():
-                # need to estimate latent positions
-                A = data.get("A", None)
-                self.A = A
-                # true latent positions may not be provided
-                Z = data.get("Z", None)
-
-                # get the number of dimensions (k). If X or Z is provided, use its
-                # shape (i.e. the "true" value of k)
-                if self.k is None:
-                    raise ValueError("Number of dimensions (k) must be provided.")
-
-                # 0 is the xhat, 1 are the eigenvalues
-                Zhat = self.solver(A, k=self.k, rng=self.rng)[0]
-            else:
-                Zhat = data.get("estimated_Z")
-                Z = data.get("Z", None)
-                A = data.get("A", None)
-
-        self.A = A
-        self.B = B
-        self.X = X
-        self.Z = Z
-        self.Zhat = Zhat
-        self.Xhat = Xhat

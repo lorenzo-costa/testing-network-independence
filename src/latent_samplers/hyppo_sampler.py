@@ -54,6 +54,7 @@ class HyppoSimSampler:
         self,
         n,
         k,
+        ky=1,
         sim_name=None,
         sim_kwargs=None,
         center_latent=True,
@@ -63,6 +64,7 @@ class HyppoSimSampler:
     ):
         self.n = n
         self.k = k
+        self.ky = ky
         self.center_latent = center_latent
         self.make_rdpg = make_rdpg
 
@@ -79,21 +81,21 @@ class HyppoSimSampler:
         else:
             self.is_null = False
 
-    def _make_rdpg(self, Z, X):
-        """Normalise Z and X such that inner prods are in [0, 1]"""
+    def _make_rdpg(self, Z, Y):
+        """Normalise Z and Y such that inner prods are in [0, 1]"""
         if self.make_rdpg == "max":
-            X = np.abs(X / np.max(X, axis=0, keepdims=True))
+            Y = np.abs(Y / np.max(Y, axis=0, keepdims=True))
             Z = np.abs(Z / np.max(Z, axis=0, keepdims=True))
         elif self.make_rdpg == "spectral":
-            X = X / np.sqrt(np.linalg.norm(X, ord=2))
+            Y = Y / np.sqrt(np.linalg.norm(Y, ord=2))
             Z = Z / np.sqrt(np.linalg.norm(Z, ord=2))
         elif self.make_rdpg == "minmax":
-            X = (X - np.min(X, axis=0, keepdims=True)) / (
-                np.max(X, axis=0, keepdims=True)
-                - np.min(X, axis=0, keepdims=True)
+            Y = (Y - np.min(Y, axis=0, keepdims=True)) / (
+                np.max(Y, axis=0, keepdims=True)
+                - np.min(Y, axis=0, keepdims=True)
                 + 1e-15
             )
-            X = X / np.sqrt(X.shape[1])
+            Y = Y / np.sqrt(Y.shape[1])
 
             Z = (Z - np.min(Z, axis=0, keepdims=True)) / (
                 np.max(Z, axis=0, keepdims=True)
@@ -104,7 +106,7 @@ class HyppoSimSampler:
 
         elif self.make_rdpg == "hypersphere":
             # Map latent values to positive orthant directions
-            V_X = ndtr(X)
+            V_X = ndtr(Y)
             V_Z = ndtr(Z)
 
             norm_X = np.linalg.norm(V_X, axis=1, keepdims=True)
@@ -114,26 +116,26 @@ class HyppoSimSampler:
             dir_Z = np.where(norm_Z > 0, V_Z / norm_Z, 0)
 
             # Use one copula-derived coordinate for the radius
-            u_x = ndtr(X[:, 0:1])
+            u_y = ndtr(Y[:, 0:1])
             u_z = ndtr(Z[:, 0:1])
 
-            r_X = u_x ** (1.0 / self.k)
+            r_X = u_y ** (1.0 / self.k)
             r_Z = u_z ** (1.0 / self.k)
 
-            X = r_X * dir_X
+            Y = r_X * dir_X
             Z = r_Z * dir_Z
         else:
             raise Exception(f"Unknown rdpg option: {self.make_rdpg}")
 
-        return Z, X
+        return Z, Y
 
     def _sample_latent_hyppo(self):
         """
-        Use one of the simulation functions to produce (X, Z).
+        Use one of the simulation functions to produce (Y, Z).
 
         The sim function is called as  sim(n, k, **sim_kwargs).
-        Its two return values are treated as (X, Z):
-          - first return  → X  (the 'input' latent positions)
+        Its two return values are treated as (Y, Z):
+          - first return  → Y  (the 'input' latent positions)
           - second return → Z  (the 'output' latent positions)
 
         Shape alignment
@@ -144,38 +146,38 @@ class HyppoSimSampler:
         """
         sim_fn = SIM_REGISTRY[self.sim_name]
 
-        raw_x, raw_z = sim_fn(n=self.n, p=self.k, **self.sim_kwargs)
-        X = self._align_shape(np.asarray(raw_x, dtype=float))
-        Z = self._align_shape(np.asarray(raw_z, dtype=float))
+        raw_y, raw_z = sim_fn(n=self.n, p=self.k, **self.sim_kwargs)
+        Y = self._align_shape(np.asarray(raw_y, dtype=float), self.ky)
+        Z = self._align_shape(np.asarray(raw_z, dtype=float), self.k)
 
-        while (not np.isfinite(X).all()) or (not np.isfinite(Z).all()):
-            raw_x, raw_z = sim_fn(n=self.n, p=self.k, **self.sim_kwargs)
-            X = self._align_shape(np.asarray(raw_x, dtype=float))
-            Z = self._align_shape(np.asarray(raw_z, dtype=float))
+        while (not np.isfinite(Y).all()) or (not np.isfinite(Z).all()):
+            raw_y, raw_z = sim_fn(n=self.n, p=self.k, **self.sim_kwargs)
+            Y = self._align_shape(np.asarray(raw_y, dtype=float), self.ky)
+            Z = self._align_shape(np.asarray(raw_z, dtype=float), self.k)
 
         if self.center_latent:
-            X = X - X.mean(axis=0)
+            Y = Y - Y.mean(axis=0)
             Z = Z - Z.mean(axis=0)
 
         if self.make_rdpg is not None:
-            Z, X = self._make_rdpg(Z, X)
+            Z, Y = self._make_rdpg(Z, Y)
 
-        return Z, X
+        return Z, Y
 
-    def _align_shape(self, arr):
-        """Ensure arr has shape (n, k), tiling or trimming the column axis."""
+    def _align_shape(self, arr, dimension):
+        """Ensure ``arr`` has the requested number of columns."""
         if arr.ndim == 1:
             arr = arr.reshape(-1, 1)
 
         _, cols = arr.shape
 
-        if cols == self.k:
+        if cols == dimension:
             return arr
-        if cols < self.k:
+        if cols < dimension:
             # tile: repeat columns until we reach k, then trim
-            repeats = -(-self.k // cols)  # ceiling division
+            repeats = -(-dimension // cols)  # ceiling division
             arr = np.tile(arr, (1, repeats))
-        return arr[:, : self.k]
+        return arr[:, :dimension]
 
     def get_name(self):
         return f"HyppoSim_{self.sim_name}"

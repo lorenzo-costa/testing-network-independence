@@ -10,7 +10,7 @@ sys.path.append(os.path.abspath(os.path.join(os.getcwd(), "..")))
 
 
 class EstimateRV(BaseEstimationMethod):
-    """Method to return RV coefficient between the latent positions of two networks"""
+    """Return the RV coefficient between network latent positions and observed Y."""
 
     def __init__(
         self,
@@ -26,17 +26,10 @@ class EstimateRV(BaseEstimationMethod):
         self.test_function = test_function
 
     def fit(self, data, **kwargs):
-        """Estimate RV coefficient between the latent positions of two networks
-
-        Parameters
-        ----------
-        data : dict
-            A dictionary containing keys 'A', 'B', 'X', 'Z' where 'A' and 'B' are adjacency matrices
-            and 'X' and 'Z' are latent positions.
-        """
+        """Estimate the RV coefficient between tested Z and observed Y."""
 
         self._process_input(data)
-        self.test_stat_estimate = self.test_function(self.Zhat, self.Xhat)
+        self.test_stat_estimate = self.test_function(self.Zhat, self.Y)
         self.pvalue = None
         self.reject_null = None
 
@@ -45,7 +38,7 @@ class EstimateRV(BaseEstimationMethod):
 
 
 class RVTest(BasePermutationTest):
-    """Perform RV test for network independence.
+    """Test independence between a network latent representation and observed Y.
 
     Parameters
     ----------
@@ -62,9 +55,8 @@ class RVTest(BasePermutationTest):
     test_function : callable
         Function to compute the test statistic.
     permutation_type : str
-        Type of permutation to use. Options:
-        - latent: permute the estimated latent positions
-        - observed: permute the observed data and re-estimate latent positions each time.
+        ``covariate`` permutes Y, ``latent`` permutes the tested Z, and
+        ``observed`` relabels A and refits Z for each permutation.
     rng : np.random.Generator
         Random number generator for reproducibility.
     """
@@ -77,10 +69,9 @@ class RVTest(BasePermutationTest):
         alpha=0.05,
         rng=None,
         solver=None,
-        use_true_latent_x=False,
-        use_true_latent_z=False,
+        use_true_latent=False,
         test_function=rv_coefficient_adjusted,
-        permutation_type="latent",
+        permutation_type="covariate",
         **kwargs,
     ):
         super().__init__(
@@ -89,8 +80,7 @@ class RVTest(BasePermutationTest):
             alpha=alpha,
             rng=rng,
             solver=solver,
-            use_true_latent_x=use_true_latent_x,
-            use_true_latent_z=use_true_latent_z,
+            use_true_latent=use_true_latent,
             test_function=test_function,
             permutation_type=permutation_type,
         )
@@ -98,14 +88,7 @@ class RVTest(BasePermutationTest):
         self.approximation = approximation
 
     def fit(self, data, **kwargs):
-        """Compute test statistic and p-value
-
-        Parameters
-        ----------
-        data : dict
-            A dictionary containing keys 'A', 'B', 'X', 'Z' where 'A' and 'B' are adjacency matrices
-            and 'X' and 'Z' are latent positions.
-        """
+        """Compute the test statistic and p-value."""
 
         self._process_input(data)
 
@@ -124,22 +107,21 @@ class RVTest(BasePermutationTest):
 
     def _fit_asymptotic(self):
         Zhat = self.Zhat.copy()
-        Xhat = self.Xhat.copy()
+        Y = self.Y.copy()
         Zhat = Zhat - Zhat.mean(axis=0)
-        Xhat = Xhat - Xhat.mean(axis=0)
+        Y = Y - Y.mean(axis=0)
         n, _ = Zhat.shape
 
-        rv = self.test_function(Zhat, Xhat)
+        rv = self.test_function(Zhat, Y)
         self.test_stat_estimate = rv
 
-        # ── Plug-in eigenvalues of Ω̂_XZ ────────────────────────────────────────
-        # Ω̂_XZ = (1/n) Σᵢ vec(X̃ᵢZ̃ᵢᵀ) vec(X̃ᵢZ̃ᵢᵀ)ᵀ  is (pq × pq)
+        # Plug-in eigenvalues of the covariance of vec(Y_i Z_i^T).
         #
         # Its non-zero eigenvalues equal those of the (n × n) Gram matrix
-        #   (1/n) G,  where  Gᵢⱼ = (X̃ᵢᵀX̃ⱼ)(Z̃ᵢᵀZ̃ⱼ) = (X̃X̃ᵀ)ᵢⱼ ⊙ (Z̃Z̃ᵀ)ᵢⱼ
+        #   (1/n) G, where G_ij = (Y_i^T Y_j)(Z_i^T Z_j),
         # so we never form the (pq × pq) object.
 
-        GX = Xhat @ Xhat.T  # (n, n)  Gram matrix of X
+        GX = Y @ Y.T  # (n, n) Gram matrix of observed Y
         GZ = Zhat @ Zhat.T  # (n, n)  Gram matrix of Z
         Omega_gram = (GX * GZ) / n  # (n, n)  Hadamard product — Gram rep. of Ω̂
 
@@ -153,30 +135,6 @@ class RVTest(BasePermutationTest):
 
         weights = hat_lambda / den
         self.pvalue = imhof(n * rv, weights)["Qq"]
-
-    # def _fit_asymptotic(self):
-    #     Zhat = self.Zhat.copy()
-    #     Xhat = self.Xhat.copy()
-    #     Zhat = Zhat - Zhat.mean(axis=0)
-    #     Xhat = Xhat - Xhat.mean(axis=0)
-
-    #     n, _ = Zhat.shape
-
-    #     rv = self.test_function(Zhat, Xhat)
-
-    #     SigmaXX = 1 / (n - 1) * Xhat.T @ Xhat
-    #     SigmaZZ = 1 / (n - 1) * Zhat.T @ Zhat
-
-    #     eigenvalues_X = np.linalg.eigvalsh(SigmaXX)
-    #     eigenvalues_X = np.sort(eigenvalues_X)[::-1]  # sort in descending order
-    #     eigenvalues_Z = np.linalg.eigvalsh(SigmaZZ)
-    #     eigenvalues_Z = np.sort(eigenvalues_Z)[::-1]  # sort in descending order
-
-    #     den = np.sqrt(np.trace(SigmaXX @ SigmaXX) * np.trace(SigmaZZ @ SigmaZZ))
-
-    #     weights = (1+self.kappa) * np.outer(eigenvalues_X, eigenvalues_Z).flatten() / den
-
-    #     self.pvalue = imhof(n * rv, weights)["Qq"]
 
     def get_name(self):
         if self.approximation == "permutation":

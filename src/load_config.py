@@ -13,7 +13,7 @@ Supports six experiment types, auto-detected from YAML structure:
 Public API
 ----------
     cfg          = load_config("config.yaml")      # auto-detects type
-    h1, h0       = build_factorial_design(cfg)     # h0 is None for lee2019 
+    h1, h0       = build_factorial_design(cfg)     # h0 is None for lee2019
     df           = flatten_args_columns(df)        # common post-processing
 """
 
@@ -31,7 +31,6 @@ from src.solvers.MaMa_uuuuu import pgd_fit_wrapper
 
 # -- Test methods -------------------------------------------------------------
 from src.methods import *
-from src.test_functions.cvm_statistic import observed_cvm_dependency
 
 # -- Metrics ------------------------------------------------------------------
 from src.metrics import ComputeAll
@@ -53,9 +52,7 @@ SOLVER_REGISTRY = {
 
 METHOD_REGISTRY = {
     "RVtest": RVTest,
-    "QAP": QAP,
     "DiffusionCorrelation": DistanceCorrelationTest,
-    "ObservedCVM": ObservedCVM,
     "MultivariateACTest": MultivariateACTest,
     "CanonicalCorrelation": CanonicalCorrelationTest,
 }
@@ -72,17 +69,11 @@ _NO_NOISE_SIMS = {"multimodal_independence"}
 def _resolve_method(entry: dict):
     """
     Convert a YAML method entry into a callable (or partial).
-    ObservedCVM is special-cased because it wraps observed_cvm_dependency.
     """
     name = entry["name"]
     kwargs = entry.get("kwargs") or {}
     cls = METHOD_REGISTRY[name]
 
-    if name == "ObservedCVM":
-        degree = kwargs.get("degree", 2)
-        return partial(
-            cls, test_function=partial(observed_cvm_dependency, degree=degree)
-        )
     if name == "MultivariateACTest":
         M = kwargs.get("M", 1)
         aggregate_coeff = kwargs.get("aggregate_coeff", None)
@@ -200,7 +191,7 @@ def _resolve_sbm_block(sbm_cfg: dict) -> dict:
     """Normalise optional SBM-specific sweeps.
 
     ``assortativity`` defaults to ``0.5`` when it is not specified.  The
-    covariate-aware fields (``sbm_covariate_sampling`` and ``x_distribution``) are optional
+    covariate-aware fields (``sbm_covariate_sampling`` and ``y_distribution``) are optional
     as a pair so this loader accepts both the supplied covariate-aware setup and
     earlier block/assignment-style SBM configurations.
     """
@@ -208,10 +199,10 @@ def _resolve_sbm_block(sbm_cfg: dict) -> dict:
         raise TypeError("sbm must be a mapping")
 
     has_sampling = "sbm_covariate_sampling" in sbm_cfg
-    has_x_distribution = "x_distribution" in sbm_cfg
-    if has_sampling != has_x_distribution:
+    has_y_distribution = "y_distribution" in sbm_cfg
+    if has_sampling != has_y_distribution:
         raise ValueError(
-            "sbm.sbm_covariate_sampling and sbm.x_distribution must be supplied together"
+            "sbm.sbm_covariate_sampling and sbm.y_distribution must be supplied together"
         )
 
     resolved = {
@@ -222,14 +213,14 @@ def _resolve_sbm_block(sbm_cfg: dict) -> dict:
 
     for name in (
         "sbm_covariate_sampling",
-        "x_distribution",
+        "y_distribution",
         "sparsity_bias",
         "prob_switch",
         "assignment_mode",
         "block_probs_type",
         "block_probs",
-        "x_upper_bound",
-        "x_probabilities",
+        "y_upper_bound",
+        "y_probabilities",
         "softmax_intercept",
         "softmax_slope",
         "directed",
@@ -250,8 +241,7 @@ def _resolve_methods_block(methods_cfg: dict) -> dict:
         "approximation": methods_cfg.get(
             "approximation"
         ),  # None when absent (e.g. multiness)
-        "use_true_latent_x": methods_cfg.get("use_true_latent_x"),  # None when absent
-        "use_true_latent_z": methods_cfg.get("use_true_latent_z"),  # None when absent
+        "use_true_latent": methods_cfg.get("use_true_latent"),  # None when absent
     }
 
 
@@ -377,8 +367,7 @@ def load_config(path: str = "config.yaml") -> dict:
         npermutations   -- list of ints
         df              -- list of ints (None for  multiness)
         approximation   -- list of strings or None when absent (multiness )
-        use_true_latent_x -- list of bools or None when not applicable
-        use_true_latent_z -- list of bools or None when not applicable
+        use_true_latent -- list of bools or None when not applicable
     setups : list
         (partial(DGP, ...), Solver) tuples for the H1 run.
     null_setups : dict | None
@@ -467,7 +456,7 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             "method",
             "n",
             "k",
-            "kx",
+            "ky",
             "alpha",
             "rho",
             "edge_var",
@@ -480,7 +469,7 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             mth["list"],
             sim["n"],
             sim["k"],
-            sim.get("kx", [None]),
+            sim.get("ky", [1]),
             sim["alpha"],
             rho_list,
             sim["edge_var"],
@@ -488,27 +477,27 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             mth["df"],
         ]
         marginals = sim.get("marginals", None)
-        marginals_x = sim.get("marginals_x", None)
+        marginals_y = sim.get("marginals_y", None)
         marginals_z = sim.get("marginals_z", None)
-        
+
         if marginals is None:
             # Functional-dependence configs do not require a marginal sweep.
             # Preserve a stable row schema by carrying an explicit None.
-            if exp == "functionals" and marginals_x is None and marginals_z is None:
+            if exp == "functionals" and marginals_y is None and marginals_z is None:
                 marginals = [None]
-            elif marginals_x is None:
+            elif marginals_y is None:
                 if marginals_z is None:
-                    raise ValueError("At least one of 'marginals', 'marginals_x', or 'marginals_z' must be specified.")
-                marginals_x = marginals_z
+                    raise ValueError("At least one of 'marginals', 'marginals_y', or 'marginals_z' must be specified.")
+                marginals_y = marginals_z
             if marginals is None:
                 if marginals_z is None:
-                    marginals_z = marginals_x
-                
+                    marginals_z = marginals_y
+
                 marginals = [
-                    {"x": marginal_x, "z": marginal_z}
-                    for marginal_x, marginal_z in iproduct(marginals_x, marginals_z)
+                    {"y": marginal_y, "z": marginal_z}
+                    for marginal_y, marginal_z in iproduct(marginals_y, marginals_z)
                 ]
-        
+
         vals.append(marginals)
 
         # Functional sweeps are stored as paired descriptors so each form stays
@@ -526,12 +515,9 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
         if mth["approximation"] is not None:
             names.append("approximation")
             vals.append(mth["approximation"])
-        if mth["use_true_latent_x"] is not None:
-            names.append("use_true_latent_x")
-            vals.append(mth["use_true_latent_x"])
-        if mth["use_true_latent_z"] is not None:
-            names.append("use_true_latent_z")
-            vals.append(mth["use_true_latent_z"])
+        if mth["use_true_latent"] is not None:
+            names.append("use_true_latent")
+            vals.append(mth["use_true_latent"])
         rows = [dict(zip(names, v)) for v in iproduct(*vals)]
         for row in rows:
             functional = row.pop("_functional", None)
@@ -547,7 +533,7 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             "method",
             "n",
             "k",
-            "kx",
+            "ky",
             "alpha",
             "rho",
             "edge_var",
@@ -562,7 +548,7 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             mth["list"],
             sim["n"],
             sim["k"],
-            sim.get("kx", [None]),
+            sim.get("ky", [1]),
             sim["alpha"],
             sim["rho"],
             sim["edge_var"],
@@ -572,12 +558,9 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             sim["dim_individual"],
             sim["shared_latent_type"],
         ]
-        if mth["use_true_latent_x"] is not None:
-            names.append("use_true_latent_x")
-            vals.append(mth["use_true_latent_x"])
-        if mth["use_true_latent_z"] is not None:
-            names.append("use_true_latent_z")
-            vals.append(mth["use_true_latent_z"])
+        if mth["use_true_latent"] is not None:
+            names.append("use_true_latent")
+            vals.append(mth["use_true_latent"])
 
         h1 = [dict(zip(names, v)) for v in iproduct(*vals)]
         return h1
@@ -590,7 +573,7 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             "method",
             "n",
             "k",
-            "kx",
+            "ky",
             "alpha",
             "edge_var",
             "npermutations",
@@ -603,7 +586,7 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             mth["list"],
             sim["n"],
             sim["k"],
-            sim.get("kx", [None]),
+            sim.get("ky", [1]),
             sim["alpha"],
             sim["edge_var"],
             mth["npermutations"],
@@ -611,12 +594,9 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             sp["make_sparse"],
             sp["sparsity_bias"],
         ]
-        if mth["use_true_latent_x"] is not None:
-            names.append("use_true_latent_x")
-            vals.append(mth["use_true_latent_x"])
-        if mth["use_true_latent_z"] is not None:
-            names.append("use_true_latent_z")
-            vals.append(mth["use_true_latent_z"])
+        if mth["use_true_latent"] is not None:
+            names.append("use_true_latent")
+            vals.append(mth["use_true_latent"])
 
         return [dict(zip(names, v)) for v in iproduct(*vals)]
 
@@ -628,7 +608,7 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             "method",
             "n",
             "k",
-            "kx",
+            "ky",
             "alpha",
             "rho",
             "edge_var",
@@ -641,7 +621,7 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             mth["list"],
             sim["n"],
             sim["k"],
-            sim.get("kx", [None]),
+            sim.get("ky", [1]),
             sim["alpha"],
             sim.get("rho", [None]),
             sim.get("edge_var", [None]),
@@ -654,14 +634,14 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
         # YAML supplies them, so neither family needs dummy parameters.
         for name in (
             "sbm_covariate_sampling",
-            "x_distribution",
+            "y_distribution",
             "sparsity_bias",
             "prob_switch",
             "assignment_mode",
             "block_probs_type",
             "block_probs",
-            "x_upper_bound",
-            "x_probabilities",
+            "y_upper_bound",
+            "y_probabilities",
             "softmax_intercept",
             "softmax_slope",
             "directed",
@@ -680,12 +660,9 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
         if mth["approximation"] is not None:
             names.append("approximation")
             vals.append(mth["approximation"])
-        if mth["use_true_latent_x"] is not None:
-            names.append("use_true_latent_x")
-            vals.append(mth["use_true_latent_x"])
-        if mth["use_true_latent_z"] is not None:
-            names.append("use_true_latent_z")
-            vals.append(mth["use_true_latent_z"])
+        if mth["use_true_latent"] is not None:
+            names.append("use_true_latent")
+            vals.append(mth["use_true_latent"])
 
         return [dict(zip(names, v)) for v in iproduct(*vals)]
 

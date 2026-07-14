@@ -14,7 +14,7 @@ def dummy_solver(matrix, k, rng=None):
 def latent_data(seed=70):
     rng = np.random.default_rng(seed)
     return {
-        "X": rng.normal(size=(14, 2)),
+        "Y": rng.normal(size=(14, 2)),
         "Z": rng.normal(size=(14, 2)),
     }
 
@@ -45,8 +45,7 @@ def test_estimate_rv_runs_with_true_latent_positions():
 def test_rv_permutation_test_runs_by_itself():
     method = RVTest(
         solver=dummy_solver,
-        use_true_latent_x=True,
-        use_true_latent_z=True,
+        use_true_latent=True,
         approximation="permutation",
         npermutations=4,
         rng=np.random.default_rng(10),
@@ -55,7 +54,7 @@ def test_rv_permutation_test_runs_by_itself():
     method.fit(latent_data())
     result = method.get_estimated()
 
-    assert method.get_name() == "RV_PermutationTest_latent"
+    assert method.get_name() == "RV_PermutationTest_covariate"
     assert len(method.permutation_distribution) == 4
     assert np.isfinite(result["test_stat"])
     assert 0.0 <= result["p-value"] <= 1.0
@@ -65,12 +64,10 @@ def test_rv_permutation_test_runs_by_itself():
 def test_rv_test_rejects_unknown_approximation():
     method = RVTest(
         solver=dummy_solver,
-        use_true_latent_x=True,
-        use_true_latent_z=True,
+        use_true_latent=True,
         approximation="invalid",
         npermutations=1,
     )
 
     with pytest.raises(ValueError, match="Invalid approximation method"):
         method.fit(latent_data())
-

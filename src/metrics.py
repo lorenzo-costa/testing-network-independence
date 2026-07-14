@@ -23,6 +23,7 @@ class ReturnMetric(BaseMetric):
         return {
             "estimated": estimated,
             "truth": truth,
+            "Y": results.get("observed_Y"),
             "test_stat": test_stat,
             "p-value": p_value,
             "is_null": is_null,
@@ -336,18 +337,16 @@ class ComputeAll(BaseMetric):
             }
             out.update(test_metrics)
 
-        if estimated_latent is not None:
+        if estimated_latent is not None and results.get("true_latent") is not None:
             est = RelativeFrobeniusNorm(gram_matrix=self.gram_matrix)(results)
             latent_metrics = {
-                "RelativeFrobeniusNorm_x": est[0],
-                "RelativeFrobeniusNorm_z": est[1],
+                "RelativeFrobeniusNorm_z": est,
             }
 
             est_procrustes = RobustRelativeProcrustesDistance()(results)
             latent_metrics.update(
                 {
-                    "ProcrustesDistance_x": est_procrustes[0],
-                    "ProcrustesDistance_z": est_procrustes[1],
+                    "ProcrustesDistance_z": est_procrustes[0],
                 }
             )
             out.update(latent_metrics)

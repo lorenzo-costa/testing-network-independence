@@ -15,7 +15,7 @@ class CopulaGenerator:
     rho : float
         Correlation parameter for the copula.
     marginals : dict or str
-        Marginal distributions for the latent variables. Can be a string (e.g. 'gaussian') or a dict with 'x' and 'z' keys.
+        Marginal distributions for the latent variables. Can be a string (e.g. 'gaussian') or a dict with 'y' and 'z' keys.
     copula_model : str
         Type of copula to use for generating dependence structure.
         Options: 'gaussian', 'student_t', 'clayton', 'rotated_clayton', 'gumbel', 'frank', 'mixture_uniform'.
@@ -32,39 +32,33 @@ class CopulaGenerator:
         self,
         n,
         k,
-        kx=None,
+        ky=1,
         rho=0,
         marginals=None,
         copula_model=None,
         copula_params=None,
         column_covariance=None,
-        column_covariance_x=None,
+        column_covariance_y=None,
         center_latent=True,
         cross_covariance=None,
         rng=None,
         **kwargs,
     ):
         self.n = n
-        if kx is None:
-            kx = k
-            
         self.kz = k
-        self.kx = kx
+        self.ky = ky
         self.rho = rho
         self.copula_model = copula_model
         self.copula_params = copula_params if copula_params is not None else {}
-        
-        if column_covariance_x is None:
-            column_covariance_x = column_covariance
-        
+
         self.column_covariance_z = (
             np.eye(k) if column_covariance is None else column_covariance
         )
-        self.column_covariance_x = (
-            np.eye(kx) if column_covariance_x is None else column_covariance_x
+        self.column_covariance_y = (
+            np.eye(ky) if column_covariance_y is None else column_covariance_y
         )
         self.cross_covariance = cross_covariance
-            
+
         self.center_latent = center_latent
 
         self._convert_marginals(marginals)
@@ -97,39 +91,39 @@ class CopulaGenerator:
 
         if not self.column_covariance_z.shape == (self.kz, self.kz):
             raise ValueError(f"column_covariance_z must be a {self.kz}x{self.kz} matrix.")
-        if not self.column_covariance_x.shape == (self.kx, self.kx):
-            raise ValueError(f"column_covariance_x must be a {self.kx}x{self.kx} matrix.")
-    
+        if not self.column_covariance_y.shape == (self.ky, self.ky):
+            raise ValueError(f"column_covariance_y must be a {self.ky}x{self.ky} matrix.")
+
     def _generate_gaussian(self, rho, size):
         """Helper function for generate_copula_uniforms to generate correlated Gaussian,
-        with Z, X possibly having diff dimensions.
-        
-        We define a pairing matrix R such that R_ij=1 if column i of Z is directly 
-        related to column j of X. Then for Sigma_Z = L_Z @ L_Z.T and Sigma_X = L_X @ L_X.T
+        with Z, Y possibly having diff dimensions.
+
+        We define a pairing matrix R such that R_ij=1 if column i of Z is directly
+        related to column j of Y. Then for Sigma_Z = L_Z @ L_Z.T and Sigma_X = L_X @ L_X.T
         the joint cov matrix is:
         [Sigma_Z, rho L_Z @ R.T @ L_X.T]
         [rho L_X @ R.T @ L_Z.T, Sigma_X]
         Note cov between columns can be non-zero even if R_ij is zero through cov
-        within Z and X (i.e. column covariance)
-        
+        within Z and Y (i.e. column covariance)
+
         """
 
         Sigma_z = self.column_covariance_z
-        Sigma_x = self.column_covariance_x
+        Sigma_y = self.column_covariance_y
 
         if self.cross_covariance is None:
             Lz = np.linalg.cholesky(Sigma_z)
-            Lx = np.linalg.cholesky(Sigma_x)
-            
-            def _rectangular_identity(kz, kx):
-                R = np.zeros((kz, kx))
-                m = min(kz, kx)
+            Lx = np.linalg.cholesky(Sigma_y)
+
+            def _rectangular_identity(kz, ky):
+                R = np.zeros((kz, ky))
+                m = min(kz, ky)
                 R[np.arange(m), np.arange(m)] = 1.0
                 return R
 
             R = self.copula_params.get(
                 "cross_correlation_template",
-                _rectangular_identity(self.kz, self.kx),
+                _rectangular_identity(self.kz, self.ky),
             )
 
             Sigma_zx = rho * Lz @ R @ Lx.T
@@ -139,23 +133,23 @@ class CopulaGenerator:
 
         Sigma = np.block([
             [Sigma_z,    Sigma_zx],
-            [Sigma_zx.T, Sigma_x ],
+            [Sigma_zx.T, Sigma_y ],
         ])
-        
+
         joint = self.rng.multivariate_normal(
-            mean=np.zeros(self.kz + self.kx),
+            mean=np.zeros(self.kz + self.ky),
             cov=Sigma,
             size=size,
             check_valid="warn",
         )
-        
+
         return joint
 
     def _generate_copula_uniforms(self):
         """
-        Generates Uniform(0,1) random variables (u_z, u_x)
+        Generates Uniform(0,1) random variables (u_z, u_y)
         with the specified dependence structure.
-        Returns: u_z, u_x of shape (n, k)
+        Returns: u_z, u_y of shape (n, k)
         """
         if self.rho is None:
             raise ValueError("rho must be passed for Copula model")
@@ -163,29 +157,29 @@ class CopulaGenerator:
         if self.copula_model == "gaussian":
             jj = self._generate_gaussian(rho=self.rho, size=self.n)
             z = jj[:, : self.kz]
-            x = jj[:, self.kz :]
-            
-            u_z, u_x = ndtr(z), ndtr(x)
+            y = jj[:, self.kz :]
+
+            u_z, u_y = ndtr(z), ndtr(y)
             self.is_null = (self.rho == 0)
 
         elif self.copula_model == "student_t":
             # Generate Gaussiana and scale by chi-sq
-            
+
             jj = self._generate_gaussian(rho=self.rho, size=self.n)
             g_z = jj[:, : self.kz]
-            g_x = jj[:, self.kz :]
+            g_y = jj[:, self.kz :]
 
             df = self.copula_params["df"]
             w = self.rng.chisquare(df=df, size=(self.n, 1))
             scale = np.sqrt(df / w)
             t_z = g_z * scale
-            t_x = g_x * scale
+            t_y = g_y * scale
 
             u_z = stats.t.cdf(t_z, df=df)
-            u_x = stats.t.cdf(t_x, df=df)
+            u_y = stats.t.cdf(t_y, df=df)
 
             self.is_null = False
-        
+
         elif self.copula_model == "clayton":
             # Cook & Johnson (1981) generator for Clayton
             # param is theta > 0. Larger theta = higher correlation.
@@ -195,28 +189,28 @@ class CopulaGenerator:
 
             gamma_sample = self.rng.gamma(shape=1 / theta, scale=1.0, size=(self.n, 1))
 
-            d = self.kz + self.kx
-            
+            d = self.kz + self.ky
+
             e = self.rng.exponential(scale=1.0, size=(self.n, d))
 
             u = (1 + e / gamma_sample) ** (-1 / theta)
 
             u_z = u[:, : self.kz]
-            u_x = u[:, self.kz :]
+            u_y = u[:, self.kz :]
 
             self.is_null = False
 
         elif self.copula_model == "single_clayton":
-            # difference with previous fomrulation is that correlation is only 
+            # difference with previous fomrulation is that correlation is only
             # for columns pairs (i.e. Z_j independence X_i for i neq j)
             t_kendall = 2 / np.pi * np.arcsin(self.rho)
             theta = 2 * t_kendall / (1 - t_kendall)
-            
-            if self.kz != self.kx:
-                raise ValueError("single_clayton copula requires kz == kx")
+
+            if self.kz != self.ky:
+                raise ValueError("single_clayton copula requires kz == ky")
 
             e_z = self.rng.exponential(scale=1.0, size=(self.n, self.kz))
-            e_x = self.rng.exponential(scale=1.0, size=(self.n, self.kx))
+            e_y = self.rng.exponential(scale=1.0, size=(self.n, self.ky))
 
             gamma_sample = self.rng.gamma(
                 shape=1 / theta, scale=1.0, size=(self.n, self.kz)
@@ -224,30 +218,30 @@ class CopulaGenerator:
 
             # 3. Transform
             u_z = (1 + e_z / gamma_sample) ** (-1 / theta)
-            u_x = (1 + e_x / gamma_sample) ** (-1 / theta)
+            u_y = (1 + e_y / gamma_sample) ** (-1 / theta)
             self.is_null = False
-        
+
         elif self.copula_model == "gumbel":
-            # Generate from Gumbel–Hougaard using Marshall–Olkin-style shared-frailty 
+            # Generate from Gumbel–Hougaard using Marshall–Olkin-style shared-frailty
             # sampler where we draw:
             # S: from positive stable distribution with param 1/theta
             # E: iid exp(1)
             # set U_i = exp( - (E_i / S) ** alpha )
-            
+
             tau = 2 / np.pi * np.arcsin(self.rho)
-            theta = 1 / (1 - tau)       
-            alpha = 1 / theta           
+            theta = 1 / (1 - tau)
+            alpha = 1 / theta
 
-            d = self.kz + self.kx
+            d = self.kz + self.ky
 
-            # genrate positive stable with the Chambers–Mallows–Stuck (CMS) method 
+            # genrate positive stable with the Chambers–Mallows–Stuck (CMS) method
             U = self.rng.uniform(
                 low=-np.pi / 2,
                 high=np.pi / 2,
                 size=(self.n, 1),
             )
             W = self.rng.exponential(scale=1.0, size=(self.n, 1))
-            
+
             a = np.sin(alpha * (U + np.pi / 2))
             b = np.cos(U) ** (1 / alpha)
             c = np.cos(U - alpha * (U + np.pi / 2))
@@ -260,7 +254,7 @@ class CopulaGenerator:
             u = np.exp(-((E / S) ** alpha))
 
             u_z = u[:, :self.kz]
-            u_x = u[:, self.kz:]
+            u_y = u[:, self.kz:]
 
         elif self.copula_model == "single_gumbel":
             # difference with previous fomrulation is that correlation is only
@@ -269,14 +263,14 @@ class CopulaGenerator:
             theta = 1 / (1 - t_kendall)
 
             alpha = 1.0 / theta
-            
-            if self.kz != self.kx:
-                raise ValueError("single_gumbel copula requires kz == kx")
-            
+
+            if self.kz != self.ky:
+                raise ValueError("single_gumbel copula requires kz == ky")
+
             U_stab = self.rng.uniform(
-                low=-np.pi / 2, high=np.pi / 2, size=(self.n, self.k)
+                low=-np.pi / 2, high=np.pi / 2, size=(self.n, self.kz)
             )
-            W_stab = self.rng.exponential(scale=1.0, size=(self.n, self.k))
+            W_stab = self.rng.exponential(scale=1.0, size=(self.n, self.kz))
 
             a = np.sin(alpha * (U_stab + np.pi / 2))
             b = np.cos(U_stab) ** (1 / alpha)
@@ -284,11 +278,11 @@ class CopulaGenerator:
 
             S = (a / b) * (c / W_stab) ** ((1 - alpha) / alpha)
 
-            E1 = self.rng.exponential(scale=1.0, size=(self.n, self.k))
-            E2 = self.rng.exponential(scale=1.0, size=(self.n, self.k))
+            E1 = self.rng.exponential(scale=1.0, size=(self.n, self.kz))
+            E2 = self.rng.exponential(scale=1.0, size=(self.n, self.kz))
 
             u_z = np.exp(-((E1 / S) ** alpha))
-            u_x = np.exp(-((E2 / S) ** alpha))
+            u_y = np.exp(-((E2 / S) ** alpha))
 
             self.is_null = False
 
@@ -297,13 +291,15 @@ class CopulaGenerator:
             theta = 2 * t_kendall / (1 - t_kendall)
 
             # 1. Sample independent uniforms
-            u_z = self.rng.uniform(size=(self.n, self.k))  # This is u
+            if self.kz != self.ky:
+                raise ValueError("frank copula requires k == ky")
+            u_z = self.rng.uniform(size=(self.n, self.kz))  # This is u
             v_raw = self.rng.uniform(
-                size=(self.n, self.k)
+                size=(self.n, self.kz)
             )  # This is w (conditional probability)
 
-            # 2. Apply inverse conditional CDF to find u_x
-            # Formula: u_x = -1/theta * log(1 + (v_raw * (1 - exp(-theta))) / (v_raw * (exp(-theta*u_z) - 1) - exp(-theta*u_z)))
+            # 2. Apply inverse conditional CDF to find u_y
+            # Formula: u_y = -1/theta * log(1 + (v_raw * (1 - exp(-theta))) / (v_raw * (exp(-theta*u_z) - 1) - exp(-theta*u_z)))
 
             exp_theta = np.exp(-theta)
             exp_theta_uz = np.exp(-theta * u_z)
@@ -319,7 +315,7 @@ class CopulaGenerator:
             # Clip arg to avoid log(negative) due to float precision issues
             arg = np.maximum(arg, 1e-10)
 
-            u_x = -1.0 / theta * np.log(arg)
+            u_y = -1.0 / theta * np.log(arg)
 
             self.is_null = False
 
@@ -335,7 +331,7 @@ class CopulaGenerator:
             )
 
             z_full = np.empty((self.n, self.kz))
-            x_full = np.empty((self.n, self.kx))
+            y_full = np.empty((self.n, self.ky))
 
             for i, rho_i in enumerate(correlations):
                 mask = component_indices == i
@@ -347,30 +343,30 @@ class CopulaGenerator:
                 joint = self._generate_gaussian(rho=rho_i, size=count)
 
                 z_full[mask] = joint[:, :self.kz]
-                x_full[mask] = joint[:, self.kz:]
+                y_full[mask] = joint[:, self.kz:]
 
             u_z = ndtr(z_full)
-            u_x = ndtr(x_full)
+            u_y = ndtr(y_full)
 
             self.is_null = (correlations == 0).all()
 
             u_z = ndtr(z_full)
-            u_x = ndtr(x_full)
+            u_y = ndtr(y_full)
 
             self.is_null = False
 
         else:
             raise NotImplementedError(f"Copula {self.copula_model} not implemented")
 
-        return u_z, u_x
+        return u_z, u_y
 
     def _convert_marginals(self, marginals):
         # 1. Normalize input into a standard format
         if marginals is None:
             raise Exception('unspecified marginals')
-        
+
         if not isinstance(marginals, dict):
-            marginals = {"x": marginals, "z": marginals}
+            marginals = {"y": marginals, "z": marginals}
 
         # 2. Define a helper to parse a single string/distribution
         def parse_dist(dist_str):
@@ -414,32 +410,31 @@ class CopulaGenerator:
             return func(**kwargs) if kwargs else func(*args)
 
         # 3. Apply to both variables
-        self.marginal_x = parse_dist(marginals["x"])
+        self.marginal_y = parse_dist(marginals["y"])
         self.marginal_z = parse_dist(marginals["z"])
 
     def _sample_latent_copula(self):
-        u_z, u_x = self._generate_copula_uniforms()
+        u_z, u_y = self._generate_copula_uniforms()
         Z = self.marginal_z.ppf(u_z)
-        X = self.marginal_x.ppf(u_x)
+        Y = self.marginal_y.ppf(u_y)
 
         # ensure no NaNs or infs from bad ppf inputs (can happen with extreme correlations and certain marginals)
-        while (not np.isfinite(X).all()) or (not np.isfinite(Z).all()):
-            u_z, u_x = self._generate_copula_uniforms()
+        while (not np.isfinite(Y).all()) or (not np.isfinite(Z).all()):
+            u_z, u_y = self._generate_copula_uniforms()
             Z = self.marginal_z.ppf(u_z)
-            X = self.marginal_x.ppf(u_x)
+            Y = self.marginal_y.ppf(u_y)
 
         if self.center_latent:
-            X = X - X.mean(axis=0)
+            Y = Y - Y.mean(axis=0)
             Z = Z - Z.mean(axis=0)
-        return Z, X
+        return Z, Y
 
     def get_name(self):
         try:
-            marginal_x_name = self.marginal_x.dist.name
+            marginal_y_name = self.marginal_y.dist.name
             marginal_z_name = self.marginal_z.dist.name
         except AttributeError:
-            marginal_x_name = str(self.marginal_x)
+            marginal_y_name = str(self.marginal_y)
             marginal_z_name = str(self.marginal_z)
 
-        return f"copula_{self.copula_model}_rho{self.rho}_marginals_{marginal_x_name}_{marginal_z_name}"
-
+        return f"copula_{self.copula_model}_rho{self.rho}_marginals_{marginal_y_name}_{marginal_z_name}"

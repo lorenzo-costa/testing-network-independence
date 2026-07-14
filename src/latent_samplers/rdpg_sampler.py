@@ -18,7 +18,7 @@ class RDPGGenerator:
     rng : np.random.Generator, optional
         Random number generator for reproducibility.
     single_network : bool
-        If True, generate latent positions Z for one network and covariates/outcomes 
+        If True, generate latent positions Z for one network and covariates/outcomes
         possiby dependent on Z.
     """
 
@@ -26,7 +26,7 @@ class RDPGGenerator:
         self,
         n,
         k,
-        kx=None,
+        ky=1,
         rho=0,
         rdpg_distr=None,
         rdpg_params=None,
@@ -36,13 +36,10 @@ class RDPGGenerator:
         **kwargs,
     ):
         self.n = n
-        if kx is None:
-            self.kx = k
-        else:
-            self.kx = kx
-                
+        self.ky = ky
+
         self.kz = k
-        
+
         self.rho = rho
         self.rdpg_distr = rdpg_distr
         self.rdpg_params = rdpg_params if rdpg_params is not None else {}
@@ -53,16 +50,16 @@ class RDPGGenerator:
 
     def _sample_latent_rdpg(self):
         """
-        Samples X and Z matrices for an RDPG ensuring that
+        Samples Y and Z matrices for an RDPG ensuring that
         the inner products of any two vectors are in [0, 1].
         """
         if self.rdpg_distr == "dirichlet":
             # Default alpha is an array of ones (uniform over the simplex)
-            alpha_x = self.rdpg_params.get("alpha_x", np.ones(self.kx))
+            alpha_y = self.rdpg_params.get("alpha_y", np.ones(self.ky))
             alpha_z = self.rdpg_params.get("alpha_z", np.ones(self.kz))
             # Dirichlet vectors inherently sum to 1 and are strictly non-negative.
             # Their dot products are guaranteed to be in [0, 1].
-            X = self.rng.dirichlet(alpha_x, size=self.n)
+            Y = self.rng.dirichlet(alpha_y, size=self.n)
             Z = self.rng.dirichlet(alpha_z, size=self.n)
 
         elif self.rdpg_distr == "uniform_ball":
@@ -81,7 +78,7 @@ class RDPGGenerator:
                 # L2 norm <= 1 and non-negative coordinates guarantee inner products in [0, 1].
                 return np.abs(ball_samples)
 
-            X = sample_positive_ball(self.kx)
+            Y = sample_positive_ball(self.ky)
             Z = sample_positive_ball(self.kz)
 
         elif self.rdpg_distr == "truncated_normal":
@@ -99,34 +96,42 @@ class RDPGGenerator:
                 raw = np.where(norms > 1.0, raw / norms, raw)
                 return raw
 
-            X = sample_trunc_norm(self.kx)
+            Y = sample_trunc_norm(self.ky)
             Z = sample_trunc_norm(self.kz)
 
         else:
             raise ValueError(f"Unknown rdpg_distr: {self.rdpg_distr}")
 
-        Z, X = self._induce_dependence(X, Z)
+        Z, Y = self._induce_dependence(Y, Z)
 
-        return Z, X
-    
-    def _induce_dependence(self, X, Z):
+        return Z, Y
+
+    def _induce_dependence(self, Y, Z):
         if self.rho == 0:
             self.is_null = True
-            return Z, X  # No dependence to induce
-        
+            return Z, Y  # No dependence to induce
+
         self.is_null = False  # Dependence is being induced
-        
+
+        dependent = Y
         if self.dependence_type == "linear":
-                Z = self.rho * X + (1.0 - self.rho) * Z
+            dependent = Y
         elif self.dependence_type == "quadratic":
-            X2 = X**2
-            norms = np.linalg.norm(X2, axis=1, keepdims=True)
-            X2 = np.where(norms > 1, X2 / norms, X2)
-            Z = self.rho * X2 + (1.0 - self.rho) * Z
+            dependent = Y**2
+            norms = np.linalg.norm(dependent, axis=1, keepdims=True)
+            dependent = np.where(norms > 1, dependent / norms, dependent)
         else:
             raise ValueError(f"Unknown dependence_type: {self.dependence_type}")
-        
-        return Z, X
-            
+
+        # Preserve the original coordinate-wise dependence on the dimensions
+        # shared by Z and Y, leaving any remaining Z coordinates unchanged.
+        common = min(self.kz, self.ky)
+        Z[:, :common] = (
+            self.rho * dependent[:, :common]
+            + (1.0 - self.rho) * Z[:, :common]
+        )
+
+        return Z, Y
+
     def get_name(self):
         return f"RDPG_{self.rdpg_distr}"

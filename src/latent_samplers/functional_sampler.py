@@ -4,13 +4,13 @@ This module follows the output convention used by ``copula_sampler.py``:
 
 * ``Z`` is the predictor matrix, so row ``i`` is the vector-valued predictor
   :math:`Z_i \in R^k`.
-* ``X`` is the response matrix.  Here it has one column, and ``X[:, 0]`` is the
+* ``Y`` is the response matrix.  Here it has one column, and ``Y[:, 0]`` is the
   scalar response customarily denoted by :math:`Y`.
 
-The default models are deterministic: ``X[:, 0] = f(Z)``.  Hence, with
+The default models are deterministic: ``Y[:, 0] = f(Z)``.  Hence, with
 ``noise_scale=0`` they are useful alternatives for testing a dependence
 statistic that should attain its functional-dependence maximum when
-:math:`Y=f(X)`.
+:math:`Y=f(Y)`.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ Functional = Union[str, Callable[[np.ndarray], ArrayLike]]
 
 
 class FunctionalGenerator:
-    """Sample vector predictors ``Z`` and a scalar functional response ``X``.
+    """Sample vector predictors ``Z`` and a scalar functional response ``Y``.
 
     Parameters
     ----------
@@ -47,7 +47,7 @@ class FunctionalGenerator:
         ``alpha`` and ``scale`` (for ``pareto_index``), and ``switch_feature``
         (for ``piecewise``).
     column_covariance : ndarray, optional
-        ``k x k`` covariance matrix used for Gaussian predictors.  The
+        ``k y k`` covariance matrix used for Gaussian predictors.  The
         identity is used by default.
     predictor_distribution : {"gaussian", "student_t"}, default="gaussian"
         Distribution used for the predictor vector.  For ``student_t``,
@@ -71,9 +71,9 @@ class FunctionalGenerator:
 
     Notes
     -----
-    ``sample_latent()`` returns ``(Z, X)`` with shapes ``(n, k)`` and
-    ``(n, 1)``.  The name ``X`` is retained for compatibility with the existing
-    sampler interface; mathematically, ``X[:, 0]`` is the scalar response
+    ``sample_latent()`` returns ``(Z, Y)`` with shapes ``(n, k)`` and
+    ``(n, 1)``.  The name ``Y`` is retained for compatibility with the existing
+    sampler interface; mathematically, ``Y[:, 0]`` is the scalar response
     :math:`Y`.
     """
 
@@ -113,7 +113,7 @@ class FunctionalGenerator:
         self,
         n,
         k,
-        kx = None,
+        ky = 1,
         *,
         functional_form = "linear",
         function_params = None,
@@ -143,11 +143,11 @@ class FunctionalGenerator:
 
         self.n = int(n)
         self.kz = int(k)
-        if kx is None:
-            kx = 1
-        if kx != 1:
-            raise ValueError("FunctionalGenerator only supports scalar responses (kx=1), received kx={kx}.")
-        self.kx = 1       # response is scalar
+        if ky != 1:
+            raise ValueError(
+                f"FunctionalGenerator only supports scalar responses (ky=1), received ky={ky}."
+            )
+        self.ky = 1       # response is scalar
         self.functional_form = functional_form
         self.function_params = dict(function_params or {})
         self.predictor_distribution = predictor_distribution
@@ -209,7 +209,7 @@ class FunctionalGenerator:
             Z = Z - Z.mean(axis=0, keepdims=True)
         return Z
 
-    def _index_weights(self) -> np.ndarray:
+    def _indey_weights(self) -> np.ndarray:
         """Get a normalized index using every coordinate by default."""
         raw_weights = self.function_params.get("weights")
         if raw_weights is None:
@@ -236,7 +236,7 @@ class FunctionalGenerator:
         return weights
 
     def _index(self, Z: np.ndarray) -> np.ndarray:
-        return Z @ self._index_weights()
+        return Z @ self._indey_weights()
 
     def _active_columns(self) -> np.ndarray:
         active = self.function_params.get("active_features")
@@ -348,7 +348,7 @@ class FunctionalGenerator:
         return y
 
     def _functional_manifold(self, Z: np.ndarray) -> np.ndarray:
-        w1 = self._index_weights()
+        w1 = self._indey_weights()
         raw_w2 = self.function_params.get("second_weights")
         if raw_w2 is None:
             w2 = (-1.0) ** np.arange(self.kz) / np.sqrt(self.kz)
@@ -402,17 +402,17 @@ class FunctionalGenerator:
         -------
         Z : ndarray, shape (n, k)
             Vector-valued predictor samples.
-        X : ndarray, shape (n, 1)
-            Response samples.  ``X[:, 0]`` is the mathematical scalar response
-            :math:`Y` and is intentionally named ``X`` for compatibility with
+        Y : ndarray, shape (n, 1)
+            Response samples.  ``Y[:, 0]`` is the mathematical scalar response
+            :math:`Y` and is intentionally named ``Y`` for compatibility with
             the surrounding codebase.
         """
         Z = self._sample_predictors()
         y = self._add_noise(self._evaluate_function(Z))
         if not np.isfinite(y).all():
             raise FloatingPointError("Noise generation produced non-finite values.")
-        X = y.reshape(self.n, 1)
-        return Z, X
+        Y = y.reshape(self.n, 1)
+        return Z, Y
 
     # Compatibility aliases for pipelines that use private sampler hooks.
     def _sample_latent_functional(self) -> tuple[np.ndarray, np.ndarray]:

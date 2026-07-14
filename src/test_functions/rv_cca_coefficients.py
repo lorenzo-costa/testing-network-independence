@@ -35,7 +35,7 @@ def rv_coefficient(A, B):
     b_flat = BtB.ravel()
     den = np.sqrt(a_flat.dot(a_flat) * b_flat.dot(b_flat))
 
-    return num / den if den != 0 else np.nan
+    return num / den if den != 0 else 0.0
 
 
 def rv_coefficient_adjusted(A, B):

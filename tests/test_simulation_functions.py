@@ -1,74 +1,26 @@
-import pytest
 import numpy as np
-from src.helper_functions.dgp.dgp import GaussianNetwork
-from scipy import stats
-import sys
-from src.metrics import ComputeAll
-from src.helper_functions.simulation_functions import run_simulation
-from src.solvers import ASE, MLE_gaussian, MLE_logistic
-from src.helper_functions.dgp.dgp import GaussianNetwork, BernoulliNetwork
-from src.methods import RVPermutationTest, LLKRatioTest, QAP
-from itertools import product
+
+from src.dgp import GaussianNetwork
+from src.helper_functions.simulation_functions import run_scenario
+from src.methods import RVTest
+from src.metrics import ReturnMetric
+from src.solvers.weighted_network import ASE
 
 
-@pytest.mark.parametrize("parallel", [True, False])
-def test_simulation_run(parallel):
-    # test only that simulation function actually runs
-    nsim = 2
-    n = [10, 20]
-    k = [2, 3]
-    rho = [0, 0.5]
-    alpha = [0.05]
-    marginals = [stats.norm]
-    edge_var = [1, 2]
-    method = [RVPermutationTest, LLKRatioTest, QAP]
-    npermutations = [100]
-
-    setup = [
-        (GaussianNetwork, ASE),
-        (BernoulliNetwork, MLE_logistic),
-        (GaussianNetwork, MLE_gaussian),
-    ]
-
-    metrics = [ComputeAll()]
-
-    approximation = ["F-distr", "chi-sq"]
-
-    rng = np.random.default_rng(1)
-
-    param_names = [
-        "setup",
-        "method",
-        "n",
-        "k",
-        "rho",
-        "alpha",
-        "marginals",
-        "edge_var",
-        "approximation",
-        "npermutations",
-    ]
-
-    param_values = product(
-        setup,
-        method,
-        n,
-        k,
-        rho,
-        alpha,
-        marginals,
-        edge_var,
-        approximation,
-        npermutations,
-    )
-
-    factorial_design = [dict(zip(param_names, v)) for v in param_values]
-
-    out = run_simulation(
-        nsim=nsim,
-        metrics=metrics,
-        factorial_design=factorial_design,
-        rng=rng,
-        parallel=parallel,
-    )
-    assert out is not None
+def test_run_scenario_uses_single_network_density_and_returns_y():
+    args = {
+        "setup": (GaussianNetwork, ASE),
+        "method": RVTest,
+        "n": 10,
+        "k": 2,
+        "ky": 1,
+        "rho": 0.2,
+        "alpha": 0.05,
+        "edge_var": 1,
+        "marginals": "gaussian",
+        "copula_model": "gaussian",
+        "npermutations": 2,
+    }
+    result = run_scenario([ReturnMetric()], args, seed=np.random.SeedSequence(1))
+    assert isinstance(result["density"], float)
+    assert result["ReturnMetric"]["Y"].shape == (10, 1)

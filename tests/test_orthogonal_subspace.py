@@ -19,7 +19,7 @@ def test_common_dimension_cannot_exceed_total_dimension():
         shared_latent_type="gaussian",
     )
 
-    with pytest.raises(ValueError, match="dim_common must be specified less than k"):
+    with pytest.raises(ValueError, match="dim_common must not exceed"):
         sampler._sample_latent_orthogonal()
 
 
@@ -33,4 +33,3 @@ def test_unknown_shared_latent_type_is_rejected():
 
     with pytest.raises(ValueError, match="Unknown shared_latent_type: invalid"):
         sampler._sample_latent_orthogonal()
-

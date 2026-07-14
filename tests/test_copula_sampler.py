@@ -51,7 +51,7 @@ def test_mixture_uniform_validates_component_parameters(copula_params, message):
     "kwargs, message",
     [
         ({"column_covariance": np.eye(3)}, "column_covariance_z must be a 2x2"),
-        ({"column_covariance_x": np.eye(3)}, "column_covariance_x must be a 2x2"),
+        ({"column_covariance_y": np.eye(3)}, "column_covariance_y must be a 2x2"),
     ],
 )
 def test_covariance_dimensions_are_validated(kwargs, message):
@@ -59,6 +59,7 @@ def test_covariance_dimensions_are_validated(kwargs, message):
         CopulaGenerator(
             n=10,
             k=2,
+            ky=2,
             copula_model="gaussian",
             marginals="gaussian",
             **kwargs,
@@ -73,4 +74,3 @@ def test_unknown_marginal_is_rejected():
             copula_model="gaussian",
             marginals="invalid",
         )
-

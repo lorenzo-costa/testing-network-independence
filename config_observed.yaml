@@ -34,21 +34,15 @@ simulation:
 methods:
   npermutations: [50]           # Reduced permutations — appropriate for nsim=1 pilots
   df: [3]
-  approximation: ["F-distr"]
   # use_true_latent is not a parameter in this experiment
 
   list:
-    - name: ObservedCVM
+    - name: RVtest
       kwargs:
-        degree: 3               # Cubic polynomial test function
+        permutation_type: observed
+        approximation: permutation
 
-    - name: ObservedCVM
-      kwargs:
-        degree: 2               # Quadratic polynomial test function
 
-    - name: ObservedCVM
-      kwargs:
-        degree: 1               # Linear polynomial test function
 
 
 # -----------------------------------------------------------------------------
@@ -76,7 +70,7 @@ setups:
   - dgp: GaussianNetwork
     copula_model: mixture_uniform
     weights: [0.5, 0.5]
-    correlations: [0.5, -0.5]   
+    correlations: [0.5, -0.5]
     solver: ASE
 
   # --- Bernoulli networks ---

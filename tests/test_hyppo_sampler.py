@@ -3,6 +3,8 @@ import importlib
 import numpy as np
 import pytest
 
+pytest.importorskip("hyppo")
+
 from src.latent_samplers.hyppo_sampler import HyppoSimSampler, SIM_REGISTRY
 
 
@@ -25,4 +27,3 @@ def test_unknown_rdpg_normalization_is_rejected():
 
     with pytest.raises(Exception, match="Unknown rdpg option: invalid"):
         sampler._make_rdpg(values, values)
-

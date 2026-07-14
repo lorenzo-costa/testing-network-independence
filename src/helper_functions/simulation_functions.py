@@ -54,14 +54,13 @@ def run_scenario(metrics, args, seed, method_params=None):
     is_null = dgp.is_null if hasattr(dgp, "is_null") else None
 
     density_A = (data["A"] == 0).sum() / data["A"].size
-    density_B = (data["B"] == 0).sum() / data["B"].size
 
     out_metrics = {
         metric.get_name(): metric(results, is_null=is_null) for metric in metrics
     }
 
     out_metrics["args"] = args
-    out_metrics["density"] = (density_A, density_B)
+    out_metrics["density"] = density_A
     return out_metrics
 
 
@@ -151,8 +150,7 @@ def run_simulation(
     n_jobs : _type_, optional
         _description_, by default None
     data : dict, optional
-       Dictionary containing keys 'estimate_latent_x', 'estimate_latent_y',
-       'true_latent_x', and 'true_latent_y'.
+       Dictionary containing ``A``, optional ``Z``, and observed ``Y``.
     batch_size : int, optional
         Number of scenarios to process in each batch when parallelizing, by default 32
 
