@@ -1,42 +1,56 @@
 #!/bin/bash
 
 #SBATCH --job-name=sim_full
-#SBATCH --output=logs/sim_full_%j.out
-#SBATCH --error=logs/sim_full_%j.err
+#SBATCH --output=/dev/null
+#SBATCH --error=/dev/null
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=32
-#SBATCH --mem=10G
-#SBATCH --time=08:00:00
+#SBATCH --mem=20G
+#SBATCH --time=07:00:00
 
 #SBATCH --account=stats_dept1
 #SBATCH --partition=standard
 
-# ── Notifications (optional — set your email here) ────────────────────────────
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --mail-user=lrcosta@umich.edu
 
-# Capture the input argument, used to provide experiment config
+# Capture the input argument
 CONFIG_FILE=$1
 
 if [ -z "$CONFIG_FILE" ]; then
     echo "Error: No configuration file provided."
-    echo "Usage: sbatch your_script.sh my_config.yaml"
+    echo "Usage: sbatch run.sh config_xxxx.yaml"
     exit 1
 fi
 
+# Extract identifier from config_xxxx.yaml -> xxxx
+CONFIG_NAME=$(basename "$CONFIG_FILE")
+CONFIG_NAME="${CONFIG_NAME%.*}"      # Remove extension
+CONFIG_ID="${CONFIG_NAME#config_}"   # Remove config_ prefix
+
+# Ensure directories exist before redirecting output
+mkdir -p results logs
+
+# Rename the Slurm job to reflect the config
+scontrol update JobId="$SLURM_JOB_ID" JobName="sim_${CONFIG_ID}"
+
+# Redirect stdout and stderr to config-specific log files
+exec >"logs/sim_${CONFIG_ID}_${SLURM_JOB_ID}.out" \
+     2>"logs/sim_${CONFIG_ID}_${SLURM_JOB_ID}.err"
+
+echo "Job ID: $SLURM_JOB_ID"
+echo "Job name: sim_${CONFIG_ID}"
+echo "Config: $CONFIG_FILE"
+echo "Start time: $(date)"
+
 module load python
 source .venv/bin/activate
-
-# Ensure directories exist
-mkdir -p results logs
 
 # Parallelism settings
 export OMP_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 
-# 3. Use the variable in the command
-echo "Running simulation with config: $CONFIG_FILE"
 python -m src.run_simulation_script --config "$CONFIG_FILE"
 
 echo "End time: $(date)"

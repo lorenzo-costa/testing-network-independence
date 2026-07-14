@@ -1,5 +1,5 @@
 from scipy.linalg import norm
-from .helper_functions._metrics_helper import rv_coefficient, rv_coefficient_adjusted
+from .test_functions.rv_cca_coefficients import rv_coefficient, rv_coefficient_adjusted
 import numpy as np
 
 
@@ -7,7 +7,7 @@ class BaseMetric:
     def __init__(self):
         pass
 
-    def __call__(self, estimated, truth):
+    def __call__(self):
         raise NotImplementedError("Subclasses should implement this!")
 
     def get_name(self):
@@ -15,17 +15,25 @@ class BaseMetric:
 
 
 class ReturnMetric(BaseMetric):
-    def __call__(self, results):
+    def __call__(self, results, is_null=None):
         estimated = results["estimated_latent"]
         truth = results["true_latent"]
-        return {"estimated": estimated, "truth": truth}
+        test_stat = results.get("test_stat", None)
+        p_value = results.get("p-value", None)
+        return {
+            "estimated": estimated,
+            "truth": truth,
+            "test_stat": test_stat,
+            "p-value": p_value,
+            "is_null": is_null,
+        }
 
     def get_name(self):
         return "ReturnMetric"
 
 
 class RVCoefficient(BaseMetric):
-    def __call__(self, results):
+    def __call__(self, results, is_null=None):
         estimated = results["estimated_latent"]
         truth = results["true_latent"]
         return rv_coefficient(estimated, truth)
@@ -35,7 +43,7 @@ class RVCoefficient(BaseMetric):
 
 
 class AdjustedRVCoefficient(BaseMetric):
-    def __call__(self, results):
+    def __call__(self, results, is_null=None):
         estimated = results["estimated_latent"]
         truth = results["true_latent"]
         return rv_coefficient_adjusted(estimated, truth)
@@ -45,7 +53,7 @@ class AdjustedRVCoefficient(BaseMetric):
 
 
 class MSE(BaseMetric):
-    def __call__(self, results):
+    def __call__(self, results, is_null=None):
         estimated = results["estimated_latent"]
         truth = results["true_latent"]
         return ((truth - estimated) ** 2).mean()
@@ -78,7 +86,7 @@ class RelativeFrobeniusNorm(BaseMetric):
         # get rid of orthogonal invariance
         self.gram_matrix = gram_matrix
 
-    def __call__(self, results):
+    def __call__(self, results, is_null=None):
         estimated = results["estimated_latent"]
         truth = results["true_latent"]
 
@@ -136,7 +144,7 @@ class RobustRelativeProcrustesDistance:
     4. Scale invariant (Relative) to handle large matrix entries.
     """
 
-    def __call__(self, results):
+    def __call__(self, results, is_null=None):
         estimated = results["estimated_latent"]
         truth = results["true_latent"]
 
@@ -235,11 +243,10 @@ class FalseRejection(BaseMetric):
     Takes as input a results dictionary containing 'reject_null' and 'true_null' keys.
     """
 
-    def __call__(self, results):
+    def __call__(self, results, is_null=None):
         reject_null = results["reject_null"]
-        null = results["null"]
         # if null is True, but we reject it.
-        if (null is True) and (reject_null is True):
+        if (is_null is True) and (reject_null is True):
             return True
         return False
 
@@ -253,11 +260,10 @@ class FalseAcceptance(BaseMetric):
     Takes as input a results dictionary containing 'reject_null' and 'true_null' keys.
     """
 
-    def __call__(self, results):
+    def __call__(self, results, is_null=None):
         reject_null = results["reject_null"]
-        null = results["null"]
         # Null is False (H0), but we do not reject it (i.e accept it)
-        if (null is False) and (reject_null is False):
+        if (is_null is False) and (reject_null is False):
             return True
         return False
 
@@ -271,11 +277,10 @@ class TrueRejection(BaseMetric):
     Takes as input a results dictionary with keywords 'reject_null' and 'null'.
     """
 
-    def __call__(self, results):
+    def __call__(self, results, is_null=None):
         reject_null = results["reject_null"]
-        null = results["null"]
         # Null is False (H1) and we reject it
-        if (null is False) and (reject_null is True):
+        if (is_null is False) and (reject_null is True):
             return True
         return False
 
@@ -289,11 +294,10 @@ class TrueAcceptance(BaseMetric):
     Takes as input a results dictionary with keywords 'reject_null' and 'null'.
     """
 
-    def __call__(self, results):
+    def __call__(self, results, is_null=None):
         reject_null = results["reject_null"]
-        null = results["null"]
         # Null is True (H0) and we accept it
-        if (null is True) and (reject_null is False):
+        if (is_null is True) and (reject_null is False):
             return True
         return False
 
@@ -316,7 +320,7 @@ class ComputeAll(BaseMetric):
         super().__init__()
         self.gram_matrix = gram_matrix
 
-    def __call__(self, results):
+    def __call__(self, results, is_null=None):
         out = {}
         reject_null = results.get("reject_null", None)
         estimated_latent = results.get("estimated_latent", None)
@@ -325,10 +329,10 @@ class ComputeAll(BaseMetric):
             # compute test metrics
             test_metrics = {
                 "Rejection": Rejection()(results),
-                "FalseRejection": FalseRejection()(results),
-                "FalseAcceptance": FalseAcceptance()(results),
-                "TrueRejection": TrueRejection()(results),
-                "TrueAcceptance": TrueAcceptance()(results),
+                "FalseRejection": FalseRejection()(results, is_null=is_null),
+                "FalseAcceptance": FalseAcceptance()(results, is_null=is_null),
+                "TrueRejection": TrueRejection()(results, is_null=is_null),
+                "TrueAcceptance": TrueAcceptance()(results, is_null=is_null),
             }
             out.update(test_metrics)
 

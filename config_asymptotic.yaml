@@ -28,7 +28,7 @@ simulation:
   k: [3]                  # Number of latent dimensions for the network embedding
   rho: [0.2]              # Correlation parameter under H1 (signal strength); 0.0 = null hypothesis
   alpha: [0.05]           # Nominal significance level(s) for hypothesis tests
-  edge_var: [3]           # Edge weight variance (used in Gaussian networks)
+  edge_var: [2]           # Edge weight variance (used in Gaussian networks)
  
   # Marginal distributions applied to the latent variables.
   marginals:
@@ -49,16 +49,19 @@ simulation:
 methods:
   npermutations: [200]      # Number of permutations used in permutation-based tests
   df: [3]                   # Degrees of freedom (used in Student-t approximations)
-  use_true_latent: [False, True]  # Whether to use true latent positions (oracle) vs estimated ones
+  use_true_latent_x: [True]  
+  use_true_latent_z: [True, False] 
  
   # List of test methods to benchmark. 'kwargs' are passed to the method constructor.
   list:
     - name: RVtest
       kwargs:
         approximation: permutation
+      
     - name: RVtest
       kwargs:
-        approximation: asymptotic      
+        approximation: asymptotic   
+       
     - name: QAP
       kwargs: {}                   
  
@@ -117,18 +120,18 @@ setups:
 # Null Hypothesis Setups (H0: rho = 0)
 # A restricted subset of setups run under the null to measure Type I error.
 # -----------------------------------------------------------------------------
-null_setups:
-  rho: [0.0]    # Null correlation — no dependence between networks
+# null_setups:
+#   rho: [0.0]    # Null correlation — no dependence between networks
  
-  # Only the Gaussian copula variants are run under H0
-  setups:
-    - dgp: GaussianNetwork
-      copula_model: gaussian
-      solver: ASE
+#   # Only the Gaussian copula variants are run under H0
+#   setups:
+#     - dgp: GaussianNetwork
+#       copula_model: gaussian
+#       solver: ASE
  
-    - dgp: BernoulliNetwork
-      copula_model: gaussian
-      solver: pgd_fit_wrapper
+#     - dgp: BernoulliNetwork
+#       copula_model: gaussian
+#       solver: pgd_fit_wrapper
  
  
 # -----------------------------------------------------------------------------

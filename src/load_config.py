@@ -3,17 +3,17 @@ load_config.py
 --------------
 Universal config loader for all simulation experiments.
 
-Supports five experiment types, auto-detected from YAML structure:
+Supports six experiment types, auto-detected from YAML structure:
   - "standard"       -> main study + observed CVM sweep (same structure, different values)
   - "lee2019"        -> latent functional-relationship study (Lee et al. 2019)
   - "diff_marginals" -> asymmetric per-network marginal distributions
-  - "sbm"            -> stochastic block model misspecification study
+  - "sbm"            -> covariate-aware stochastic block model study
   - "multiness"      -> multi-network study with common/individual latent dimensions
 
 Public API
 ----------
     cfg          = load_config("config.yaml")      # auto-detects type
-    h1, h0       = build_factorial_design(cfg)     # h0 is None for lee2019 / sbm
+    h1, h0       = build_factorial_design(cfg)     # h0 is None for lee2019 
     df           = flatten_args_columns(df)        # common post-processing
 """
 
@@ -30,8 +30,8 @@ from src.solvers.weighted_network import ASE
 from src.solvers.MaMa_uuuuu import pgd_fit_wrapper
 
 # -- Test methods -------------------------------------------------------------
-from src.methods import RVtest, QAP, DiffusionCorrelation, ObservedCVM
-from src.helper_functions._metrics_helper import observed_cvm_dependency
+from src.methods import *
+from src.test_functions.cvm_statistic import observed_cvm_dependency
 
 # -- Metrics ------------------------------------------------------------------
 from src.metrics import ComputeAll
@@ -52,10 +52,12 @@ SOLVER_REGISTRY = {
 }
 
 METHOD_REGISTRY = {
-    "RVtest": RVtest,
+    "RVtest": RVTest,
     "QAP": QAP,
-    "DiffusionCorrelation": DiffusionCorrelation,
+    "DiffusionCorrelation": DistanceCorrelationTest,
     "ObservedCVM": ObservedCVM,
+    "MultivariateACTest": MultivariateACTest,
+    "CanonicalCorrelation": CanonicalCorrelationTest,
 }
 
 # Latent-sim shapes that do NOT accept sim_kwargs={'noise': True}
@@ -81,18 +83,35 @@ def _resolve_method(entry: dict):
         return partial(
             cls, test_function=partial(observed_cvm_dependency, degree=degree)
         )
+    if name == "MultivariateACTest":
+        M = kwargs.get("M", 1)
+        aggregate_coeff = kwargs.get("aggregate_coeff", None)
+        return partial(cls, M=M, aggregate_coeff=aggregate_coeff) if kwargs else cls
 
     return partial(cls, **kwargs) if kwargs else cls
 
 
-def _resolve_standard_setup(entry: dict):
+def _resolve_copula_setup(entry: dict):
     """
     Resolve one copula-based setup entry into a (partial(DGP, ...), Solver) tuple.
-    Used by: standard, observed, diff_marginals experiments.
+
+    Keeps copula_model as a standalone DGP argument.
+    Packs every other setup-specific field into copula_params.
     """
     dgp_cls = DGP_REGISTRY[entry["dgp"]]
     solver = SOLVER_REGISTRY[entry["solver"]]
-    dgp_kwargs = {k: v for k, v in entry.items() if k not in ("dgp", "solver")}
+
+    reserved = {"dgp", "solver", "copula_model", "rdgp", "rdpg_distr"}
+
+    copula_params = {k: v for k, v in entry.items() if k not in reserved}
+
+    dgp_kwargs = {
+        "copula_model": entry.get("copula_model"),
+        "rdpg": entry.get("rdpg", False),
+        "rdpg_distr": entry.get("rdpg_distr", None),
+        "copula_params": copula_params,
+    }
+
     return (partial(dgp_cls, **dgp_kwargs), solver)
 
 
@@ -102,8 +121,11 @@ def _resolve_lee2019_setups(setups_cfg: dict) -> list:
     (partial(DGP, latent_sim=...), partial(ASE, k=...)) tuples.
     multimodal_independence is special-cased: it receives no sim_kwargs.
     """
-    ase_k = setups_cfg.get("ase_k", 2)
-    solver = partial(ASE, k=ase_k)
+    ase_k = setups_cfg.get("ase_k", None)
+    if ase_k is None:
+        solver = ASE
+    else:
+        solver = partial(ASE, k=ase_k)
     rdpg = setups_cfg.get("bernoulli_rdpg", "minmax")
     result = []
 
@@ -131,14 +153,92 @@ def _resolve_lee2019_setups(setups_cfg: dict) -> list:
     return result
 
 
-def _resolve_sbm_setups(setups_list: list) -> list:
+def _as_sweep(value, name: str) -> list:
+    """Normalise a scalar or list-valued config field into a factorial sweep."""
+    if value is None:
+        return [None]
+    if isinstance(value, list):
+        if not value:
+            raise ValueError(f"{name} must not be an empty list")
+        return value
+    return [value]
+
+
+def _resolve_sbm_setups(setups_cfg: list) -> list:
+    """Resolve SBM DGP/solver pairs.
+
+    An SBM config may omit ``sbm: true`` in each setup because the top-level
+    ``sbm`` block already identifies the experiment.  The flag is injected
+    unconditionally here, while any other setup-specific DGP keyword arguments
+    are preserved.
     """
-    Resolve SBM setups: sbm=True is injected automatically; no copula params.
+    if not isinstance(setups_cfg, list) or not setups_cfg:
+        raise TypeError("SBM setups must be a non-empty list of mappings")
+
+    resolved = []
+    for entry in setups_cfg:
+        if not isinstance(entry, dict):
+            raise TypeError("Each SBM setup must be a mapping")
+        try:
+            dgp_cls = DGP_REGISTRY[entry["dgp"]]
+            solver = SOLVER_REGISTRY[entry["solver"]]
+        except KeyError as exc:
+            raise ValueError(
+                "Each SBM setup must name a registered 'dgp' and 'solver'"
+            ) from exc
+
+        dgp_kwargs = {
+            key: value for key, value in entry.items() if key not in {"dgp", "solver"}
+        }
+        dgp_kwargs["sbm"] = True
+        resolved.append((partial(dgp_cls, **dgp_kwargs), solver))
+
+    return resolved
+
+
+def _resolve_sbm_block(sbm_cfg: dict) -> dict:
+    """Normalise optional SBM-specific sweeps.
+
+    ``assortativity`` defaults to ``0.5`` when it is not specified.  The
+    covariate-aware fields (``sbm_covariate_sampling`` and ``x_distribution``) are optional
+    as a pair so this loader accepts both the supplied covariate-aware setup and
+    earlier block/assignment-style SBM configurations.
     """
-    return [
-        (partial(DGP_REGISTRY[e["dgp"]], sbm=True), SOLVER_REGISTRY[e["solver"]])
-        for e in setups_list
-    ]
+    if not isinstance(sbm_cfg, dict):
+        raise TypeError("sbm must be a mapping")
+
+    has_sampling = "sbm_covariate_sampling" in sbm_cfg
+    has_x_distribution = "x_distribution" in sbm_cfg
+    if has_sampling != has_x_distribution:
+        raise ValueError(
+            "sbm.sbm_covariate_sampling and sbm.x_distribution must be supplied together"
+        )
+
+    resolved = {
+        "assortativity": _as_sweep(
+            sbm_cfg.get("assortativity", 0.5), "sbm.assortativity"
+        )
+    }
+
+    for name in (
+        "sbm_covariate_sampling",
+        "x_distribution",
+        "sparsity_bias",
+        "prob_switch",
+        "assignment_mode",
+        "block_probs_type",
+        "block_probs",
+        "x_upper_bound",
+        "x_probabilities",
+        "softmax_intercept",
+        "softmax_slope",
+        "directed",
+        "self_loops",
+    ):
+        if name in sbm_cfg:
+            resolved[name] = _as_sweep(sbm_cfg[name], f"sbm.{name}")
+
+    return resolved
 
 
 def _resolve_methods_block(methods_cfg: dict) -> dict:
@@ -150,10 +250,68 @@ def _resolve_methods_block(methods_cfg: dict) -> dict:
         "approximation": methods_cfg.get(
             "approximation"
         ),  # None when absent (e.g. multiness)
-        "use_true_latent": methods_cfg.get("use_true_latent"),  # None when absent
+        "use_true_latent_x": methods_cfg.get("use_true_latent_x"),  # None when absent
+        "use_true_latent_z": methods_cfg.get("use_true_latent_z"),  # None when absent
     }
 
-    
+
+def _resolve_noise_options(simulation_cfg: dict) -> dict:
+    """Validate optional functional-noise controls from the simulation block.
+
+    ``noise_scale`` is an integer and ``noise_type`` is a string.  Both may
+    also be supplied as lists to sweep several values; scalar values are
+    normalised to one-element lists for the factorial design.
+    """
+    def _as_list(value):
+        return value if isinstance(value, list) else [value]
+
+    resolved = {}
+    if "noise_scale" in simulation_cfg:
+        scales = _as_list(simulation_cfg["noise_scale"])
+        if any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in scales):
+            raise TypeError("simulation.noise_scale must be a number or a list of numbers")
+        resolved["noise_scale"] = scales
+
+    if "noise_type" in simulation_cfg:
+        types = _as_list(simulation_cfg["noise_type"])
+        if any(not isinstance(value, str) for value in types):
+            raise TypeError("simulation.noise_type must be a string or a list of strings")
+        resolved["noise_type"] = types
+
+    return resolved
+
+
+def _resolve_functionals_block(functionals_cfg):
+    """
+    Normalise a ``simulation.functionals`` sweep.
+
+    Each entry is retained as a plain, serialisable descriptor so downstream
+    simulation code can dispatch the functional by name while receiving its
+    keyword arguments unchanged.  A bare string is also accepted as shorthand
+    for ``{"name": <string>, "kwargs": {}}``.
+    """
+    if functionals_cfg is None:
+        return None
+    if not isinstance(functionals_cfg, list):
+        raise TypeError("simulation.functionals must be a list of strings or mappings")
+
+    resolved = []
+    for entry in functionals_cfg:
+        if isinstance(entry, str):
+            entry = {"name": entry}
+        if not isinstance(entry, dict) or not entry.get("name"):
+            raise ValueError(
+                "Each simulation.functionals entry must contain a non-empty 'name'"
+            )
+        kwargs = entry.get("kwargs") or {}
+        if not isinstance(kwargs, dict):
+            raise TypeError("functional kwargs must be a mapping")
+        resolved.append(
+            {"functional_form": entry["name"], "function_params": kwargs}
+        )
+    return resolved
+
+
 # =============================================================================
 # Experiment-type detection
 # =============================================================================
@@ -164,11 +322,13 @@ def _detect_experiment_type(raw: dict) -> str:
     Infer experiment type from YAML structure (no explicit tag required).
 
     Detection priority (most specific first):
-      1. "sbm"           -- top-level `sbm:` key is present
-      2. "lee2019"       -- `setups` is a dict with a `gaussian_latent_sims` key
-      3. "multiness"     -- simulation block contains `dim_common` key
-      4. "diff_marginals"-- first marginals entry is a dict (has 'x'/'y' keys)
-      5. "standard"      -- everything else (main study + observed CVM sweep)
+      1. "sbm"           -- top-level ``sbm`` block is present
+      2. "lee2019"       -- ``setups`` is a dict with ``gaussian_latent_sims``
+      3. "multiness"     -- simulation block contains ``dim_common``
+      4. "diff_marginals"-- first marginals entry is a mapping
+      5. "functionals"   -- simulation block contains ``functionals``
+      6. "asymptotic"    -- simulation block contains ``column_covariance``
+      7. "standard"      -- everything else
     """
     if "sbm" in raw:
         return "sbm"
@@ -183,6 +343,9 @@ def _detect_experiment_type(raw: dict) -> str:
     marginals = raw.get("simulation", {}).get("marginals", [])
     if marginals and isinstance(marginals[0], dict):
         return "diff_marginals"
+
+    if "functionals" in raw.get("simulation", {}):
+        return "functionals"
 
     if "column_covariance" in raw.get("simulation", {}):
         return "asymptotic"
@@ -202,7 +365,8 @@ def load_config(path: str = "config.yaml") -> dict:
     Returned keys
     -------------
     experiment_type : str
-        One of "standard", "lee2019", "diff_marginals", "sbm", "multiness".
+        One of "standard", "lee2019", "diff_marginals", "sbm", "multiness",
+        "functionals", or "asymptotic".
     simulation : dict
         Raw simulation block: nsim, n, k, rho, alpha, edge_var, marginals, seed.
         multiness also carries: dim_common, dim_individual, shared_latent_type.
@@ -211,16 +375,16 @@ def load_config(path: str = "config.yaml") -> dict:
     methods : dict
         list            -- resolved callables
         npermutations   -- list of ints
-        df              -- list of ints (None for sbm / multiness)
-        approximation   -- list of strings or None when absent (multiness / sbm)
-        use_true_latent -- list of bools or None when not applicable
+        df              -- list of ints (None for  multiness)
+        approximation   -- list of strings or None when absent (multiness )
+        use_true_latent_x -- list of bools or None when not applicable
+        use_true_latent_z -- list of bools or None when not applicable
     setups : list
         (partial(DGP, ...), Solver) tuples for the H1 run.
     null_setups : dict | None
         {"rho": [...], "setups": [...]} for H0 runs, or None.
     extra_params : dict
         lee2019   -> {"sparsity": {"make_sparse": [...], "sparsity_bias": [...]}}
-        sbm       -> {"sbm": {"assortativity": [...], ...}}
         multiness -> {}   (extra dims live directly in cfg["simulation"])
         others    -> {}
     metrics : list
@@ -232,6 +396,13 @@ def load_config(path: str = "config.yaml") -> dict:
 
     exp_type = _detect_experiment_type(raw)
     sim_raw = raw["simulation"]
+    # Keep the raw YAML shape, but normalise optional functional sweeps so
+    # callers receive a consistent descriptor format.
+    if "functionals" in sim_raw:
+        sim_raw = dict(sim_raw)
+        sim_raw["functionals"] = _resolve_functionals_block(sim_raw["functionals"])
+        sim_raw.update(_resolve_noise_options(sim_raw))
+
     methods = _resolve_methods_block(raw["methods"])
     metrics = [ComputeAll()] if raw.get("metrics", {}).get("compute_all") else []
     rng = np.random.default_rng(sim_raw["seed"])
@@ -242,51 +413,37 @@ def load_config(path: str = "config.yaml") -> dict:
     elif exp_type == "sbm":
         setups = _resolve_sbm_setups(raw["setups"])
     else:
-        # standard, diff_marginals, multiness — all use copula-style setup entries
-        setups = [_resolve_standard_setup(e) for e in raw["setups"]]
-
-    # -- Resolve null setups (standard-family experiments only) ---------------
-    null_setups = None
-    if "null_setups" in raw:
-        nc = raw["null_setups"]
-        null_setups = {
-            "rho": nc["rho"],
-            "setups": [_resolve_standard_setup(e) for e in nc["setups"]],
-        }
+        # standard, diff_marginals, multiness, functionals, asymptotic
+        # all use copula-style setup entries
+        setups = [_resolve_copula_setup(e) for e in raw["setups"]]
 
     # -- Experiment-specific extra params -------------------------------------
     extra_params = {}
     if exp_type == "lee2019":
-        sp = raw["sparsity"]
+        sp = raw.get("sparsity", {"make_sparse": [False], "sparsity_bias": [1]})
         extra_params["sparsity"] = {
             "make_sparse": sp["make_sparse"],
             "sparsity_bias": sp["sparsity_bias"],
         }
     elif exp_type == "sbm":
-        sbm = raw["sbm"]
-        extra_params["sbm"] = {
-            "assortativity": sbm["assortativity"],
-            "sparsity_bias": sbm["sparsity_bias"],
-            "prob_switch": sbm["prob_switch"],
-            "assignment_mode": sbm["assignment_mode"],
-            "block_probs_type": sbm["block_probs_type"],
-        }
+        extra_params["sbm"] = _resolve_sbm_block(raw["sbm"])
     elif exp_type == "asymptotic":
         extra_params["asymptotic"] = {
-            "column_covariance": sim_raw["column_covariance"],
+            "column_covariance": sim_raw.get("column_covariance"),
         }
 
-    return {
+    out = {
         "experiment_type": exp_type,
         "simulation": sim_raw,
         "rng": rng,
         "methods": methods,
         "setups": setups,
-        "null_setups": null_setups,
         "extra_params": extra_params,
         "metrics": metrics,
-        "output": raw["output"],
+        "output": raw.get("output"),
     }
+
+    return out
 
 
 # =============================================================================
@@ -294,55 +451,94 @@ def load_config(path: str = "config.yaml") -> dict:
 # =============================================================================
 
 
-def build_factorial_design(cfg: dict) -> tuple:
+def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | None]:
     """
-    Build the parameter grid for a loaded config.
-
-    Returns
-    -------
-    (factorial_h1, factorial_h0)
-        Both are lists of dicts for run_simulation(factorial_design=...).
-        factorial_h0 is None for lee2019 and sbm (no null/H0 run).
+    Build the H1/H0 parameter rows for a single experiment type.
+    All types draw from the same cfg; extra_params branches are simply
+    ignored when the corresponding type is not active.
     """
-    exp = cfg["experiment_type"]
     sim = cfg["simulation"]
     mth = cfg["methods"]
     sets = cfg["setups"]
 
-    # Helper: build standard-family factorial for a given setup list and rho
     def _standard_rows(setups_list, rho_list):
         names = [
             "setup",
             "method",
             "n",
             "k",
+            "kx",
             "alpha",
-            "marginals",
             "rho",
             "edge_var",
             "npermutations",
             "df",
+            "marginals"
         ]
         vals = [
             setups_list,
             mth["list"],
             sim["n"],
             sim["k"],
+            sim.get("kx", [None]),
             sim["alpha"],
-            sim["marginals"],
             rho_list,
             sim["edge_var"],
             mth["npermutations"],
             mth["df"],
         ]
-        # approximation is optional — absent in multiness configs
+        marginals = sim.get("marginals", None)
+        marginals_x = sim.get("marginals_x", None)
+        marginals_z = sim.get("marginals_z", None)
+        
+        if marginals is None:
+            # Functional-dependence configs do not require a marginal sweep.
+            # Preserve a stable row schema by carrying an explicit None.
+            if exp == "functionals" and marginals_x is None and marginals_z is None:
+                marginals = [None]
+            elif marginals_x is None:
+                if marginals_z is None:
+                    raise ValueError("At least one of 'marginals', 'marginals_x', or 'marginals_z' must be specified.")
+                marginals_x = marginals_z
+            if marginals is None:
+                if marginals_z is None:
+                    marginals_z = marginals_x
+                
+                marginals = [
+                    {"x": marginal_x, "z": marginal_z}
+                    for marginal_x, marginal_z in iproduct(marginals_x, marginals_z)
+                ]
+        
+        vals.append(marginals)
+
+        # Functional sweeps are stored as paired descriptors so each form stays
+        # attached to its own parameters (rather than forming a cross-product).
+        if sim.get("functionals") is not None:
+            names.append("_functional")
+            vals.append(sim["functionals"])
+        if "noise_scale" in sim:
+            names.append("noise_scale")
+            vals.append(sim["noise_scale"])
+        if "noise_type" in sim:
+            names.append("noise_type")
+            vals.append(sim["noise_type"])
+
         if mth["approximation"] is not None:
             names.append("approximation")
             vals.append(mth["approximation"])
-        if mth["use_true_latent"] is not None:
-            names.append("use_true_latent")
-            vals.append(mth["use_true_latent"])
-        return [dict(zip(names, v)) for v in iproduct(*vals)]
+        if mth["use_true_latent_x"] is not None:
+            names.append("use_true_latent_x")
+            vals.append(mth["use_true_latent_x"])
+        if mth["use_true_latent_z"] is not None:
+            names.append("use_true_latent_z")
+            vals.append(mth["use_true_latent_z"])
+        rows = [dict(zip(names, v)) for v in iproduct(*vals)]
+        for row in rows:
+            functional = row.pop("_functional", None)
+            if functional is not None:
+                row["functional_form"] = functional["functional_form"]
+                row["function_params"] = functional["function_params"]
+        return rows
 
     # -- Multiness ------------------------------------------------------------
     if exp == "multiness":
@@ -351,6 +547,7 @@ def build_factorial_design(cfg: dict) -> tuple:
             "method",
             "n",
             "k",
+            "kx",
             "alpha",
             "rho",
             "edge_var",
@@ -365,6 +562,7 @@ def build_factorial_design(cfg: dict) -> tuple:
             mth["list"],
             sim["n"],
             sim["k"],
+            sim.get("kx", [None]),
             sim["alpha"],
             sim["rho"],
             sim["edge_var"],
@@ -374,23 +572,15 @@ def build_factorial_design(cfg: dict) -> tuple:
             sim["dim_individual"],
             sim["shared_latent_type"],
         ]
-        if mth["use_true_latent"] is not None:
-            names.append("use_true_latent")
-            vals.append(mth["use_true_latent"])
+        if mth["use_true_latent_x"] is not None:
+            names.append("use_true_latent_x")
+            vals.append(mth["use_true_latent_x"])
+        if mth["use_true_latent_z"] is not None:
+            names.append("use_true_latent_z")
+            vals.append(mth["use_true_latent_z"])
 
         h1 = [dict(zip(names, v)) for v in iproduct(*vals)]
-
-        h0 = None
-        if cfg["null_setups"]:
-            null = cfg["null_setups"]
-            names_h0 = [n if n != "rho" else "rho" for n in names]  # same schema
-            vals_h0 = [
-                null["setups"] if n == "setup" else null["rho"] if n == "rho" else v
-                for n, v in zip(names, vals)
-            ]
-            h0 = [dict(zip(names_h0, v)) for v in iproduct(*vals_h0)]
-
-        return h1, h0
+        return h1
 
     # -- Lee 2019 -------------------------------------------------------------
     if exp == "lee2019":
@@ -400,11 +590,9 @@ def build_factorial_design(cfg: dict) -> tuple:
             "method",
             "n",
             "k",
+            "kx",
             "alpha",
-            "marginals",
-            "rho",
             "edge_var",
-            "approximation",
             "npermutations",
             "df",
             "make_sparse",
@@ -415,19 +603,24 @@ def build_factorial_design(cfg: dict) -> tuple:
             mth["list"],
             sim["n"],
             sim["k"],
+            sim.get("kx", [None]),
             sim["alpha"],
-            sim["marginals"],
-            sim["rho"],
             sim["edge_var"],
-            mth["approximation"],
             mth["npermutations"],
             mth["df"],
             sp["make_sparse"],
             sp["sparsity_bias"],
         ]
-        return [dict(zip(names, v)) for v in iproduct(*vals)], None
+        if mth["use_true_latent_x"] is not None:
+            names.append("use_true_latent_x")
+            vals.append(mth["use_true_latent_x"])
+        if mth["use_true_latent_z"] is not None:
+            names.append("use_true_latent_z")
+            vals.append(mth["use_true_latent_z"])
 
-    # -- SBM ------------------------------------------------------------------
+        return [dict(zip(names, v)) for v in iproduct(*vals)]
+
+    # -- Covariate-aware SBM ---------------------------------------------------
     if exp == "sbm":
         sbm = cfg["extra_params"]["sbm"]
         names = [
@@ -435,15 +628,12 @@ def build_factorial_design(cfg: dict) -> tuple:
             "method",
             "n",
             "k",
+            "kx",
             "alpha",
-            "marginals",
             "rho",
             "edge_var",
             "npermutations",
-            "sparsity_bias",
-            "prob_switch",
-            "assignment_mode",
-            "block_probs_type",
+            "df",
             "assortativity",
         ]
         vals = [
@@ -451,28 +641,98 @@ def build_factorial_design(cfg: dict) -> tuple:
             mth["list"],
             sim["n"],
             sim["k"],
+            sim.get("kx", [None]),
             sim["alpha"],
-            sim["marginals"],
-            sim["rho"],
-            sim["edge_var"],
+            sim.get("rho", [None]),
+            sim.get("edge_var", [None]),
             mth["npermutations"],
-            sbm["sparsity_bias"],
-            sbm["prob_switch"],
-            sbm["assignment_mode"],
-            sbm["block_probs_type"],
+            mth["df"],
             sbm["assortativity"],
         ]
-        return [dict(zip(names, v)) for v in iproduct(*vals)], None
+
+        # Covariate-aware and legacy SBM controls are included only when the
+        # YAML supplies them, so neither family needs dummy parameters.
+        for name in (
+            "sbm_covariate_sampling",
+            "x_distribution",
+            "sparsity_bias",
+            "prob_switch",
+            "assignment_mode",
+            "block_probs_type",
+            "block_probs",
+            "x_upper_bound",
+            "x_probabilities",
+            "softmax_intercept",
+            "softmax_slope",
+            "directed",
+            "self_loops",
+        ):
+            if name in sbm:
+                names.append(name)
+                vals.append(sbm[name])
+
+        # A marginal sweep is not required for SBM configs, but preserve it
+        # when a hybrid config explicitly supplies one.
+        if "marginals" in sim:
+            names.append("marginals")
+            vals.append(sim["marginals"])
+
+        if mth["approximation"] is not None:
+            names.append("approximation")
+            vals.append(mth["approximation"])
+        if mth["use_true_latent_x"] is not None:
+            names.append("use_true_latent_x")
+            vals.append(mth["use_true_latent_x"])
+        if mth["use_true_latent_z"] is not None:
+            names.append("use_true_latent_z")
+            vals.append(mth["use_true_latent_z"])
+
+        return [dict(zip(names, v)) for v in iproduct(*vals)]
 
     # -- Standard / observed / diff_marginals ---------------------------------
     h1 = _standard_rows(sets, sim["rho"])
 
-    h0 = None
-    if cfg["null_setups"]:
-        null = cfg["null_setups"]
-        h0 = _standard_rows(null["setups"], null["rho"])
+    return h1
 
-    return h1, h0
+
+def build_factorial_design(cfg: dict) -> tuple[list[dict], list[dict] | None]:
+    """
+    Build the combined parameter grid for one or more experiment types.
+
+    cfg["experiment_type"] may now be a string (single type, backward-compatible)
+    or a list of strings (multiple types whose rows are concatenated).
+
+    Returns
+    -------
+    (factorial_h1, factorial_h0)
+        factorial_h0 is None when no type in the list produces H0 rows.
+    """
+    exp_types = cfg["experiment_type"]
+    if isinstance(exp_types, str):
+        exp_types = [exp_types]
+
+    all_h1 = []
+
+    for exp in exp_types:
+        h1 = _build_single_design(exp, cfg)
+        all_h1.extend(h1)
+
+    return all_h1
+
+
+def build_factorial_design_multi(
+    cfgs: list[dict],
+) -> tuple[list[dict], list[dict] | None]:
+    """
+    Build a combined factorial design from a list of independently loaded configs.
+    Each cfg is resolved for its own single experiment type.
+    Rows from all types are concatenated; H0 rows are concatenated where present.
+    """
+    all_h1 = []
+    for cfg in cfgs:
+        h1 = build_factorial_design(cfg)  # existing single-type fn
+        all_h1.extend(h1)
+    return all_h1
 
 
 # =============================================================================

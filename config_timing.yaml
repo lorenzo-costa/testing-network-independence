@@ -1,0 +1,84 @@
+# =============================================================================
+# Simulation Configuration
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Simulation Setup
+# -----------------------------------------------------------------------------
+simulation:
+  nsim: 5          # Number of Monte Carlo repetitions per parameter combination
+  seed: 1                 # Master RNG seed for reproducibility (passed to np.random.default_rng)
+ 
+  n: [100]      # Sample sizes (number of nodes)
+  k: [3]                  # Number of latent dimensions for the network embedding
+  kx: [1]                
+  rho: [0.2]              # Correlation parameter under H1 (signal strength); 0.0 = null hypothesis
+  alpha: [0.05]           # Nominal significance level(s) for hypothesis tests
+  edge_var: [3]           # Edge weight variance (used in Gaussian networks)
+ 
+  marginals:
+    - gaussian
+ 
+# -----------------------------------------------------------------------------
+# Testing Methods
+# -----------------------------------------------------------------------------
+methods:
+  npermutations: [200]      # Number of permutations used in permutation-based tests
+  df: [3]                   # Degrees of freedom (used in Student-t approximations)
+  use_true_latent_x: [True]  
+  use_true_latent_z: [False]  
+ 
+  # List of test methods to benchmark. 'kwargs' are passed to the method constructor.
+  list:
+    - name: RVtest
+      kwargs:
+        permutation_type: latent  
+        approximation: permutation       
+
+    - name: RVtest
+      kwargs:
+        approximation: asymptotic   
+ 
+    - name: DiffusionCorrelation
+      kwargs: {} 
+
+    - name: CanonicalCorrelation
+      kwargs: {}                    
+
+    - name: MultivariateACTest
+      kwargs:
+        M: half 
+
+    - name: MultivariateACTest
+      kwargs:
+        M: sqrt
+        aggregate_coeff: max                        
+ 
+# -----------------------------------------------------------------------------
+# DGP & Solver Setups (H1: rho > 0)
+# Each entry pairs a data-generating process (network type + copula) with a solver.
+# 'dgp' and 'solver' are string identifiers resolved in load_config.py.
+# -----------------------------------------------------------------------------
+setups:
+  # --- Gaussian (continuous-weight) networks ---
+  - dgp: GaussianNetwork
+    copula_model: gaussian
+    solver: ASE
+ 
+  - dgp: GaussianNetwork
+    copula_model: gumbel           # Upper-tail dependent copula
+    solver: ASE
+ 
+  - dgp: GaussianNetwork
+    copula_model: student_t
+    df: 3                          # Degrees of freedom for the Student-t copula
+    solver: ASE
+ 
+# -----------------------------------------------------------------------------
+# Metrics
+# -----------------------------------------------------------------------------
+metrics:
+  compute_all: true   
+ 
+output:
+  results_dir: results   # Files are named: simulation_results_<YYYYMMDD_HHMM>.csv

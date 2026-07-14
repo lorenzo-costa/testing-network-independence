@@ -11,20 +11,19 @@
 # -----------------------------------------------------------------------------
 simulation:
   nsim: 100
-  seed: 2
+  seed: 1
 
   n: [100, 200, 300]
   k: [3]
   rho: [0.2]
   alpha: [0.05]
-  edge_var: [1]
+  edge_var: [3]
 
-  # Marginals are asymmetric pairs: x=network 1, y=network 2.
-  # Each entry is a dict with 'x' and 'y' keys.
-  # Supported distribution strings: 'gaussian', 'uniform -1 1', 'cauchy',
-  #   't <df>', 'chi <df>'
   marginals:
-    - x: gaussian
+    - x: cauchy
+      y: gaussian
+
+    - x: cauchy
       y: "uniform -1 1"
 
     - x: gaussian

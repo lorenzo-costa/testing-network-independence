@@ -1,28 +1,15 @@
-from src.dgp import GaussianNetwork, BernoulliNetwork
-from src.metrics import (
-    Rejection,
-    FalseRejection,
-    TrueRejection,
-    FalseAcceptance,
-    TrueAcceptance,
-    RelativeFrobeniusNorm,
-)
+from src.helper_functions.dgp.dgp import GaussianNetwork, BernoulliNetwork
+from src.metrics import *
 from src.metrics import ComputeAll
-from src.methods import (
-    RVPermutationTest,
-    PermutationTest,
-    QAP,
-    DiffusionCorrelation,
-    CanonicalCorrelationTest,
-    FitIndependent,
-)
+from src.test_methods import *
+
 from src.solvers.binary_network import MLE_logistic
 from src.solvers.weighted_network import MLE_gaussian, ASE
 from src.helper_functions.simulation_functions import run_simulation
 from src.helper_functions.analyse_functions import aggregate_results
 from src.metrics import rv_coefficient_adjusted
 from src.solvers.MaMa_uuuuu import pgd_fit_wrapper
-from src.helper_functions._metrics_helper import cvm_stat_multivariate
+from src.test_functions.rv_cca_coefficients import cvm_stat_multivariate
 
 
 import numpy as np

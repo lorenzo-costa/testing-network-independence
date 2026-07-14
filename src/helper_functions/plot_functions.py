@@ -5,7 +5,7 @@ import os
 import numpy as np
 import logging
 import re
-
+from scipy import stats
 
 # Suppress weird matplotlib category warning for boxplots
 logging.getLogger("matplotlib.category").setLevel(logging.ERROR)
@@ -71,13 +71,13 @@ def visualise_latent(
         ax.set_title(title, fontsize=14, weight="bold")
         # ax.set_xlim(-4, 4)
         # ax.set_ylim(-4, 4)
-        ax.set_xlabel("Latent Z", fontsize=12)
+        ax.set_xlabel("Latent X", fontsize=12)
         ax.grid(True, linestyle="--", alpha=0.5)
 
         # diagonal perfect correlation line
         # ax.plot([-4, 4], [-4, 4], 'r--', alpha=0.5, label='Perfect Correlation')
 
-        ax.set_ylabel("Latent X", fontsize=12)
+        ax.set_ylabel("Latent Z", fontsize=12)
 
     # axes[0].set_ylabel("Latent X", fontsize=12)
     plt.tight_layout()
@@ -144,12 +144,19 @@ def plot_with_bands(x_axis, y_axis, **kwargs):
     if hue_variable is not None:
         for hue_var in data[hue_variable].unique():
             subset = data[data[hue_variable] == hue_var].sort_values(x_axis)
+            color = (
+                colors[hue_var] if (colors is not None and hue_var in colors) else None
+            )
+            linestyles = (
+                linestyles[hue_var] if (linestyles is not None and hue_var in linestyles) else "-"
+            )
+            
             line = ax.plot(
                 subset[x_axis],
                 subset[y_axis],
                 marker="o",
-                linestyle=linestyles[hue_var] if linestyles is not None else "-",
-                color=colors[hue_var] if colors is not None else None,
+                linestyle=linestyles,
+                color=color,
                 label=hue_var,
             )
             color = line[0].get_color()
@@ -678,6 +685,126 @@ def plot_scatter_density(x_axis, y_axis, **kwargs):
 
     ax.set_xlabel(x_label, fontsize=label_fontsize)
     ax.set_ylabel(y_label, fontsize=label_fontsize)
+
+
+def plot_histogram(x_axis, y_axis, **kwargs):
+    """Plot per-group histograms and/or KDE curves within a single FacetGrid facet.
+
+    Designed to be passed as ``plotting_function`` to :func:`plot_grid`.
+    Within each facet, ``y_axis`` is used as a grouping column: one designated
+    group is rendered as a filled histogram **plus** a KDE overlay; every other
+    group receives a KDE-only curve.  An optional ``theoretical_limit`` array
+    is rendered as a separate KDE in a distinct colour.
+
+    Parameters
+    ----------
+    x_axis : str
+        Column whose values are plotted (the quantity being distributed).
+    y_axis : str
+        Column used to split observations into groups.  The first sorted value
+        (or the value of ``hist_group``) receives histogram + KDE treatment;
+        all remaining values receive a KDE-only curve.
+    data : pd.DataFrame
+        DataFrame slice injected by :class:`~seaborn.FacetGrid` (or supplied
+        directly when calling standalone).
+    factors : list, optional
+        Accepted for interface compatibility with :func:`plot_grid`; not used
+        internally.
+    colors : dict, optional
+        Mapping from ``y_axis`` values to matplotlib colours.
+    linestyles : dict, optional
+        Mapping from ``y_axis`` values to matplotlib linestyle strings.
+    hist_group : scalar, optional
+        The specific value of ``y_axis`` that should be rendered as a histogram.
+        Defaults to the first element of ``sorted(data[y_axis].unique())``.
+    hist_alpha : float, optional
+        Opacity of the histogram fill, by default ``0.35``.
+    bins : int, optional
+        Number of histogram bins, by default ``50``.
+    kde_lw : float, optional
+        Line width for all KDE curves, by default ``2.2``.
+    bw_method : str or float, optional
+        Bandwidth selector passed to :class:`~scipy.stats.gaussian_kde`,
+        by default ``'scott'``.
+    percentile_clip : float, optional
+        Upper percentile used to clip the KDE x-range (avoids long tails
+        dominating the plot), by default ``99.5``.
+    theoretical_limit : array-like, optional
+        Samples drawn from the theoretical / reference distribution.  When
+        provided, a KDE is estimated from these samples and overlaid as a
+        dashed curve.
+    theoretical_label : str, optional
+        Legend label for the theoretical KDE, by default ``'Theoretical'``.
+    theoretical_color : str, optional
+        Colour of the theoretical KDE curve, by default ``'red'``.
+    theoretical_ls : str, optional
+        Linestyle of the theoretical KDE curve, by default ``'--'``.
+    """
+    data = kwargs.pop("data")
+    _factors = kwargs.pop("factors", None)  # accepted, not used here
+    colors = kwargs.pop("colors", None)
+    linestyles = kwargs.pop("linestyles", None)
+    hist_group = kwargs.pop("hist_group", None)
+    hist_alpha = kwargs.pop("hist_alpha", 0.35)
+    bins = kwargs.pop("bins", 50)
+    kde_lw = kwargs.pop("kde_lw", 2.2)
+    bw_method = kwargs.pop("bw_method", "scott")
+    percentile_clip = kwargs.pop("percentile_clip", 99.5)
+    theoretical_limit = kwargs.pop("theoretical_limit", None)
+    theoretical_label = kwargs.pop("theoretical_label", "Theoretical")
+    theoretical_color = kwargs.pop("theoretical_color", "red")
+    theoretical_ls = kwargs.pop("theoretical_ls", "--")
+
+    ax = plt.gca()
+
+    groups = sorted(data[y_axis].unique())
+    if hist_group is None:
+        hist_group = groups[0]
+
+    def _kde_line(values, color, ls, label):
+        """Fit and plot a Gaussian KDE on a clipped x-range."""
+        kde = stats.gaussian_kde(values, bw_method=bw_method)
+        xs = np.linspace(values.min(), np.percentile(values, percentile_clip), 500)
+        ax.plot(xs, kde(xs), color=color, lw=kde_lw, ls=ls, label=label)
+
+    for group in groups:
+        subset = data[data[y_axis] == group][x_axis].dropna().values
+        if len(subset) < 2:
+            continue
+
+        color = colors.get(group) if colors is not None else None
+        ls = linestyles.get(group, "-") if linestyles is not None else "-"
+
+        if group == hist_group:
+            ax.hist(
+                subset,
+                bins=bins,
+                density=True,
+                color=color,
+                alpha=hist_alpha,
+                histtype="stepfilled",
+                label=str(group),
+            )
+            # KDE overlay shares the same colour; no separate legend entry
+            _kde_line(subset, color=color, ls=ls, label=None)
+        else:
+            # KDE only — label goes on the line itself
+            _kde_line(subset, color=color, ls=ls, label=str(group))
+
+    # --- Theoretical reference KDE ---
+    if theoretical_limit is not None:
+        th = np.asarray(theoretical_limit).ravel()
+        th = th[np.isfinite(th)]
+        if len(th) > 1:
+            _kde_line(
+                th,
+                color=theoretical_color,
+                ls=theoretical_ls,
+                label=theoretical_label,
+            )
+
+    ax.set_xlabel("")
+    ax.set_ylabel("")
 
 
 def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **kwargs):

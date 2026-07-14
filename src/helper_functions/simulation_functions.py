@@ -51,10 +51,14 @@ def run_scenario(metrics, args, seed, method_params=None):
     method.fit(data, **(method_params if method_params else {}))
     results = method.get_estimated()
 
+    is_null = dgp.is_null if hasattr(dgp, "is_null") else None
+
     density_A = (data["A"] == 0).sum() / data["A"].size
     density_B = (data["B"] == 0).sum() / data["B"].size
 
-    out_metrics = {metric.get_name(): metric(results) for metric in metrics}
+    out_metrics = {
+        metric.get_name(): metric(results, is_null=is_null) for metric in metrics
+    }
 
     out_metrics["args"] = args
     out_metrics["density"] = (density_A, density_B)
@@ -68,7 +72,13 @@ def run_scenario_wrapper(args):
 
 
 def run_simulation_parallel(
-    nsim, factorial_design, metrics, method_params=None, rng=None, n_jobs=None
+    nsim,
+    factorial_design,
+    metrics,
+    method_params=None,
+    rng=None,
+    n_jobs=None,
+    batch_size=32,
 ):
     if rng is None:
         rng = np.random.default_rng()
@@ -96,7 +106,8 @@ def run_simulation_parallel(
     rng.shuffle(all_scenarios_seed)
 
     # Better chunk size: balance between overhead and load distribution
-    chunk_size = max(1, total_scenarios // (n_jobs * 32))
+    chunk_size = max(1, total_scenarios // (n_jobs * batch_size))
+    # chunk_size = max(1, total_scenarios // (n_jobs * 32))
 
     results = []
     with Pool(processes=n_jobs) as pool:
@@ -119,6 +130,7 @@ def run_simulation(
     parallel=False,
     rng=None,
     n_jobs=None,
+    batch_size=32,
 ):
     """Run a simulation study.
 
@@ -141,6 +153,8 @@ def run_simulation(
     data : dict, optional
        Dictionary containing keys 'estimate_latent_x', 'estimate_latent_y',
        'true_latent_x', and 'true_latent_y'.
+    batch_size : int, optional
+        Number of scenarios to process in each batch when parallelizing, by default 32
 
     Returns
     -------
@@ -155,6 +169,7 @@ def run_simulation(
             method_params=method_params,
             rng=rng,
             n_jobs=n_jobs,
+            batch_size=batch_size,
         )
 
     if rng is None:
