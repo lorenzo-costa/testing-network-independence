@@ -27,7 +27,7 @@ class GaussianNetwork(LatentSampler):
     sparsity_exponent: float
         Controls sparsity level by multiplying expected adj matrix by n^(-sparsity_exponent).
         Higher values = sparser.
-    X : np.ndarray, optional
+    Y : np.ndarray, optional
         Pre-specified latent positions for X. If provided, these will be used instead of sampling
     Z : np.ndarray, optional
         Pre-specified latent positions for Z. If provided, these will be used instead of sampling
