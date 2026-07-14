@@ -18,6 +18,7 @@ def test_result_structure_contains_one_latent_and_observed_y():
     method.Zhat = np.zeros((3, 1))
     method.Z = np.ones((3, 1))
     method.Y = np.arange(3)[:, None]
+    method.X = np.array([[0], [1], [1]])
     method.pvalue = 0.5
     method.reject_null = False
     method.test_stat_estimate = 1.25
@@ -27,6 +28,7 @@ def test_result_structure_contains_one_latent_and_observed_y():
         "estimated_latent",
         "true_latent",
         "observed_Y",
+        "conditioning_X",
         "p-value",
         "reject_null",
         "test_stat",
@@ -34,6 +36,21 @@ def test_result_structure_contains_one_latent_and_observed_y():
     assert result["estimated_latent"] is method.Zhat
     assert result["true_latent"] is method.Z
     assert result["observed_Y"] is method.Y
+    assert result["conditioning_X"] is method.X
+
+
+def test_input_processing_accepts_and_validates_conditioning_x():
+    method = BaseEstimationMethod(use_true_latent=True)
+    z = np.arange(8.0).reshape(4, 2)
+    method._process_input(
+        {"Z": z, "Y": np.arange(4.0), "X": np.array([0, 0, 1, 1])}
+    )
+    assert method.X.shape == (4, 1)
+
+    with pytest.raises(ValueError, match="X must be a 2D array with n rows"):
+        method._process_input(
+            {"Z": z, "Y": np.arange(4.0), "X": np.ones((3, 1))}
+        )
 
 
 def test_true_latent_does_not_require_or_call_solver():

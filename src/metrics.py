@@ -24,6 +24,7 @@ class ReturnMetric(BaseMetric):
             "estimated": estimated,
             "truth": truth,
             "Y": results.get("observed_Y"),
+            "X": results.get("conditioning_X"),
             "test_stat": test_stat,
             "p-value": p_value,
             "is_null": is_null,

@@ -41,8 +41,10 @@ def test_one_network_covariate_pipeline(network_type, method_type, kwargs):
     method.fit(data)
     result = method.get_estimated()
 
-    assert set(data) == {"A", "Z", "Y"}
+    assert set(data) == {"A", "Z", "Y", "X"}
+    assert data["X"] is None
     assert result["estimated_latent"].shape == (14, 2)
     assert result["true_latent"].shape == (14, 2)
     assert result["observed_Y"].shape == (14, 1)
+    assert result["conditioning_X"] is None
     assert 0 <= result["p-value"] <= 1

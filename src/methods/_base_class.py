@@ -14,6 +14,7 @@ class BaseMethod:
             "estimated_latent": self.Zhat,
             "true_latent": self.Z,
             "observed_Y": getattr(self, "Y", None),
+            "conditioning_X": getattr(self, "X", None),
             "p-value": self.pvalue,
             "reject_null": self.reject_null,
             "test_stat": self.test_stat_estimate,
@@ -44,11 +45,15 @@ class BaseEstimationMethod(BaseMethod):
 
     def _process_input(self, data):
         if not isinstance(data, dict):
-            raise ValueError("Invalid data format. Expected a dictionary with keys 'A', 'Z', and 'Y'.")
+            raise ValueError(
+                "Invalid data format. Expected a dictionary containing A, Z, Y, "
+                "and optional X."
+            )
 
         Y = self._observed_y(data)
         A = data.get("A")
         Z = data.get("Z")
+        X = data.get("X")
 
         if self.use_true_latent:
             if Z is None:
@@ -76,9 +81,16 @@ class BaseEstimationMethod(BaseMethod):
             raise ValueError("A/Z and Y must contain the same number of nodes.")
         if A is not None and np.asarray(A).shape != (Y.shape[0], Y.shape[0]):
             raise ValueError("A must have shape (n, n), matching the rows of Y.")
+        if X is not None:
+            X = np.asarray(X)
+            if X.ndim == 1:
+                X = X.reshape(-1, 1)
+            if X.ndim != 2 or X.shape[0] != Y.shape[0]:
+                raise ValueError("X must be a 2D array with n rows.")
 
         self.A = A
         self.Y = Y
+        self.X = X
         self.Z = None if Z is None else np.asarray(Z)
         self.Zhat = Zhat
 

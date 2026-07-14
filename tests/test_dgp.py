@@ -23,7 +23,8 @@ def test_gaussian_network_generates_only_a_from_z_and_keeps_y_observed():
     expected_a = z @ z.T
     np.fill_diagonal(expected_a, 0)
 
-    assert set(result) == {"A", "Z", "Y"}
+    assert set(result) == {"A", "Z", "Y", "X"}
+    assert result["X"] is None
     np.testing.assert_allclose(result["A"], expected_a)
     np.testing.assert_array_equal(result["Z"], z)
     np.testing.assert_array_equal(result["Y"], y[:, None])
@@ -44,7 +45,8 @@ def test_bernoulli_network_generates_only_a_from_z():
         rng=np.random.default_rng(2),
     ).generate()
 
-    assert set(result) == {"A", "Z", "Y"}
+    assert set(result) == {"A", "Z", "Y", "X"}
+    assert result["X"] is None
     assert result["A"].shape == (3, 3)
     assert result["Y"].shape == (3, 2)
     assert set(np.unique(result["A"])).issubset({0, 1})

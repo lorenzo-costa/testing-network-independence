@@ -70,3 +70,25 @@ def test_multivariate_ac_requires_observed_y():
 
     with pytest.raises(ValueError, match="Observed covariates Y must be provided"):
         method.fit({"A": np.eye(4)})
+
+
+@pytest.mark.parametrize("method_type", [EstimateAC, MultivariateACTest])
+def test_ac_method_passes_x_as_conditioning_variable(monkeypatch, method_type):
+    recorded = []
+
+    def recording_ac(*, Y, Z, X=None, **kwargs):
+        recorded.append(X)
+        return 0.25
+
+    monkeypatch.setattr("src.methods.ac_test.ac_coefficient", recording_ac)
+    data = latent_data()
+    data["X"] = np.repeat([0, 1], 7).reshape(-1, 1)
+    kwargs = {"npermutations": 2} if method_type is MultivariateACTest else {}
+    method = method_type(use_true_latent=True, M=1, **kwargs)
+    method.fit(data)
+
+    assert recorded[0] is method.X
+    np.testing.assert_array_equal(recorded[0], data["X"])
+    if method_type is MultivariateACTest:
+        assert len(recorded) == 3
+        assert all(conditioning is method.X for conditioning in recorded)

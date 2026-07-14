@@ -7,6 +7,7 @@ class _ACMixin:
         return ac_coefficient(
             Y=Y,
             Z=Z,
+            X=self.X,
             M=self.M,
             rng=self.rng,
             aggregate=self.aggregate_coeff,

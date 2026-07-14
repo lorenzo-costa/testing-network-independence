@@ -19,6 +19,7 @@ class GaussianNetwork(LatentSampler):
         rng=None,
         Y=None,
         Z=None,
+        X=None,
         **kwargs,
     ):
         rng = rng if rng is not None else np.random.default_rng()
@@ -29,6 +30,7 @@ class GaussianNetwork(LatentSampler):
         self.sparsity_exponent = sparsity_exponent
         self.Y = Y
         self.Z = Z
+        self.X = X
 
     def __repr__(self):
         return (
@@ -44,7 +46,10 @@ class GaussianNetwork(LatentSampler):
     def _get_latent_and_covariate(self):
         if (self.Z is None) != (self.Y is None):
             raise ValueError("Z and Y must either both be supplied or both be sampled.")
-        Z, Y = (self.Z, self.Y) if self.Z is not None else self._sample_latent()
+        if self.Z is not None:
+            Z, Y, X = self.Z, self.Y, self.X
+        else:
+            Z, Y, X = self._sample_latent()
         Z = np.asarray(Z)
         Y = np.asarray(Y)
         if Y.ndim == 1:
@@ -53,10 +58,17 @@ class GaussianNetwork(LatentSampler):
             raise ValueError(f"Z must have shape ({self.n}, {self.k}); got {Z.shape}.")
         if Y.shape != (self.n, self.ky):
             raise ValueError(f"Y must have shape ({self.n}, {self.ky}); got {Y.shape}.")
-        return Z, Y
+        if X is not None:
+            X = np.asarray(X)
+            if X.ndim == 1:
+                X = X.reshape(-1, 1)
+            if X.shape != (self.n, 1):
+                raise ValueError(f"X must have shape ({self.n}, 1); got {X.shape}.")
+        self.X = X
+        return Z, Y, X
 
     def generate(self):
-        Z, Y = self._get_latent_and_covariate()
+        Z, Y, X = self._get_latent_and_covariate()
         expected_A = Z @ Z.T
         if self.sparsity_exponent > 0:
             expected_A *= self.n ** (-self.sparsity_exponent)
@@ -66,7 +78,7 @@ class GaussianNetwork(LatentSampler):
             A[np.diag_indices_from(A)] = 0
         if self.symmetric:
             A = (A + A.T) / 2
-        return {"A": A, "Z": Z, "Y": Y}
+        return {"A": A, "Z": Z, "Y": Y, "X": X}
 
 
 class BernoulliNetwork(GaussianNetwork):
@@ -84,6 +96,7 @@ class BernoulliNetwork(GaussianNetwork):
         sparsity_exponent=0,
         Y=None,
         Z=None,
+        X=None,
         **kwargs,
     ):
         super().__init__(
@@ -96,6 +109,7 @@ class BernoulliNetwork(GaussianNetwork):
             sparsity_exponent=sparsity_exponent,
             Y=Y,
             Z=Z,
+            X=X,
             **kwargs,
         )
         self.rdpg = rdpg
@@ -112,7 +126,7 @@ class BernoulliNetwork(GaussianNetwork):
         )
 
     def generate(self):
-        Z, Y = self._get_latent_and_covariate()
+        Z, Y, X = self._get_latent_and_covariate()
         expected_A = Z @ Z.T
         if self.sparsity_exponent > 0:
             expected_A *= np.log(self.n) ** (-self.sparsity_exponent)
@@ -130,4 +144,4 @@ class BernoulliNetwork(GaussianNetwork):
             A = self.rng.binomial(1, expected_A)
             if not self.self_loops:
                 A[np.diag_indices_from(A)] = 0
-        return {"A": A, "Z": Z, "Y": Y}
+        return {"A": A, "Z": Z, "Y": Y, "X": X}

@@ -3,6 +3,10 @@ import warnings
 from numbers import Integral
 
 from .copula_sampler import CopulaGenerator
+from .conditional_independence_copula_sampler import (
+    ConditionalIndependenceCopulaSampler,
+)
+from .post_nonlinear_noise_sampler import PostNonLinearNoiseSampler
 
 try:
     from .hyppo_sampler import HyppoSimSampler
@@ -16,7 +20,6 @@ except ImportError:
 
 from .orthogonal_subspace import OrthogonalSubspaceSampler
 from .rdpg_sampler import RDPGGenerator
-#from .sbm_sampler import SBMGenerator
 from .functional_sampler import FunctionalGenerator
 from .sbm_cov_sampler import SBMCovariateGenerator
 import numpy as np
@@ -34,6 +37,9 @@ class LatentSampler:
         Number of samples (nodes).
     k : int
         Dimensionality of the latent space.
+    conditional_copula : str or True, optional
+        Select the conditional copula sampler. A string names the copula model;
+        with True, ``copula_model`` is used and defaults to ``"gaussian"``.
     copula_model : str
         Type of copula to use for generating dependence structure. If not None, function sample from Copula
     hyppo_sim : str
@@ -54,6 +60,8 @@ class LatentSampler:
         n,
         k,
         ky=1,
+        conditional_copula=None,
+        post_nonlinear_noise=None,
         copula_model=None,
         latent_sim=None,
         dim_common=None,
@@ -75,13 +83,20 @@ class LatentSampler:
         self.ky = int(ky)
 
         sampler_options = [
+            ("conditional_copula", conditional_copula),
+            ("post_nonlinear_noise", post_nonlinear_noise),
             ("sbm_covariate_sampling", sbm_covariate_sampling),
             ("functional_form", functional_form),
             ("latent_sim", latent_sim),
             ("dim_common", dim_common),
             ("block_probs_type", block_probs_type),
             ("rdpg_distr", rdpg_distr),
-            ("copula_model", copula_model),
+            (
+                "copula_model",
+                copula_model
+                if conditional_copula is None and post_nonlinear_noise is None
+                else None,
+            ),
         ]
 
 
@@ -104,6 +119,21 @@ class LatentSampler:
             )
 
         factories = {
+            "conditional_copula": lambda value: ConditionalIndependenceCopulaSampler(
+                n=n,
+                k=k,
+                ky=ky,
+                copula_model=self._conditional_copula_model(value, copula_model),
+                rng=rng,
+                **kwargs,
+            ),
+            "post_nonlinear_noise": lambda value: PostNonLinearNoiseSampler(
+                n=n,
+                k=k,
+                ky=ky,
+                rng=rng,
+                **self._post_nonlinear_kwargs(value, kwargs),
+            ),
             "sbm_covariate_sampling": lambda value: SBMCovariateGenerator(
                 n=n, k=k, ky=ky, sampling=value, rng=rng, **kwargs
             ),
@@ -115,9 +145,6 @@ class LatentSampler:
             ) if HyppoSimSampler is not None else self._hyppo_unavailable(),
             "dim_common": lambda value: OrthogonalSubspaceSampler(
                 n=n, k=k, ky=ky, dim_common=value, rng=rng, **kwargs
-            ),
-            "block_probs_type": lambda value: SBMGenerator(
-                n=n, k=k, ky=ky, block_probs_type=value, rng=rng, **kwargs
             ),
             "rdpg_distr": lambda value: RDPGGenerator(
                 n=n, k=k, ky=ky, rdpg_distr=value, rng=rng, **kwargs
@@ -133,6 +160,8 @@ class LatentSampler:
         self.sampler_name = latent_sampler.get_name()
 
         self.copula_model = copula_model
+        self.conditional_copula = conditional_copula
+        self.post_nonlinear_noise = post_nonlinear_noise
         self.latent_sim = latent_sim
         self.dim_common = dim_common
         self.block_probs_type = block_probs_type
@@ -140,23 +169,48 @@ class LatentSampler:
         self.sbm_covariate_sampling = sbm_covariate_sampling
 
         self.functional_form = functional_form
+        self.X = None
 
     @staticmethod
     def _hyppo_unavailable():
         raise ImportError("The optional 'hyppo' package is required for latent_sim.")
 
+    @staticmethod
+    def _conditional_copula_model(activation, copula_model):
+        if isinstance(activation, str):
+            return activation
+        if activation is True:
+            return copula_model or "gaussian"
+        raise ValueError(
+            "conditional_copula must be a copula-model string or True."
+        )
+
+    @staticmethod
+    def _post_nonlinear_kwargs(activation, kwargs):
+        if activation is not True:
+            raise ValueError("post_nonlinear_noise must be True when selected.")
+        sampler_kwargs = dict(kwargs)
+        sampler_kwargs.pop("rdpg", None)
+        return sampler_kwargs
+
     def _sample_latent(self):
-        """Return ``Z`` with shape ``(n, k)`` and ``Y`` with shape ``(n, ky)``.
+        """Return ``(Z, Y, X)``; ``X`` is ``None`` when not generated.
         Hierarchy of generation is:
+        - if conditional_copula is specified, generate (Z, Y, X) by stratum and
+          retain X on this wrapper.
         - if functional_form is specified, use that to generate (Z, Y) directly.
         - else if hyppo_sim is specified, use that to generate (Z, Y) directly.
         - else if dim_common is specified, generate Z and Y with shared + individual structure.
         - else if block_probs_type is specified, generate Z and Y with SBM structure.
         - else use the copula-based generation with the specified marginals and dependence structure.
         """
-        Z, Y = None, None
+        Z, Y, X = None, None, None
 
-        if self.sbm_covariate_sampling is not None:
+        if self.conditional_copula is not None:
+            Z, Y, X = self.latent_sampler._sample_latent_conditional_copula()
+        elif self.post_nonlinear_noise is not None:
+            Z, Y, X = self.latent_sampler._sample_latent_post_nonlinear_noise()
+        elif self.sbm_covariate_sampling is not None:
             Y, community_assignment, block_probs = self.latent_sampler._sample_latent_sbm_covariate()
             Z = community_assignment @ block_probs**0.5
             if Y.ndim == 1:
@@ -182,7 +236,7 @@ class LatentSampler:
             Z, Y = self.latent_sampler._sample_latent_copula()
         else:
             raise ValueError(
-                "No valid latent generation method specified. Please provide one of: latent_sim, dim_common, block_probs_type, or copula_model."
+                "No valid latent generation method specified. Please provide one of: conditional_copula, post_nonlinear_noise, latent_sim, dim_common, block_probs_type, or copula_model."
             )
 
         Z = np.asarray(Z)
@@ -193,5 +247,15 @@ class LatentSampler:
             Y = Y.reshape(-1, 1)
         if Y.ndim != 2 or Y.shape != (self.n, self.ky):
             raise ValueError(f"Y must have shape ({self.n}, {self.ky}); got {Y.shape}.")
+        if X is not None:
+            X = np.asarray(X)
+            if X.ndim != 2 or X.shape != (self.n, 1):
+                raise ValueError(
+                    f"X must have shape ({self.n}, 1); got {X.shape}."
+                )
+        self.X = X
         self.is_null = getattr(self.latent_sampler, "is_null", None)
-        return Z, Y
+        return Z, Y, X
+
+    def sample_latent(self):
+        return self._sample_latent()

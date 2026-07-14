@@ -92,16 +92,54 @@ def _resolve_copula_setup(entry: dict):
     dgp_cls = DGP_REGISTRY[entry["dgp"]]
     solver = SOLVER_REGISTRY[entry["solver"]]
 
-    reserved = {"dgp", "solver", "copula_model", "rdgp", "rdpg_distr"}
+    reserved = {
+        "dgp",
+        "solver",
+        "conditional_copula",
+        "post_nonlinear_noise",
+        "copula_model",
+        "rdgp",
+        "rdpg_distr",
+    }
+    conditional_keys = {"C", "class_probabilities", "p", "center_latent"}
+    post_nonlinear_keys = {
+        "C",
+        "rho",
+        "class_probabilities",
+        "p",
+        "center_latent",
+        "error_covariance",
+        "stratum_covariance",
+        "column_covariance_z",
+        "column_covariance_y",
+        "column_covariance",
+        "cross_correlation_template",
+    }
+    if entry.get("conditional_copula") is not None:
+        reserved.update(conditional_keys)
+    if entry.get("post_nonlinear_noise") is not None:
+        reserved.update(post_nonlinear_keys)
 
     copula_params = {k: v for k, v in entry.items() if k not in reserved}
 
     dgp_kwargs = {
+        "conditional_copula": entry.get("conditional_copula"),
+        "post_nonlinear_noise": entry.get("post_nonlinear_noise"),
         "copula_model": entry.get("copula_model"),
         "rdpg": entry.get("rdpg", False),
         "rdpg_distr": entry.get("rdpg_distr", None),
         "copula_params": copula_params,
     }
+    if entry.get("post_nonlinear_noise") is not None:
+        dgp_kwargs.pop("copula_params")
+    if entry.get("conditional_copula") is not None:
+        dgp_kwargs.update(
+            {key: entry[key] for key in conditional_keys if key in entry}
+        )
+    if entry.get("post_nonlinear_noise") is not None:
+        dgp_kwargs.update(
+            {key: entry[key] for key in post_nonlinear_keys if key in entry}
+        )
 
     return (partial(dgp_cls, **dgp_kwargs), solver)
 

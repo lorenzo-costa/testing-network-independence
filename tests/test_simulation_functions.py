@@ -24,3 +24,4 @@ def test_run_scenario_uses_single_network_density_and_returns_y():
     result = run_scenario([ReturnMetric()], args, seed=np.random.SeedSequence(1))
     assert isinstance(result["density"], float)
     assert result["ReturnMetric"]["Y"].shape == (10, 1)
+    assert result["ReturnMetric"]["X"] is None

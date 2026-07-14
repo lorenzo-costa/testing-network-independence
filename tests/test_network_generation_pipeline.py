@@ -3,13 +3,42 @@ import pytest
 
 from src.dgp import BernoulliNetwork, GaussianNetwork
 from src.latent_samplers.copula_sampler import CopulaGenerator
+from src.latent_samplers.conditional_independence_copula_sampler import (
+    ConditionalIndependenceCopulaSampler,
+)
 from src.latent_samplers.functional_sampler import FunctionalGenerator
 from src.latent_samplers.orthogonal_subspace import OrthogonalSubspaceSampler
+from src.latent_samplers.post_nonlinear_noise_sampler import (
+    PostNonLinearNoiseSampler,
+)
 from src.latent_samplers.rdpg_sampler import RDPGGenerator
 from src.latent_samplers.sbm_cov_sampler import SBMCovariateGenerator
 
 
 LATENT_POSITION_CONFIGS = [
+    pytest.param(
+        {
+            "post_nonlinear_noise": True,
+            "C": 2,
+            "rho": [0, 0.5],
+        },
+        PostNonLinearNoiseSampler,
+        2,
+        1,
+        id="post-nonlinear-noise",
+    ),
+    pytest.param(
+        {
+            "conditional_copula": "gaussian",
+            "C": 2,
+            "rho": [0, 0.5],
+            "marginals": {"z": "gaussian", "y": "gaussian"},
+        },
+        ConditionalIndependenceCopulaSampler,
+        2,
+        1,
+        id="conditional-gaussian-copula",
+    ),
     pytest.param(
         {"copula_model": "gaussian", "marginals": "gaussian", "rho": 0.25},
         CopulaGenerator,
@@ -81,13 +110,20 @@ def test_user_can_select_latent_positions_and_generate_networks(
     result = network.generate()
 
     assert isinstance(network.latent_sampler, expected_sampler_type)
-    assert set(result) == {"A", "Z", "Y"}
+    assert set(result) == {"A", "Z", "Y", "X"}
     assert result["A"].shape == (n, n)
     assert result["Z"].shape == (n, z_dimension)
     assert result["Y"].shape == (n, x_dimension)
     assert np.isfinite(result["A"]).all()
     assert np.isfinite(result["Z"]).all()
     assert np.isfinite(result["Y"]).all()
+    if isinstance(
+        network.latent_sampler,
+        (ConditionalIndependenceCopulaSampler, PostNonLinearNoiseSampler),
+    ):
+        assert result["X"].shape == (n, 1)
+    else:
+        assert result["X"] is None
     np.testing.assert_allclose(result["A"], result["A"].T)
     np.testing.assert_array_equal(np.diag(result["A"]), 0)
 
