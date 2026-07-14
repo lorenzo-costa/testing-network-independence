@@ -366,6 +366,9 @@ class CopulaGenerator:
 
     def _convert_marginals(self, marginals):
         # 1. Normalize input into a standard format
+        if marginals is None:
+            raise Exception('unspecified marginals')
+        
         if not isinstance(marginals, dict):
             marginals = {"x": marginals, "z": marginals}
 
