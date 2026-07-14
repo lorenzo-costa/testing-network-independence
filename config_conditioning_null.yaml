@@ -1,4 +1,4 @@
-# Alternative-hypothesis power study for post-nonlinear-noise conditional AC tests.
+# Combined conditional-independence null study for both stratified samplers.
 
 simulation:
   nsim: 100
@@ -6,9 +6,20 @@ simulation:
   n: [100, 300, 500]
   k: [3]
   ky: [1]
-  rho: [0.2]
+  rho: [0.0]
   alpha: [0.5]
   edge_var: [3]
+
+  # These marginal sweeps apply only to the conditional-copula setups below.
+  marginals_z:
+    - gaussian
+    - "uniform -1 1"
+    - "chi 5"
+
+  marginals_y:
+    - gaussian
+    - cauchy
+    - "chi 5"
 
 methods:
   npermutations: [100]
@@ -46,81 +57,118 @@ covariances:
     - [0.5, 0.5, 0.5, 1.0]
 
 setup_templates:
-  gaussian_network: &gaussian_network
+  gaussian_conditional_network: &gaussian_conditional_network
+    dgp: GaussianNetwork
+    solver: ASE
+    conditional_copula: gaussian
+  bernoulli_conditional_network: &bernoulli_conditional_network
+    dgp: BernoulliNetwork
+    solver: pgd_fit_wrapper
+    rdpg: false
+    conditional_copula: gaussian
+  gaussian_postlinear_network: &gaussian_postlinear_network
     dgp: GaussianNetwork
     solver: ASE
     post_nonlinear_noise: true
-  bernoulli_network: &bernoulli_network
+  bernoulli_postlinear_network: &bernoulli_postlinear_network
     dgp: BernoulliNetwork
     solver: pgd_fit_wrapper
     rdpg: false
     post_nonlinear_noise: true
 
 setups:
-  # Gaussian weighted networks
-  - <<: *gaussian_network
+  # Gaussian conditional-copula null setups
+  - <<: *gaussian_conditional_network
+    C: 2
+    column_covariance: *identity_z
+  - <<: *gaussian_conditional_network
+    C: 2
+    column_covariance: *equicorrelated_z
+  - <<: *gaussian_conditional_network
+    C: 3
+    column_covariance: *identity_z
+  - <<: *gaussian_conditional_network
+    C: 3
+    column_covariance: *equicorrelated_z
+
+  # Bernoulli conditional-copula null setups
+  - <<: *bernoulli_conditional_network
+    C: 2
+    column_covariance: *identity_z
+  - <<: *bernoulli_conditional_network
+    C: 2
+    column_covariance: *equicorrelated_z
+  - <<: *bernoulli_conditional_network
+    C: 3
+    column_covariance: *identity_z
+  - <<: *bernoulli_conditional_network
+    C: 3
+    column_covariance: *equicorrelated_z
+
+  # Gaussian post-nonlinear-noise null setups
+  - <<: *gaussian_postlinear_network
     C: 2
     column_covariance_z: *identity_z
     stratum_covariance: *identity_stratum
-  - <<: *gaussian_network
+  - <<: *gaussian_postlinear_network
     C: 2
     column_covariance_z: *identity_z
     stratum_covariance: *equicorrelated_stratum
-  - <<: *gaussian_network
+  - <<: *gaussian_postlinear_network
     C: 2
     column_covariance_z: *equicorrelated_z
     stratum_covariance: *identity_stratum
-  - <<: *gaussian_network
+  - <<: *gaussian_postlinear_network
     C: 2
     column_covariance_z: *equicorrelated_z
     stratum_covariance: *equicorrelated_stratum
-  - <<: *gaussian_network
+  - <<: *gaussian_postlinear_network
     C: 3
     column_covariance_z: *identity_z
     stratum_covariance: *identity_stratum
-  - <<: *gaussian_network
+  - <<: *gaussian_postlinear_network
     C: 3
     column_covariance_z: *identity_z
     stratum_covariance: *equicorrelated_stratum
-  - <<: *gaussian_network
+  - <<: *gaussian_postlinear_network
     C: 3
     column_covariance_z: *equicorrelated_z
     stratum_covariance: *identity_stratum
-  - <<: *gaussian_network
+  - <<: *gaussian_postlinear_network
     C: 3
     column_covariance_z: *equicorrelated_z
     stratum_covariance: *equicorrelated_stratum
 
-  # Bernoulli networks
-  - <<: *bernoulli_network
+  # Bernoulli post-nonlinear-noise null setups
+  - <<: *bernoulli_postlinear_network
     C: 2
     column_covariance_z: *identity_z
     stratum_covariance: *identity_stratum
-  - <<: *bernoulli_network
+  - <<: *bernoulli_postlinear_network
     C: 2
     column_covariance_z: *identity_z
     stratum_covariance: *equicorrelated_stratum
-  - <<: *bernoulli_network
+  - <<: *bernoulli_postlinear_network
     C: 2
     column_covariance_z: *equicorrelated_z
     stratum_covariance: *identity_stratum
-  - <<: *bernoulli_network
+  - <<: *bernoulli_postlinear_network
     C: 2
     column_covariance_z: *equicorrelated_z
     stratum_covariance: *equicorrelated_stratum
-  - <<: *bernoulli_network
+  - <<: *bernoulli_postlinear_network
     C: 3
     column_covariance_z: *identity_z
     stratum_covariance: *identity_stratum
-  - <<: *bernoulli_network
+  - <<: *bernoulli_postlinear_network
     C: 3
     column_covariance_z: *identity_z
     stratum_covariance: *equicorrelated_stratum
-  - <<: *bernoulli_network
+  - <<: *bernoulli_postlinear_network
     C: 3
     column_covariance_z: *equicorrelated_z
     stratum_covariance: *identity_stratum
-  - <<: *bernoulli_network
+  - <<: *bernoulli_postlinear_network
     C: 3
     column_covariance_z: *equicorrelated_z
     stratum_covariance: *equicorrelated_stratum
@@ -130,4 +178,4 @@ metrics:
 
 output:
   results_dir: results
-  file_prefix: postlinearnoise_ac_power_alternative
+  file_prefix: conditioning_ac_null

@@ -363,9 +363,10 @@ def _detect_experiment_type(raw: dict) -> str:
     Detection priority (most specific first):
       1. "sbm"                  -- top-level ``sbm`` block is present
       2. "lee2019"              -- setups contain ``gaussian_latent_sims``
-      3. "post_nonlinear_noise" -- a setup selects that sampler
-      4. "conditional_copula"   -- a setup selects that sampler
-      5. Remaining legacy experiment types
+      3. "conditioning_mixed"   -- setups select both conditioning samplers
+      4. "post_nonlinear_noise" -- a setup selects that sampler
+      5. "conditional_copula"   -- a setup selects that sampler
+      6. Remaining legacy experiment types
     """
     if "sbm" in raw:
         return "sbm"
@@ -375,9 +376,17 @@ def _detect_experiment_type(raw: dict) -> str:
         return "lee2019"
 
     if isinstance(setups_raw, list):
-        if any(entry.get("post_nonlinear_noise") for entry in setups_raw):
+        has_post_nonlinear = any(
+            entry.get("post_nonlinear_noise") for entry in setups_raw
+        )
+        has_conditional_copula = any(
+            entry.get("conditional_copula") is not None for entry in setups_raw
+        )
+        if has_post_nonlinear and has_conditional_copula:
+            return "conditioning_mixed"
+        if has_post_nonlinear:
             return "post_nonlinear_noise"
-        if any(entry.get("conditional_copula") is not None for entry in setups_raw):
+        if has_conditional_copula:
             return "conditional_copula"
 
     if "dim_common" in raw.get("simulation", {}):
@@ -503,7 +512,9 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
     mth = cfg["methods"]
     sets = cfg["setups"]
 
-    def _standard_rows(setups_list, rho_list):
+    def _standard_rows(setups_list, rho_list, include_marginals=None):
+        if include_marginals is None:
+            include_marginals = exp != "post_nonlinear_noise"
         names = [
             "setup",
             "method",
@@ -528,7 +539,7 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             mth["npermutations"],
             mth["df"],
         ]
-        if exp != "post_nonlinear_noise":
+        if include_marginals:
             marginals = sim.get("marginals", None)
             marginals_y = sim.get("marginals_y", None)
             marginals_z = sim.get("marginals_z", None)
@@ -728,6 +739,28 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             vals.append(mth["use_true_latent"])
 
         return [dict(zip(names, v)) for v in iproduct(*vals)]
+
+    # -- Mixed conditional-null study -----------------------------------------
+    if exp == "conditioning_mixed":
+        conditional_setups = [
+            setup
+            for setup in sets
+            if setup[0].keywords.get("conditional_copula") is not None
+        ]
+        post_nonlinear_setups = [
+            setup
+            for setup in sets
+            if setup[0].keywords.get("post_nonlinear_noise") is not None
+        ]
+        return _standard_rows(
+            conditional_setups,
+            sim["rho"],
+            include_marginals=True,
+        ) + _standard_rows(
+            post_nonlinear_setups,
+            sim["rho"],
+            include_marginals=False,
+        )
 
     # -- Standard / observed / diff_marginals ---------------------------------
     h1 = _standard_rows(sets, sim["rho"])

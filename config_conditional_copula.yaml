@@ -1,4 +1,4 @@
-# Power and null-distribution study for conditional multivariate AC tests.
+# Alternative-hypothesis power study for conditional multivariate AC tests.
 
 simulation:
   nsim: 100
@@ -6,7 +6,7 @@ simulation:
   n: [100, 300, 500]
   k: [3]
   ky: [1]
-  rho: [0.0, 0.2]
+  rho: [0.2]
   alpha: [0.5]
   edge_var: [3]
 
@@ -61,10 +61,6 @@ setup_templates:
     dgp: GaussianNetwork
     solver: ASE
     conditional_copula: clayton
-  gaussian_network_gumbel: &gaussian_network_gumbel
-    dgp: GaussianNetwork
-    solver: ASE
-    conditional_copula: gumbel
   bernoulli_network_gaussian: &bernoulli_network_gaussian
     dgp: BernoulliNetwork
     solver: pgd_fit_wrapper
@@ -81,11 +77,6 @@ setup_templates:
     solver: pgd_fit_wrapper
     rdpg: false
     conditional_copula: clayton
-  bernoulli_network_gumbel: &bernoulli_network_gumbel
-    dgp: BernoulliNetwork
-    solver: pgd_fit_wrapper
-    rdpg: false
-    conditional_copula: gumbel
 
 setups:
   # Gaussian weighted networks
@@ -125,19 +116,6 @@ setups:
     C: 3
     column_covariance: *identity_z
   - <<: *gaussian_network_clayton
-    C: 3
-    column_covariance: *equicorrelated_z
-
-  - <<: *gaussian_network_gumbel
-    C: 2
-    column_covariance: *identity_z
-  - <<: *gaussian_network_gumbel
-    C: 2
-    column_covariance: *equicorrelated_z
-  - <<: *gaussian_network_gumbel
-    C: 3
-    column_covariance: *identity_z
-  - <<: *gaussian_network_gumbel
     C: 3
     column_covariance: *equicorrelated_z
 
@@ -181,22 +159,9 @@ setups:
     C: 3
     column_covariance: *equicorrelated_z
 
-  - <<: *bernoulli_network_gumbel
-    C: 2
-    column_covariance: *identity_z
-  - <<: *bernoulli_network_gumbel
-    C: 2
-    column_covariance: *equicorrelated_z
-  - <<: *bernoulli_network_gumbel
-    C: 3
-    column_covariance: *identity_z
-  - <<: *bernoulli_network_gumbel
-    C: 3
-    column_covariance: *equicorrelated_z
-
 metrics:
   compute_all: true
 
 output:
   results_dir: results
-  file_prefix: conditional_copula_ac_power
+  file_prefix: conditional_copula_ac_power_alternative
