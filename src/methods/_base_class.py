@@ -108,6 +108,7 @@ class BasePermutationTest(BaseEstimationMethod):
         use_true_latent=False,
         test_function=None,
         permutation_type="covariate",
+        stratify_permutations=False,
         **kwargs,
     ):
         super().__init__(
@@ -130,13 +131,29 @@ class BasePermutationTest(BaseEstimationMethod):
         self.alpha = alpha
         self.test_function = test_function
         self.permutation_type = permutation_type
+        self.stratify_permutations = bool(stratify_permutations)
+
+    def _draw_permutation(self):
+        """Draw a global permutation or one restricted within rows of ``X``."""
+        n = self.Y.shape[0]
+        if not self.stratify_permutations or self.X is None:
+            return self.rng.permutation(n)
+
+        _, strata = np.unique(self.X, axis=0, return_inverse=True)
+        permutation = np.arange(n)
+        for stratum in np.unique(strata):
+            indices = np.flatnonzero(strata == stratum)
+            permutation[indices] = self.rng.permutation(indices)
+        return permutation
 
     def _fit_permutation(self):
         self.test_stat_estimate = self.test_function(self.Zhat, self.Y)
         self.permutation_distribution = []
+        self.permutation_indices = []
 
         for _ in range(self.npermutations):
-            perm = self.rng.permutation(self.Y.shape[0])
+            perm = self._draw_permutation()
+            self.permutation_indices.append(perm.copy())
             if self.permutation_type == "covariate":
                 statistic = self.test_function(self.Zhat, self.Y[perm, :])
             elif self.permutation_type == "latent":

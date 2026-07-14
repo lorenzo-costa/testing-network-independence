@@ -1,0 +1,202 @@
+# Power and null-distribution study for conditional multivariate AC tests.
+
+simulation:
+  nsim: 100
+  seed: 1
+  n: [100, 300, 500]
+  k: [3]
+  ky: [1]
+  rho: [0.0, 0.2]
+  alpha: [0.5]
+  edge_var: [3]
+
+  marginals_z:
+    - gaussian
+    - "uniform -1 1"
+    - "chi 5"
+
+  marginals_y:
+    - gaussian
+    - cauchy
+    - "chi 5"
+
+methods:
+  npermutations: [100]
+  df: [3]
+  use_true_latent: [false]
+  list:
+    - name: MultivariateACTest
+      kwargs:
+        M: 1
+    - name: MultivariateACTest
+      kwargs:
+        M: sqrt
+    - name: MultivariateACTest
+      kwargs:
+        M: half
+
+# Reusable setup and covariance definitions. Class probabilities are omitted so
+# both C=2 and C=3 use the sampler's uniform default.
+covariances:
+  identity_z: &identity_z
+    - [1.0, 0.0, 0.0]
+    - [0.0, 1.0, 0.0]
+    - [0.0, 0.0, 1.0]
+  equicorrelated_z: &equicorrelated_z
+    - [1.0, 0.5, 0.5]
+    - [0.5, 1.0, 0.5]
+    - [0.5, 0.5, 1.0]
+
+setup_templates:
+  gaussian_network_gaussian: &gaussian_network_gaussian
+    dgp: GaussianNetwork
+    solver: ASE
+    conditional_copula: gaussian
+  gaussian_network_student_t: &gaussian_network_student_t
+    dgp: GaussianNetwork
+    solver: ASE
+    conditional_copula: student_t
+    df: 3
+  gaussian_network_clayton: &gaussian_network_clayton
+    dgp: GaussianNetwork
+    solver: ASE
+    conditional_copula: clayton
+  gaussian_network_gumbel: &gaussian_network_gumbel
+    dgp: GaussianNetwork
+    solver: ASE
+    conditional_copula: gumbel
+  bernoulli_network_gaussian: &bernoulli_network_gaussian
+    dgp: BernoulliNetwork
+    solver: pgd_fit_wrapper
+    rdpg: false
+    conditional_copula: gaussian
+  bernoulli_network_student_t: &bernoulli_network_student_t
+    dgp: BernoulliNetwork
+    solver: pgd_fit_wrapper
+    rdpg: false
+    conditional_copula: student_t
+    df: 3
+  bernoulli_network_clayton: &bernoulli_network_clayton
+    dgp: BernoulliNetwork
+    solver: pgd_fit_wrapper
+    rdpg: false
+    conditional_copula: clayton
+  bernoulli_network_gumbel: &bernoulli_network_gumbel
+    dgp: BernoulliNetwork
+    solver: pgd_fit_wrapper
+    rdpg: false
+    conditional_copula: gumbel
+
+setups:
+  # Gaussian weighted networks
+  - <<: *gaussian_network_gaussian
+    C: 2
+    column_covariance: *identity_z
+  - <<: *gaussian_network_gaussian
+    C: 2
+    column_covariance: *equicorrelated_z
+  - <<: *gaussian_network_gaussian
+    C: 3
+    column_covariance: *identity_z
+  - <<: *gaussian_network_gaussian
+    C: 3
+    column_covariance: *equicorrelated_z
+
+  - <<: *gaussian_network_student_t
+    C: 2
+    column_covariance: *identity_z
+  - <<: *gaussian_network_student_t
+    C: 2
+    column_covariance: *equicorrelated_z
+  - <<: *gaussian_network_student_t
+    C: 3
+    column_covariance: *identity_z
+  - <<: *gaussian_network_student_t
+    C: 3
+    column_covariance: *equicorrelated_z
+
+  - <<: *gaussian_network_clayton
+    C: 2
+    column_covariance: *identity_z
+  - <<: *gaussian_network_clayton
+    C: 2
+    column_covariance: *equicorrelated_z
+  - <<: *gaussian_network_clayton
+    C: 3
+    column_covariance: *identity_z
+  - <<: *gaussian_network_clayton
+    C: 3
+    column_covariance: *equicorrelated_z
+
+  - <<: *gaussian_network_gumbel
+    C: 2
+    column_covariance: *identity_z
+  - <<: *gaussian_network_gumbel
+    C: 2
+    column_covariance: *equicorrelated_z
+  - <<: *gaussian_network_gumbel
+    C: 3
+    column_covariance: *identity_z
+  - <<: *gaussian_network_gumbel
+    C: 3
+    column_covariance: *equicorrelated_z
+
+  # Bernoulli networks
+  - <<: *bernoulli_network_gaussian
+    C: 2
+    column_covariance: *identity_z
+  - <<: *bernoulli_network_gaussian
+    C: 2
+    column_covariance: *equicorrelated_z
+  - <<: *bernoulli_network_gaussian
+    C: 3
+    column_covariance: *identity_z
+  - <<: *bernoulli_network_gaussian
+    C: 3
+    column_covariance: *equicorrelated_z
+
+  - <<: *bernoulli_network_student_t
+    C: 2
+    column_covariance: *identity_z
+  - <<: *bernoulli_network_student_t
+    C: 2
+    column_covariance: *equicorrelated_z
+  - <<: *bernoulli_network_student_t
+    C: 3
+    column_covariance: *identity_z
+  - <<: *bernoulli_network_student_t
+    C: 3
+    column_covariance: *equicorrelated_z
+
+  - <<: *bernoulli_network_clayton
+    C: 2
+    column_covariance: *identity_z
+  - <<: *bernoulli_network_clayton
+    C: 2
+    column_covariance: *equicorrelated_z
+  - <<: *bernoulli_network_clayton
+    C: 3
+    column_covariance: *identity_z
+  - <<: *bernoulli_network_clayton
+    C: 3
+    column_covariance: *equicorrelated_z
+
+  - <<: *bernoulli_network_gumbel
+    C: 2
+    column_covariance: *identity_z
+  - <<: *bernoulli_network_gumbel
+    C: 2
+    column_covariance: *equicorrelated_z
+  - <<: *bernoulli_network_gumbel
+    C: 3
+    column_covariance: *identity_z
+  - <<: *bernoulli_network_gumbel
+    C: 3
+    column_covariance: *equicorrelated_z
+
+metrics:
+  compute_all: true
+
+output:
+  results_dir: results
+  file_prefix: conditional_copula_ac_power

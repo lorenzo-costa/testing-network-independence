@@ -7,7 +7,7 @@ class _ACMixin:
         return ac_coefficient(
             Y=Y,
             Z=Z,
-            X=self.X,
+            X=self.X if not self._ignore_X else None,
             M=self.M,
             rng=self.rng,
             aggregate=self.aggregate_coeff,
@@ -41,6 +41,7 @@ class EstimateAC(_ACMixin, BaseEstimationMethod):
         self.use_permutation_coeff = use_permutation_coeff
         self.use_right_neighbor = use_right_neighbor
         self.block_size = block_size
+        self._ignore_X = False
 
     def fit(self, data, **kwargs):
         self._process_input(data)
@@ -69,6 +70,7 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
         use_permutation_coeff=False,
         use_right_neighbor=False,
         block_size=2048,
+        _ignore_X=False, # temp for testing
         **kwargs,
     ):
         self.M = M
@@ -76,6 +78,7 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
         self.use_permutation_coeff = use_permutation_coeff
         self.use_right_neighbor = use_right_neighbor
         self.block_size = block_size
+        self._ignore_X = _ignore_X
         super().__init__(
             k=k,
             npermutations=npermutations,
@@ -85,6 +88,7 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
             solver=solver,
             test_function=self._ac_statistic,
             rng=rng,
+            stratify_permutations=not _ignore_X,
         )
 
     def fit(self, data, **kwargs):
@@ -92,11 +96,22 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
         self._fit_permutation()
 
     def get_name(self):
-        return (
-            "MultivariateAC_PermutationTest_"
-            + self.permutation_type
-            + "_"
-            + str(self.M)
-            + "_"
-            + str(self.aggregate_coeff)
-        )
+        if self._ignore_X:
+            return (
+                "MultivariateAC_PermutationTest_"
+                + self.permutation_type
+                + "_"
+                + str(self.M)
+                + "_"
+                + str(self.aggregate_coeff)
+                + "_ignoreX"
+            )
+        else:
+            return (
+                "MultivariateAC_PermutationTest_"
+                + self.permutation_type
+                + "_"
+                + str(self.M)
+                + "_"
+                + str(self.aggregate_coeff)
+            )

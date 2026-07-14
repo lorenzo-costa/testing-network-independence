@@ -189,9 +189,20 @@ class LatentSampler:
     def _post_nonlinear_kwargs(activation, kwargs):
         if activation is not True:
             raise ValueError("post_nonlinear_noise must be True when selected.")
-        sampler_kwargs = dict(kwargs)
-        sampler_kwargs.pop("rdpg", None)
-        return sampler_kwargs
+        allowed = {
+            "C",
+            "rho",
+            "error_covariance",
+            "stratum_covariance",
+            "column_covariance_z",
+            "column_covariance_y",
+            "column_covariance",
+            "cross_correlation_template",
+            "class_probabilities",
+            "p",
+            "center_latent",
+        }
+        return {key: value for key, value in kwargs.items() if key in allowed}
 
     def _sample_latent(self):
         """Return ``(Z, Y, X)``; ``X`` is ``None`` when not generated.

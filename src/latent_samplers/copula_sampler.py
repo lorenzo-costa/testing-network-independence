@@ -52,12 +52,20 @@ class CopulaGenerator:
         self.copula_params = copula_params if copula_params is not None else {}
 
         self.column_covariance_z = (
-            np.eye(k) if column_covariance is None else column_covariance
+            np.eye(k)
+            if column_covariance is None
+            else np.asarray(column_covariance, dtype=float)
         )
         self.column_covariance_y = (
-            np.eye(ky) if column_covariance_y is None else column_covariance_y
+            np.eye(ky)
+            if column_covariance_y is None
+            else np.asarray(column_covariance_y, dtype=float)
         )
-        self.cross_covariance = cross_covariance
+        self.cross_covariance = (
+            None
+            if cross_covariance is None
+            else np.asarray(cross_covariance, dtype=float)
+        )
 
         self.center_latent = center_latent
 

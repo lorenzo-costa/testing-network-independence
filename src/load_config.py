@@ -99,9 +99,20 @@ def _resolve_copula_setup(entry: dict):
         "post_nonlinear_noise",
         "copula_model",
         "rdgp",
+        "rdpg",
         "rdpg_distr",
     }
-    conditional_keys = {"C", "class_probabilities", "p", "center_latent"}
+    conditional_keys = {
+        "C",
+        "rho",
+        "marginals",
+        "class_probabilities",
+        "p",
+        "center_latent",
+        "column_covariance",
+        "column_covariance_y",
+        "cross_covariance",
+    }
     post_nonlinear_keys = {
         "C",
         "rho",
@@ -350,13 +361,11 @@ def _detect_experiment_type(raw: dict) -> str:
     Infer experiment type from YAML structure (no explicit tag required).
 
     Detection priority (most specific first):
-      1. "sbm"           -- top-level ``sbm`` block is present
-      2. "lee2019"       -- ``setups`` is a dict with ``gaussian_latent_sims``
-      3. "multiness"     -- simulation block contains ``dim_common``
-      4. "diff_marginals"-- first marginals entry is a mapping
-      5. "functionals"   -- simulation block contains ``functionals``
-      6. "asymptotic"    -- simulation block contains ``column_covariance``
-      7. "standard"      -- everything else
+      1. "sbm"                  -- top-level ``sbm`` block is present
+      2. "lee2019"              -- setups contain ``gaussian_latent_sims``
+      3. "post_nonlinear_noise" -- a setup selects that sampler
+      4. "conditional_copula"   -- a setup selects that sampler
+      5. Remaining legacy experiment types
     """
     if "sbm" in raw:
         return "sbm"
@@ -364,6 +373,12 @@ def _detect_experiment_type(raw: dict) -> str:
     setups_raw = raw.get("setups", {})
     if isinstance(setups_raw, dict) and "gaussian_latent_sims" in setups_raw:
         return "lee2019"
+
+    if isinstance(setups_raw, list):
+        if any(entry.get("post_nonlinear_noise") for entry in setups_raw):
+            return "post_nonlinear_noise"
+        if any(entry.get("conditional_copula") is not None for entry in setups_raw):
+            return "conditional_copula"
 
     if "dim_common" in raw.get("simulation", {}):
         return "multiness"
@@ -500,7 +515,6 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             "edge_var",
             "npermutations",
             "df",
-            "marginals"
         ]
         vals = [
             setups_list,
@@ -514,29 +528,40 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             mth["npermutations"],
             mth["df"],
         ]
-        marginals = sim.get("marginals", None)
-        marginals_y = sim.get("marginals_y", None)
-        marginals_z = sim.get("marginals_z", None)
+        if exp != "post_nonlinear_noise":
+            marginals = sim.get("marginals", None)
+            marginals_y = sim.get("marginals_y", None)
+            marginals_z = sim.get("marginals_z", None)
 
-        if marginals is None:
-            # Functional-dependence configs do not require a marginal sweep.
-            # Preserve a stable row schema by carrying an explicit None.
-            if exp == "functionals" and marginals_y is None and marginals_z is None:
-                marginals = [None]
-            elif marginals_y is None:
-                if marginals_z is None:
-                    raise ValueError("At least one of 'marginals', 'marginals_y', or 'marginals_z' must be specified.")
-                marginals_y = marginals_z
             if marginals is None:
-                if marginals_z is None:
-                    marginals_z = marginals_y
+                # Functional-dependence configs do not require a marginal sweep.
+                # Preserve a stable row schema by carrying an explicit None.
+                if (
+                    exp == "functionals"
+                    and marginals_y is None
+                    and marginals_z is None
+                ):
+                    marginals = [None]
+                elif marginals_y is None:
+                    if marginals_z is None:
+                        raise ValueError(
+                            "At least one of 'marginals', 'marginals_y', or "
+                            "'marginals_z' must be specified."
+                        )
+                    marginals_y = marginals_z
+                if marginals is None:
+                    if marginals_z is None:
+                        marginals_z = marginals_y
 
-                marginals = [
-                    {"y": marginal_y, "z": marginal_z}
-                    for marginal_y, marginal_z in iproduct(marginals_y, marginals_z)
-                ]
+                    marginals = [
+                        {"y": marginal_y, "z": marginal_z}
+                        for marginal_y, marginal_z in iproduct(
+                            marginals_y, marginals_z
+                        )
+                    ]
 
-        vals.append(marginals)
+            names.append("marginals")
+            vals.append(marginals)
 
         # Functional sweeps are stored as paired descriptors so each form stays
         # attached to its own parameters (rather than forming a cross-product).

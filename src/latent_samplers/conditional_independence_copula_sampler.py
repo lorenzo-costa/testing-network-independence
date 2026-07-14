@@ -28,9 +28,9 @@ class ConditionalIndependenceCopulaSampler:
     rho : float or array-like
         Within-stratum copula correlations. A scalar is repeated for all
         strata; otherwise exactly one value per stratum is required.
-    marginals : dict
+    marginals : dict, optional
         Marginal specifications with exactly the required keys ``"z"`` and
-        ``"y"``.
+        ``"y"``. Defaults to Gaussian marginals for both variables.
     copula_model : {"gaussian", "student_t", "clayton", "gumbel"}
         Copula family used in every stratum.
     copula_params : dict, optional
@@ -81,6 +81,8 @@ class ConditionalIndependenceCopulaSampler:
             raise ValueError(f"copula_model must be one of {{{choices}}}.")
         self.copula_model = copula_model
 
+        if marginals is None:
+            marginals = {"z": "gaussian", "y": "gaussian"}
         if not isinstance(marginals, dict):
             raise TypeError("marginals must be a dictionary with keys 'z' and 'y'.")
         if set(marginals) != {"z", "y"}:
@@ -109,6 +111,8 @@ class ConditionalIndependenceCopulaSampler:
         self.class_probabilities = self._normalize_probabilities(class_probabilities)
         self.center_latent = bool(center_latent)
         self.rng = rng if rng is not None else np.random.default_rng()
+        # Extra fields can arrive from a shared experiment configuration.  The
+        # underlying CopulaGenerator accepts and ignores irrelevant keywords.
         self.copula_kwargs = dict(copula_kwargs)
         self._validate_copula_configuration()
 

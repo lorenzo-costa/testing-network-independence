@@ -1,0 +1,133 @@
+# Power and null-distribution study for post-nonlinear-noise conditional AC tests.
+
+simulation:
+  nsim: 100
+  seed: 1
+  n: [100, 300, 500]
+  k: [3]
+  ky: [1]
+  rho: [0.0, 0.2]
+  alpha: [0.5]
+  edge_var: [3]
+
+methods:
+  npermutations: [100]
+  df: [3]
+  use_true_latent: [false]
+  list:
+    - name: MultivariateACTest
+      kwargs:
+        M: 1
+    - name: MultivariateACTest
+      kwargs:
+        M: sqrt
+    - name: MultivariateACTest
+      kwargs:
+        M: half
+
+covariances:
+  identity_z: &identity_z
+    - [1.0, 0.0, 0.0]
+    - [0.0, 1.0, 0.0]
+    - [0.0, 0.0, 1.0]
+  equicorrelated_z: &equicorrelated_z
+    - [1.0, 0.5, 0.5]
+    - [0.5, 1.0, 0.5]
+    - [0.5, 0.5, 1.0]
+  identity_stratum: &identity_stratum
+    - [1.0, 0.0, 0.0, 0.0]
+    - [0.0, 1.0, 0.0, 0.0]
+    - [0.0, 0.0, 1.0, 0.0]
+    - [0.0, 0.0, 0.0, 1.0]
+  equicorrelated_stratum: &equicorrelated_stratum
+    - [1.0, 0.5, 0.5, 0.5]
+    - [0.5, 1.0, 0.5, 0.5]
+    - [0.5, 0.5, 1.0, 0.5]
+    - [0.5, 0.5, 0.5, 1.0]
+
+setup_templates:
+  gaussian_network: &gaussian_network
+    dgp: GaussianNetwork
+    solver: ASE
+    post_nonlinear_noise: true
+  bernoulli_network: &bernoulli_network
+    dgp: BernoulliNetwork
+    solver: pgd_fit_wrapper
+    rdpg: false
+    post_nonlinear_noise: true
+
+setups:
+  # Gaussian weighted networks
+  - <<: *gaussian_network
+    C: 2
+    column_covariance_z: *identity_z
+    stratum_covariance: *identity_stratum
+  - <<: *gaussian_network
+    C: 2
+    column_covariance_z: *identity_z
+    stratum_covariance: *equicorrelated_stratum
+  - <<: *gaussian_network
+    C: 2
+    column_covariance_z: *equicorrelated_z
+    stratum_covariance: *identity_stratum
+  - <<: *gaussian_network
+    C: 2
+    column_covariance_z: *equicorrelated_z
+    stratum_covariance: *equicorrelated_stratum
+  - <<: *gaussian_network
+    C: 3
+    column_covariance_z: *identity_z
+    stratum_covariance: *identity_stratum
+  - <<: *gaussian_network
+    C: 3
+    column_covariance_z: *identity_z
+    stratum_covariance: *equicorrelated_stratum
+  - <<: *gaussian_network
+    C: 3
+    column_covariance_z: *equicorrelated_z
+    stratum_covariance: *identity_stratum
+  - <<: *gaussian_network
+    C: 3
+    column_covariance_z: *equicorrelated_z
+    stratum_covariance: *equicorrelated_stratum
+
+  # Bernoulli networks
+  - <<: *bernoulli_network
+    C: 2
+    column_covariance_z: *identity_z
+    stratum_covariance: *identity_stratum
+  - <<: *bernoulli_network
+    C: 2
+    column_covariance_z: *identity_z
+    stratum_covariance: *equicorrelated_stratum
+  - <<: *bernoulli_network
+    C: 2
+    column_covariance_z: *equicorrelated_z
+    stratum_covariance: *identity_stratum
+  - <<: *bernoulli_network
+    C: 2
+    column_covariance_z: *equicorrelated_z
+    stratum_covariance: *equicorrelated_stratum
+  - <<: *bernoulli_network
+    C: 3
+    column_covariance_z: *identity_z
+    stratum_covariance: *identity_stratum
+  - <<: *bernoulli_network
+    C: 3
+    column_covariance_z: *identity_z
+    stratum_covariance: *equicorrelated_stratum
+  - <<: *bernoulli_network
+    C: 3
+    column_covariance_z: *equicorrelated_z
+    stratum_covariance: *identity_stratum
+  - <<: *bernoulli_network
+    C: 3
+    column_covariance_z: *equicorrelated_z
+    stratum_covariance: *equicorrelated_stratum
+
+metrics:
+  compute_all: true
+
+output:
+  results_dir: results
+  file_prefix: postlinearnoise_ac_power

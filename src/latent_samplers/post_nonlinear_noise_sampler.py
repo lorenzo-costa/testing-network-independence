@@ -74,9 +74,10 @@ class PostNonLinearNoiseSampler:
         rng=None,
         **kwargs,
     ):
-        if kwargs:
-            unknown = ", ".join(sorted(kwargs))
-            raise TypeError(f"Unexpected post-nonlinear-noise arguments: {unknown}.")
+        # LatentSampler receives shared configuration dictionaries.  Preserve
+        # irrelevant fields for inspection, but deliberately do not let them
+        # prevent this sampler from being selected.
+        self.unused_kwargs = dict(kwargs)
 
         self.n = self._positive_integer(n, "n")
         self.k = self._positive_integer(k, "k")

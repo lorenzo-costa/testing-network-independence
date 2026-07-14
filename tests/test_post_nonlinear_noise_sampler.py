@@ -35,6 +35,21 @@ def test_sample_shapes_effects_functions_and_uniform_probabilities():
     assert np.isfinite(Y).all()
 
 
+def test_unused_keyword_arguments_are_accepted():
+    sampler = PostNonLinearNoiseSampler(
+        n=10,
+        k=1,
+        C=2,
+        irrelevant_option="ignored",
+        copula_params={"df": 3},
+    )
+    Z, Y, X = sampler.sample_latent()
+    assert Z.shape == (10, 1)
+    assert Y.shape == (10, 1)
+    assert X.shape == (10, 1)
+    assert sampler.unused_kwargs["irrelevant_option"] == "ignored"
+
+
 def test_scalar_rho_expands_and_constructs_copula_style_covariance():
     covariance_z = np.array([[2.0, 0.4], [0.4, 1.0]])
     covariance_y = np.array([[3.0]])

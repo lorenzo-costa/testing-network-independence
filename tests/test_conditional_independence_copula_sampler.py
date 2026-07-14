@@ -217,6 +217,37 @@ def test_unknown_marginal_is_rejected_during_initialization():
         )
 
 
+def test_unused_keyword_arguments_are_accepted():
+    sampler = ConditionalIndependenceCopulaSampler(
+        n=10,
+        k=1,
+        C=2,
+        irrelevant_option="ignored",
+        rdpg=False,
+    )
+    Z, Y, X = sampler.sample_latent()
+    assert Z.shape == (10, 1)
+    assert Y.shape == (10, 1)
+    assert X.shape == (10, 1)
+
+
+def test_gaussian_marginals_are_the_default():
+    sampler = ConditionalIndependenceCopulaSampler(
+        n=20,
+        k=2,
+        ky=1,
+        C=2,
+        rho=0.3,
+        rng=np.random.default_rng(61),
+    )
+    Z, Y, X = sampler.sample_latent()
+
+    assert sampler.marginals == {"z": "gaussian", "y": "gaussian"}
+    assert Z.shape == (20, 2)
+    assert Y.shape == (20, 1)
+    assert X.shape == (20, 1)
+
+
 def test_config_resolver_forwards_conditional_sampler_arguments():
     dgp_factory, _ = _resolve_copula_setup(
         {

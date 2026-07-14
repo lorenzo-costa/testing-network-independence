@@ -92,3 +92,51 @@ def test_ac_method_passes_x_as_conditioning_variable(monkeypatch, method_type):
     if method_type is MultivariateACTest:
         assert len(recorded) == 3
         assert all(conditioning is method.X for conditioning in recorded)
+
+
+@pytest.mark.parametrize("permutation_type", ["covariate", "latent", "observed"])
+def test_ac_permutations_are_restricted_within_x_strata(
+    monkeypatch, permutation_type
+):
+    monkeypatch.setattr(
+        "src.methods.ac_test.ac_coefficient", lambda **kwargs: 0.25
+    )
+    rng = np.random.default_rng(20)
+    data = {
+        "A": rng.normal(size=(12, 12)),
+        "Z": rng.normal(size=(12, 2)),
+        "Y": rng.normal(size=(12, 2)),
+        "X": np.repeat([0, 1, 2], 4).reshape(-1, 1),
+    }
+    method = MultivariateACTest(
+        k=2,
+        solver=dummy_solver,
+        use_true_latent=permutation_type != "observed",
+        permutation_type=permutation_type,
+        M=1,
+        npermutations=5,
+        rng=np.random.default_rng(21),
+    )
+    method.fit(data)
+
+    assert len(method.permutation_indices) == 5
+    for permutation in method.permutation_indices:
+        np.testing.assert_array_equal(data["X"][permutation], data["X"])
+
+
+def test_ac_permutations_remain_global_when_x_is_none(monkeypatch):
+    monkeypatch.setattr(
+        "src.methods.ac_test.ac_coefficient", lambda **kwargs: 0.25
+    )
+    seed = 22
+    data = latent_data()
+    method = MultivariateACTest(
+        use_true_latent=True,
+        M=1,
+        npermutations=1,
+        rng=np.random.default_rng(seed),
+    )
+    method.fit(data)
+
+    expected = np.random.default_rng(seed).permutation(data["Y"].shape[0])
+    np.testing.assert_array_equal(method.permutation_indices[0], expected)
