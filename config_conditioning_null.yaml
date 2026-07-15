@@ -7,7 +7,7 @@ simulation:
   k: [3]
   ky: [1]
   rho: [0.0]
-  alpha: [0.5]
+  alpha: [0.05]
   edge_var: [3]
 
   # These marginal sweeps apply only to the conditional-copula setups below.

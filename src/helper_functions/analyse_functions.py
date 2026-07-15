@@ -53,7 +53,7 @@ def aggregate_results(
     grouping = [x_axis] + factors
 
     grouped_stats = (
-        results.groupby(grouping).agg({y_axis: ["mean", "sem"]}).reset_index()
+        results.groupby(grouping, dropna=True).agg({y_axis: ["mean", "sem"]}).reset_index()
     )
     grouped_stats.columns = grouping + [
         f"{y_axis}_mean",
