@@ -83,6 +83,7 @@ class RVTest(BasePermutationTest):
             use_true_latent=use_true_latent,
             test_function=test_function,
             permutation_type=permutation_type,
+            one_sided=True,
         )
 
         self.approximation = approximation

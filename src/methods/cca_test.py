@@ -50,6 +50,7 @@ class CanonicalCorrelationTest(BasePermutationTest):
             solver=solver,
             test_function=first_cca_component,
             rng=rng,
+            one_sided=True,
         )
 
     def fit(self, data, **kwargs):

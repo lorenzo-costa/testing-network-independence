@@ -89,6 +89,7 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
             test_function=self._ac_statistic,
             rng=rng,
             stratify_permutations=not _ignore_X,
+            one_sided=True,
         )
 
     def fit(self, data, **kwargs):

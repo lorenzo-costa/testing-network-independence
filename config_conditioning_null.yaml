@@ -22,7 +22,7 @@ simulation:
     - "chi 5"
 
 methods:
-  npermutations: [500]
+  npermutations: [400]
   df: [3]
   use_true_latent: [false]
   list:

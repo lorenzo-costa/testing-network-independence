@@ -109,6 +109,7 @@ class BasePermutationTest(BaseEstimationMethod):
         test_function=None,
         permutation_type="covariate",
         stratify_permutations=False,
+        one_sided=False,
         **kwargs,
     ):
         super().__init__(
@@ -132,6 +133,7 @@ class BasePermutationTest(BaseEstimationMethod):
         self.test_function = test_function
         self.permutation_type = permutation_type
         self.stratify_permutations = bool(stratify_permutations)
+        self.one_sided = bool(one_sided)
 
     def _draw_permutation(self):
         """Draw a global permutation or one restricted within rows of ``X``."""
@@ -167,5 +169,8 @@ class BasePermutationTest(BaseEstimationMethod):
             self.permutation_distribution.append(statistic)
 
         null = np.asarray(self.permutation_distribution)
-        self.pvalue = np.mean(np.abs(null) >= np.abs(self.test_stat_estimate))
+        if self.one_sided:
+            self.pvalue = np.mean(null >= self.test_stat_estimate)
+        else:
+            self.pvalue = np.mean(np.abs(null) >= np.abs(self.test_stat_estimate))
         self.reject_null = bool(self.pvalue < self.alpha)
