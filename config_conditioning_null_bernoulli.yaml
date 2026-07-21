@@ -2,7 +2,7 @@
 # Includes both conditional-copula and post-nonlinear-noise latent samplers.
 
 simulation:
-  nsim: 50
+  nsim: 100
   seed: 1
   n: [100, 300, 500]
   k: [3]
