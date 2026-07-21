@@ -201,6 +201,7 @@ class LatentSampler:
             "class_probabilities",
             "p",
             "center_latent",
+            "function_type",
         }
         return {key: value for key, value in kwargs.items() if key in allowed}
 

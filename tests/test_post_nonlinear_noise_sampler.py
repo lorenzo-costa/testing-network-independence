@@ -35,6 +35,60 @@ def test_sample_shapes_effects_functions_and_uniform_probabilities():
     assert np.isfinite(Y).all()
 
 
+@pytest.mark.parametrize(
+    "function_type",
+    ["identity", "square", "tanh", "exp_neg_square"],
+)
+def test_fixed_function_type_applies_to_every_coordinate(function_type):
+    sampler = PostNonLinearNoiseSampler(
+        n=20,
+        k=3,
+        ky=2,
+        C=2,
+        function_type=function_type,
+        center_latent=False,
+        rng=np.random.default_rng(12),
+    )
+    values = np.array([[-2.0, -0.5], [0.0, 1.5], [2.0, 3.0]])
+    transformed, names = sampler._apply_functions(values)
+
+    np.testing.assert_allclose(
+        transformed,
+        sampler._apply_function(values, function_type),
+    )
+    assert names.tolist() == [function_type, function_type]
+
+    sampler.sample_latent()
+    assert sampler.nonlinear_functions_z.tolist() == [function_type] * 3
+    assert sampler.nonlinear_functions_y.tolist() == [function_type] * 2
+
+
+def test_function_type_is_normalized_and_invalid_values_are_rejected():
+    sampler = PostNonLinearNoiseSampler(
+        n=10,
+        k=1,
+        C=2,
+        function_type="  TANH ",
+    )
+    assert sampler.function_type == "tanh"
+
+    with pytest.raises(ValueError, match="Unknown function_type"):
+        PostNonLinearNoiseSampler(
+            n=10,
+            k=1,
+            C=2,
+            function_type="cube",
+        )
+
+    with pytest.raises(TypeError, match="function_type must be a string"):
+        PostNonLinearNoiseSampler(
+            n=10,
+            k=1,
+            C=2,
+            function_type=["tanh"],
+        )
+
+
 def test_unused_keyword_arguments_are_accepted():
     sampler = PostNonLinearNoiseSampler(
         n=10,
@@ -202,6 +256,7 @@ def test_config_resolver_selects_post_nonlinear_sampler():
             "rho": [0, 0.2, 0.4],
             "class_probabilities": [0.2, 0.3, 0.5],
             "center_latent": False,
+            "function_type": "square",
         }
     )
     dgp = dgp_factory(n=30, k=2, ky=1, rng=np.random.default_rng(6))
@@ -213,3 +268,6 @@ def test_config_resolver_selects_post_nonlinear_sampler():
         dgp.latent_sampler.class_probabilities, [0.2, 0.3, 0.5]
     )
     assert dgp.latent_sampler.center_latent is False
+    assert dgp.latent_sampler.function_type == "square"
+    assert dgp.latent_sampler.nonlinear_functions_z.tolist() == ["square"] * 2
+    assert dgp.latent_sampler.nonlinear_functions_y.tolist() == ["square"]

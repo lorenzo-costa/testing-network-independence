@@ -3,6 +3,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from src import dgp
 from src.load_config import build_factorial_design, load_config
 
 
@@ -10,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.mark.parametrize(
-    "filename, experiment_type, setup_count, design_count, expected_rho",
+    "filename, experiment_type, setup_count, design_count, expected_rho, expected_npermutations",
     [
         (
             "config_conditioning_null.yaml",
@@ -18,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
             24,
             792,
             {0.0},
+            [400],
         ),
         (
             "config_conditional_copula.yaml",
@@ -25,18 +27,25 @@ ROOT = Path(__file__).resolve().parents[1]
             24,
             1944,
             {0.2},
+            [100],
         ),
         (
             "config_postlinearnoise.yaml",
             "post_nonlinear_noise",
             16,
-            144,
-            {0.2},
+            432,
+            {0.5},
+            [100],
         ),
     ],
 )
 def test_conditioning_power_configs_load_and_build_complete_designs(
-    filename, experiment_type, setup_count, design_count, expected_rho
+    filename,
+    experiment_type,
+    setup_count,
+    design_count,
+    expected_rho,
+    expected_npermutations,
 ):
     config = load_config(ROOT / filename)
     design = build_factorial_design(config)
@@ -48,9 +57,9 @@ def test_conditioning_power_configs_load_and_build_complete_designs(
     assert config["simulation"]["k"] == [3]
     assert config["simulation"]["ky"] == [1]
     assert set(config["simulation"]["rho"]) == expected_rho
-    assert config["simulation"]["alpha"] == [0.5]
+    assert config["simulation"]["alpha"] == [0.05]
     assert config["simulation"]["edge_var"] == [3]
-    assert config["methods"]["npermutations"] == [100]
+    assert config["methods"]["npermutations"] == expected_npermutations
     assert config["methods"]["use_true_latent"] == [False]
     assert len(config["setups"]) == setup_count
     assert len(design) == design_count
@@ -81,6 +90,7 @@ def test_conditional_copula_config_covers_requested_factorial_settings():
         "student_t",
         "clayton",
     }
+    assert all(entry["center_latent"] is False for entry in keywords)
     assert {entry["C"] for entry in keywords} == {2, 3}
     assert {
         tuple(np.asarray(entry["column_covariance"]).ravel()) for entry in keywords
@@ -96,10 +106,22 @@ def test_conditional_copula_config_covers_requested_factorial_settings():
 
 def test_postlinear_config_covers_requested_covariance_settings():
     config = load_config(ROOT / "config_postlinearnoise.yaml")
+    design = build_factorial_design(config)
     keywords = [factory.keywords for factory, _ in config["setups"]]
 
     assert "marginals" not in config["simulation"]
+    assert config["simulation"]["function_type"] == [
+        "identity",
+        "square",
+        "tanh",
+    ]
+    assert {row["function_type"] for row in design} == {
+        "identity",
+        "square",
+        "tanh",
+    }
     assert all(entry["post_nonlinear_noise"] is True for entry in keywords)
+    assert all(entry["center_latent"] is False for entry in keywords)
     assert {entry["C"] for entry in keywords} == {2, 3}
     assert len(
         {
@@ -138,6 +160,41 @@ def test_merged_null_config_partitions_sampler_specific_sweeps():
     } == {"gaussian"}
     assert all("marginals" in row for row in conditional_rows)
     assert all("marginals" not in row for row in post_nonlinear_rows)
+    assert all(
+        row["setup"][0].keywords["center_latent"] is False
+        for row in conditional_rows + post_nonlinear_rows
+    )
+    equicorrelated_z = np.full((3, 3), 0.5) + np.eye(3) * 0.5
+    equicorrelated_stratum = np.full((4, 4), 0.5) + np.eye(4) * 0.5
+    assert {
+        tuple(
+            np.asarray(row["setup"][0].keywords["column_covariance"]).ravel()
+        )
+        for row in conditional_rows
+    } == {
+        tuple(np.eye(3).ravel()),
+        tuple(equicorrelated_z.ravel()),
+    }
+    post_nonlinear_covariance_pairs = {
+        (
+            tuple(
+                np.asarray(
+                    row["setup"][0].keywords["column_covariance_z"]
+                ).ravel()
+            ),
+            tuple(
+                np.asarray(
+                    row["setup"][0].keywords["stratum_covariance"]
+                ).ravel()
+            ),
+        )
+        for row in post_nonlinear_rows
+    }
+    assert post_nonlinear_covariance_pairs == {
+        (tuple(column.ravel()), tuple(stratum.ravel()))
+        for column in (np.eye(3), equicorrelated_z)
+        for stratum in (np.eye(4), equicorrelated_stratum)
+    }
 
 
 @pytest.mark.parametrize(
@@ -159,8 +216,9 @@ def test_conditioning_config_representative_scenario_runs(filename):
         solver=solver,
         rng=np.random.default_rng(100),
     )
+    dgp = dgp_factory(**runtime)
+    data = dgp.generate()
 
-    data = dgp_factory(**runtime).generate()
     method = row["method"](**runtime)
     method.fit(data)
 
@@ -170,3 +228,5 @@ def test_conditioning_config_representative_scenario_runs(filename):
     assert data["X"].shape == (24, 1)
     assert np.isfinite(method.test_stat_estimate)
     assert len(method.permutation_distribution) == 2
+    if filename == "config_postlinearnoise.yaml":
+        assert dgp.latent_sampler.function_type == row["function_type"]

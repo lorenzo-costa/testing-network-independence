@@ -61,20 +61,24 @@ setup_templates:
     dgp: GaussianNetwork
     solver: ASE
     conditional_copula: gaussian
+    center_latent: false
   bernoulli_conditional_network: &bernoulli_conditional_network
     dgp: BernoulliNetwork
     solver: pgd_fit_wrapper
     rdpg: false
     conditional_copula: gaussian
+    center_latent: false
   gaussian_postlinear_network: &gaussian_postlinear_network
     dgp: GaussianNetwork
     solver: ASE
     post_nonlinear_noise: true
+    center_latent: false
   bernoulli_postlinear_network: &bernoulli_postlinear_network
     dgp: BernoulliNetwork
     solver: pgd_fit_wrapper
     rdpg: false
     post_nonlinear_noise: true
+    center_latent: false
 
 setups:
   # Gaussian conditional-copula null setups

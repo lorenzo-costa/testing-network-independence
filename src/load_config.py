@@ -119,6 +119,7 @@ def _resolve_copula_setup(entry: dict):
         "class_probabilities",
         "p",
         "center_latent",
+        "function_type",
         "error_covariance",
         "stratum_covariance",
         "column_covariance_z",
@@ -592,6 +593,9 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
         if mth["use_true_latent"] is not None:
             names.append("use_true_latent")
             vals.append(mth["use_true_latent"])
+        if "function_type" in sim:
+            names.append("function_type")
+            vals.append(sim["function_type"])
         rows = [dict(zip(names, v)) for v in iproduct(*vals)]
         for row in rows:
             functional = row.pop("_functional", None)

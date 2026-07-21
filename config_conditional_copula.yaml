@@ -52,31 +52,37 @@ setup_templates:
     dgp: GaussianNetwork
     solver: ASE
     conditional_copula: gaussian
+    center_latent: false
   gaussian_network_student_t: &gaussian_network_student_t
     dgp: GaussianNetwork
     solver: ASE
     conditional_copula: student_t
+    center_latent: false
     df: 3
   gaussian_network_clayton: &gaussian_network_clayton
     dgp: GaussianNetwork
     solver: ASE
     conditional_copula: clayton
+    center_latent: false
   bernoulli_network_gaussian: &bernoulli_network_gaussian
     dgp: BernoulliNetwork
     solver: pgd_fit_wrapper
     rdpg: false
     conditional_copula: gaussian
+    center_latent: false
   bernoulli_network_student_t: &bernoulli_network_student_t
     dgp: BernoulliNetwork
     solver: pgd_fit_wrapper
     rdpg: false
     conditional_copula: student_t
+    center_latent: false
     df: 3
   bernoulli_network_clayton: &bernoulli_network_clayton
     dgp: BernoulliNetwork
     solver: pgd_fit_wrapper
     rdpg: false
     conditional_copula: clayton
+    center_latent: false
 
 setups:
   # Gaussian weighted networks

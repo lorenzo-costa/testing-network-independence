@@ -11,9 +11,11 @@ class PostNonLinearNoiseSampler:
 
     The categorical variable ``X`` is sampled first.  Each category has an
     independently drawn joint effect ``(a_c, b_c)``.  Gaussian errors are then
-    added and one randomly selected coordinate-wise nonlinear function is
-    applied to each output coordinate.  The selected functions are fixed for
-    the complete generated data set.
+    added and a coordinate-wise nonlinear function is applied to each output
+    coordinate.  ``function_type="random"`` selects functions independently
+    by coordinate; a named function applies the same transformation to every
+    coordinate.  The selected functions are fixed for the complete generated
+    data set.
 
     Parameters
     ----------
@@ -49,6 +51,11 @@ class PostNonLinearNoiseSampler:
     center_latent : bool, default=True
         Center every coordinate of ``Z`` and ``Y`` within each sampled stratum
         after applying the nonlinear functions.
+    function_type : {"random", "identity", "square", "tanh", "exp_neg_square"}, default="random"
+        Nonlinear transformation applied to ``Z`` and ``Y``.  ``"random"``
+        samples one of the four named transformations independently for each
+        coordinate.  Any other accepted value applies that transformation to
+        every coordinate.
     rng : numpy.random.Generator, optional
         Random number generator.
     """
@@ -71,6 +78,7 @@ class PostNonLinearNoiseSampler:
         class_probabilities=None,
         p=None,
         center_latent=True,
+        function_type="random",
         rng=None,
         **kwargs,
     ):
@@ -86,6 +94,7 @@ class PostNonLinearNoiseSampler:
         self.dimension = self.k + self.ky
         self.rng = rng if rng is not None else np.random.default_rng()
         self.center_latent = bool(center_latent)
+        self.function_type = self._normalize_function_type(function_type)
 
         if class_probabilities is not None and p is not None:
             raise ValueError("Specify only one of class_probabilities or p.")
@@ -160,6 +169,19 @@ class PostNonLinearNoiseSampler:
         if not isinstance(value, Integral) or isinstance(value, bool) or value < 1:
             raise ValueError(f"{name} must be a positive integer.")
         return int(value)
+
+    @classmethod
+    def _normalize_function_type(cls, function_type):
+        if not isinstance(function_type, str):
+            raise TypeError("function_type must be a string.")
+        function_type = function_type.strip().lower()
+        choices = ("random",) + cls._FUNCTION_NAMES
+        if function_type not in choices:
+            available = ", ".join(choices)
+            raise ValueError(
+                f"Unknown function_type {function_type!r}. Available: {available}."
+            )
+        return function_type
 
     def _normalize_probabilities(self, probabilities):
         if probabilities is None:
@@ -253,12 +275,21 @@ class PostNonLinearNoiseSampler:
 
     def _apply_random_functions(self, values):
         names = self.rng.choice(self._FUNCTION_NAMES, size=values.shape[1])
+        return self._apply_named_functions(values, names)
+
+    def _apply_named_functions(self, values, names):
         transformed = np.empty_like(values, dtype=float)
         for coordinate, name in enumerate(names):
             transformed[:, coordinate] = self._apply_function(
                 values[:, coordinate], name
             )
-        return transformed, names
+        return transformed, np.asarray(names)
+
+    def _apply_functions(self, values):
+        if self.function_type == "random":
+            return self._apply_random_functions(values)
+        names = np.full(values.shape[1], self.function_type)
+        return self._apply_named_functions(values, names)
 
     def sample_latent(self):
         """Return ``Z``, ``Y``, and categorical ``X`` with shape ``(n, 1)``."""
@@ -288,8 +319,8 @@ class PostNonLinearNoiseSampler:
             )
             raw[mask] = effects[stratum] + errors
 
-        Z, functions_z = self._apply_random_functions(raw[:, : self.k])
-        Y, functions_y = self._apply_random_functions(raw[:, self.k :])
+        Z, functions_z = self._apply_functions(raw[:, : self.k])
+        Y, functions_y = self._apply_functions(raw[:, self.k :])
 
         if self.center_latent:
             for stratum in range(self.C):
