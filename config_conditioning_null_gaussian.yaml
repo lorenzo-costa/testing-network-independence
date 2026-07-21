@@ -27,15 +27,17 @@ methods:
   df: [3]
   use_true_latent: [false]
   list:
-    - name: MultivariateACTest
-      kwargs:
-        M: 1
-    - name: MultivariateACTest
-      kwargs:
-        M: sqrt
-    - name: MultivariateACTest
-      kwargs:
-        M: half
+    # - name: MultivariateACTest
+    #   kwargs:
+    #     M: 1
+    # - name: MultivariateACTest
+    #   kwargs:
+    #     M: sqrt
+    # - name: MultivariateACTest
+    #   kwargs:
+    #     M: half
+    - name: DiffusionCorrelation
+      kwargs: {}
 
 covariances:
   identity_z: &identity_z
@@ -71,18 +73,18 @@ setup_templates:
 
 setups:
   # Conditional-copula null setups
-  - <<: *conditional_network
-    C: 2
-    column_covariance: *identity_z
-  - <<: *conditional_network
-    C: 2
-    column_covariance: *equicorrelated_z
-  - <<: *conditional_network
-    C: 3
-    column_covariance: *identity_z
-  - <<: *conditional_network
-    C: 3
-    column_covariance: *equicorrelated_z
+  # - <<: *conditional_network
+  #   C: 2
+  #   column_covariance: *identity_z
+  # - <<: *conditional_network
+  #   C: 2
+  #   column_covariance: *equicorrelated_z
+  # - <<: *conditional_network
+  #   C: 3
+  #   column_covariance: *identity_z
+  # - <<: *conditional_network
+  #   C: 3
+  #   column_covariance: *equicorrelated_z
 
   # Post-nonlinear-noise null setups
   - <<: *postlinear_network
