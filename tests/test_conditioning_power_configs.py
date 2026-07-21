@@ -14,47 +14,29 @@ ROOT = Path(__file__).resolve().parents[1]
     "filename, experiment_type, setup_count, design_count, expected_nsim, expected_rho, expected_npermutations",
     [
         (
-            "config_conditioning_null.yaml",
-            "conditioning_mixed",
-            8,
-            360,
-            1,
-            {0.0},
-            [100],
-        ),
-        (
             "config_conditioning_null_gaussian.yaml",
             "conditioning_mixed",
-            4,
-            180,
-            1,
+            12,
+            396,
+            50,
             {0.0},
-            [100],
+            [300],
         ),
         (
             "config_conditioning_null_bernoulli.yaml",
             "conditioning_mixed",
-            4,
-            180,
-            1,
+            12,
+            396,
+            50,
             {0.0},
-            [100],
-        ),
-        (
-            "config_conditional_copula.yaml",
-            "conditional_copula",
-            24,
-            1944,
-            1,
-            {0.2},
-            [100],
+            [300],
         ),
         (
             "config_conditional_copula_gaussian.yaml",
             "conditional_copula",
             12,
             972,
-            1,
+            100,
             {0.2},
             [100],
         ),
@@ -63,17 +45,8 @@ ROOT = Path(__file__).resolve().parents[1]
             "conditional_copula",
             12,
             972,
-            1,
+            100,
             {0.2},
-            [100],
-        ),
-        (
-            "config_postlinearnoise.yaml",
-            "post_nonlinear_noise",
-            16,
-            432,
-            50,
-            {0.5},
             [100],
         ),
         (
@@ -81,7 +54,7 @@ ROOT = Path(__file__).resolve().parents[1]
             "post_nonlinear_noise",
             8,
             216,
-            50,
+            100,
             {0.5},
             [100],
         ),
@@ -90,7 +63,7 @@ ROOT = Path(__file__).resolve().parents[1]
             "post_nonlinear_noise",
             8,
             216,
-            50,
+            100,
             {0.5},
             [100],
         ),
@@ -129,8 +102,15 @@ def test_conditioning_power_configs_load_and_build_complete_designs(
     }
 
 
-def test_conditional_copula_config_covers_requested_factorial_settings():
-    config = load_config(ROOT / "config_conditional_copula.yaml")
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "config_conditional_copula_gaussian.yaml",
+        "config_conditional_copula_bernoulli.yaml",
+    ],
+)
+def test_conditional_copula_config_covers_requested_factorial_settings(filename):
+    config = load_config(ROOT / filename)
     keywords = [factory.keywords for factory, _ in config["setups"]]
 
     assert config["simulation"]["marginals_z"] == [
@@ -162,8 +142,15 @@ def test_conditional_copula_config_covers_requested_factorial_settings():
     assert all(entry["copula_params"] == {"df": 3} for entry in student_entries)
 
 
-def test_postlinear_config_covers_requested_covariance_settings():
-    config = load_config(ROOT / "config_postlinearnoise.yaml")
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "config_postlinearnoise_gaussian.yaml",
+        "config_postlinearnoise_bernoulli.yaml",
+    ],
+)
+def test_postlinear_config_covers_requested_covariance_settings(filename):
+    config = load_config(ROOT / filename)
     design = build_factorial_design(config)
     keywords = [factory.keywords for factory, _ in config["setups"]]
 
@@ -195,8 +182,15 @@ def test_postlinear_config_covers_requested_covariance_settings():
     ) == 2
 
 
-def test_merged_null_config_partitions_sampler_specific_sweeps():
-    config = load_config(ROOT / "config_conditioning_null.yaml")
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "config_conditioning_null_gaussian.yaml",
+        "config_conditioning_null_bernoulli.yaml",
+    ],
+)
+def test_null_configs_partition_sampler_specific_sweeps(filename):
+    config = load_config(ROOT / filename)
     design = build_factorial_design(config)
     conditional_rows = [
         row
@@ -210,8 +204,10 @@ def test_merged_null_config_partitions_sampler_specific_sweeps():
     ]
 
     assert len(conditional_rows) == 324
-    assert len(post_nonlinear_rows) == 36
+    assert len(post_nonlinear_rows) == 72
     assert all(row["rho"] == 0.0 for row in design)
+    equicorrelated_z = np.full((3, 3), 0.5) + np.eye(3) * 0.5
+    equicorrelated_stratum = np.full((4, 4), 0.5) + np.eye(4) * 0.5
     assert {
         row["setup"][0].keywords["conditional_copula"]
         for row in conditional_rows
@@ -229,6 +225,7 @@ def test_merged_null_config_partitions_sampler_specific_sweeps():
         for row in conditional_rows
     } == {
         tuple(np.eye(3).ravel()),
+        tuple(equicorrelated_z.ravel()),
     }
     post_nonlinear_covariance_pairs = {
         (
@@ -246,7 +243,9 @@ def test_merged_null_config_partitions_sampler_specific_sweeps():
         for row in post_nonlinear_rows
     }
     assert post_nonlinear_covariance_pairs == {
-        (tuple(np.eye(3).ravel()), tuple(np.eye(4).ravel()))
+        (tuple(column.ravel()), tuple(stratum.ravel()))
+        for column in (np.eye(3), equicorrelated_z)
+        for stratum in (np.eye(4), equicorrelated_stratum)
     }
 
 
@@ -281,9 +280,9 @@ def test_split_null_configs_select_one_network_type(
         if row["setup"][0].keywords.get("post_nonlinear_noise") is not None
     ]
 
-    assert len(config["setups"]) == 4
-    assert len(conditional_rows) == 162
-    assert len(post_nonlinear_rows) == 18
+    assert len(config["setups"]) == 12
+    assert len(conditional_rows) == 324
+    assert len(post_nonlinear_rows) == 72
     assert all(factory.func is expected_dgp for factory, _ in config["setups"])
     assert config["output"]["file_prefix"] == expected_prefix
 
@@ -335,13 +334,10 @@ def test_split_alternative_configs_select_one_network_type(
 @pytest.mark.parametrize(
     "filename",
     [
-        "config_conditioning_null.yaml",
         "config_conditioning_null_gaussian.yaml",
         "config_conditioning_null_bernoulli.yaml",
-        "config_conditional_copula.yaml",
         "config_conditional_copula_gaussian.yaml",
         "config_conditional_copula_bernoulli.yaml",
-        "config_postlinearnoise.yaml",
         "config_postlinearnoise_gaussian.yaml",
         "config_postlinearnoise_bernoulli.yaml",
     ],

@@ -42,11 +42,20 @@ covariances:
     - [1.0, 0.0, 0.0]
     - [0.0, 1.0, 0.0]
     - [0.0, 0.0, 1.0]
+  equicorrelated_z: &equicorrelated_z
+    - [1.0, 0.5, 0.5]
+    - [0.5, 1.0, 0.5]
+    - [0.5, 0.5, 1.0]
   identity_stratum: &identity_stratum
     - [1.0, 0.0, 0.0, 0.0]
     - [0.0, 1.0, 0.0, 0.0]
     - [0.0, 0.0, 1.0, 0.0]
     - [0.0, 0.0, 0.0, 1.0]
+  equicorrelated_stratum: &equicorrelated_stratum
+    - [1.0, 0.5, 0.5, 0.5]
+    - [0.5, 1.0, 0.5, 0.5]
+    - [0.5, 0.5, 1.0, 0.5]
+    - [0.5, 0.5, 0.5, 1.0]
 
 setup_templates:
   conditional_network: &conditional_network
@@ -68,8 +77,14 @@ setups:
     C: 2
     column_covariance: *identity_z
   - <<: *conditional_network
+    C: 2
+    column_covariance: *equicorrelated_z
+  - <<: *conditional_network
     C: 3
     column_covariance: *identity_z
+  - <<: *conditional_network
+    C: 3
+    column_covariance: *equicorrelated_z
 
   # Post-nonlinear-noise null setups
   - <<: *postlinear_network
@@ -77,9 +92,33 @@ setups:
     column_covariance_z: *identity_z
     stratum_covariance: *identity_stratum
   - <<: *postlinear_network
+    C: 2
+    column_covariance_z: *identity_z
+    stratum_covariance: *equicorrelated_stratum
+  - <<: *postlinear_network
+    C: 2
+    column_covariance_z: *equicorrelated_z
+    stratum_covariance: *identity_stratum
+  - <<: *postlinear_network
+    C: 2
+    column_covariance_z: *equicorrelated_z
+    stratum_covariance: *equicorrelated_stratum
+  - <<: *postlinear_network
     C: 3
     column_covariance_z: *identity_z
     stratum_covariance: *identity_stratum
+  - <<: *postlinear_network
+    C: 3
+    column_covariance_z: *identity_z
+    stratum_covariance: *equicorrelated_stratum
+  - <<: *postlinear_network
+    C: 3
+    column_covariance_z: *equicorrelated_z
+    stratum_covariance: *identity_stratum
+  - <<: *postlinear_network
+    C: 3
+    column_covariance_z: *equicorrelated_z
+    stratum_covariance: *equicorrelated_stratum
 
 metrics:
   compute_all: true
