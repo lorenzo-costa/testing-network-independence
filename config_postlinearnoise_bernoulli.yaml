@@ -1,0 +1,99 @@
+# Alternative-hypothesis post-nonlinear-noise study for Bernoulli networks.
+
+simulation:
+  nsim: 50
+  seed: 1
+  n: [100, 300, 500]
+  k: [3]
+  ky: [1]
+  rho: [0.5]
+  alpha: [0.05]
+  edge_var: [3]
+  function_type:
+    - identity
+    - square
+    - tanh
+
+methods:
+  npermutations: [100]
+  df: [3]
+  use_true_latent: [false]
+  list:
+    - name: MultivariateACTest
+      kwargs:
+        M: 1
+    - name: MultivariateACTest
+      kwargs:
+        M: sqrt
+    - name: MultivariateACTest
+      kwargs:
+        M: half
+
+covariances:
+  identity_z: &identity_z
+    - [1.0, 0.0, 0.0]
+    - [0.0, 1.0, 0.0]
+    - [0.0, 0.0, 1.0]
+  equicorrelated_z: &equicorrelated_z
+    - [1.0, 0.5, 0.5]
+    - [0.5, 1.0, 0.5]
+    - [0.5, 0.5, 1.0]
+  identity_stratum: &identity_stratum
+    - [1.0, 0.0, 0.0, 0.0]
+    - [0.0, 1.0, 0.0, 0.0]
+    - [0.0, 0.0, 1.0, 0.0]
+    - [0.0, 0.0, 0.0, 1.0]
+  equicorrelated_stratum: &equicorrelated_stratum
+    - [1.0, 0.5, 0.5, 0.5]
+    - [0.5, 1.0, 0.5, 0.5]
+    - [0.5, 0.5, 1.0, 0.5]
+    - [0.5, 0.5, 0.5, 1.0]
+
+setup_templates:
+  bernoulli_network: &bernoulli_network
+    dgp: BernoulliNetwork
+    solver: pgd_fit_wrapper
+    rdpg: false
+    post_nonlinear_noise: true
+    center_latent: false
+
+setups:
+  - <<: *bernoulli_network
+    C: 2
+    column_covariance_z: *identity_z
+    stratum_covariance: *identity_stratum
+  - <<: *bernoulli_network
+    C: 2
+    column_covariance_z: *identity_z
+    stratum_covariance: *equicorrelated_stratum
+  - <<: *bernoulli_network
+    C: 2
+    column_covariance_z: *equicorrelated_z
+    stratum_covariance: *identity_stratum
+  - <<: *bernoulli_network
+    C: 2
+    column_covariance_z: *equicorrelated_z
+    stratum_covariance: *equicorrelated_stratum
+  - <<: *bernoulli_network
+    C: 3
+    column_covariance_z: *identity_z
+    stratum_covariance: *identity_stratum
+  - <<: *bernoulli_network
+    C: 3
+    column_covariance_z: *identity_z
+    stratum_covariance: *equicorrelated_stratum
+  - <<: *bernoulli_network
+    C: 3
+    column_covariance_z: *equicorrelated_z
+    stratum_covariance: *identity_stratum
+  - <<: *bernoulli_network
+    C: 3
+    column_covariance_z: *equicorrelated_z
+    stratum_covariance: *equicorrelated_stratum
+
+metrics:
+  compute_all: true
+
+output:
+  results_dir: results
+  file_prefix: postlinearnoise_ac_power_alternative_bernoulli

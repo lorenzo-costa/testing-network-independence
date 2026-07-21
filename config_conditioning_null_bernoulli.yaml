@@ -1,0 +1,89 @@
+# Conditional-independence null study for Bernoulli networks.
+# Includes both conditional-copula and post-nonlinear-noise latent samplers.
+
+simulation:
+  nsim: 50
+  seed: 1
+  n: [100, 300, 500]
+  k: [3]
+  ky: [1]
+  rho: [0.0]
+  alpha: [0.05]
+  edge_var: [3]
+
+  # These marginal sweeps apply only to the conditional-copula setups below.
+  marginals_z:
+    - gaussian
+    - "uniform -1 1"
+    - "chi 5"
+
+  marginals_y:
+    - gaussian
+    - cauchy
+    - "chi 5"
+
+methods:
+  npermutations: [100]
+  df: [3]
+  use_true_latent: [false]
+  list:
+    - name: MultivariateACTest
+      kwargs:
+        M: 1
+    - name: MultivariateACTest
+      kwargs:
+        M: sqrt
+    - name: MultivariateACTest
+      kwargs:
+        M: half
+
+covariances:
+  identity_z: &identity_z
+    - [1.0, 0.0, 0.0]
+    - [0.0, 1.0, 0.0]
+    - [0.0, 0.0, 1.0]
+  identity_stratum: &identity_stratum
+    - [1.0, 0.0, 0.0, 0.0]
+    - [0.0, 1.0, 0.0, 0.0]
+    - [0.0, 0.0, 1.0, 0.0]
+    - [0.0, 0.0, 0.0, 1.0]
+
+setup_templates:
+  conditional_network: &conditional_network
+    dgp: BernoulliNetwork
+    solver: pgd_fit_wrapper
+    rdpg: false
+    conditional_copula: gaussian
+    center_latent: false
+  postlinear_network: &postlinear_network
+    dgp: BernoulliNetwork
+    solver: pgd_fit_wrapper
+    rdpg: false
+    post_nonlinear_noise: true
+    center_latent: false
+
+setups:
+  # Conditional-copula null setups
+  - <<: *conditional_network
+    C: 2
+    column_covariance: *identity_z
+  - <<: *conditional_network
+    C: 3
+    column_covariance: *identity_z
+
+  # Post-nonlinear-noise null setups
+  - <<: *postlinear_network
+    C: 2
+    column_covariance_z: *identity_z
+    stratum_covariance: *identity_stratum
+  - <<: *postlinear_network
+    C: 3
+    column_covariance_z: *identity_z
+    stratum_covariance: *identity_stratum
+
+metrics:
+  compute_all: true
+
+output:
+  results_dir: results
+  file_prefix: conditioning_ac_null_bernoulli

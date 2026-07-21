@@ -11,21 +11,59 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.mark.parametrize(
-    "filename, experiment_type, setup_count, design_count, expected_rho, expected_npermutations",
+    "filename, experiment_type, setup_count, design_count, expected_nsim, expected_rho, expected_npermutations",
     [
         (
             "config_conditioning_null.yaml",
             "conditioning_mixed",
-            24,
-            792,
+            8,
+            360,
+            1,
             {0.0},
-            [400],
+            [100],
+        ),
+        (
+            "config_conditioning_null_gaussian.yaml",
+            "conditioning_mixed",
+            4,
+            180,
+            1,
+            {0.0},
+            [100],
+        ),
+        (
+            "config_conditioning_null_bernoulli.yaml",
+            "conditioning_mixed",
+            4,
+            180,
+            1,
+            {0.0},
+            [100],
         ),
         (
             "config_conditional_copula.yaml",
             "conditional_copula",
             24,
             1944,
+            1,
+            {0.2},
+            [100],
+        ),
+        (
+            "config_conditional_copula_gaussian.yaml",
+            "conditional_copula",
+            12,
+            972,
+            1,
+            {0.2},
+            [100],
+        ),
+        (
+            "config_conditional_copula_bernoulli.yaml",
+            "conditional_copula",
+            12,
+            972,
+            1,
             {0.2},
             [100],
         ),
@@ -34,6 +72,25 @@ ROOT = Path(__file__).resolve().parents[1]
             "post_nonlinear_noise",
             16,
             432,
+            50,
+            {0.5},
+            [100],
+        ),
+        (
+            "config_postlinearnoise_gaussian.yaml",
+            "post_nonlinear_noise",
+            8,
+            216,
+            50,
+            {0.5},
+            [100],
+        ),
+        (
+            "config_postlinearnoise_bernoulli.yaml",
+            "post_nonlinear_noise",
+            8,
+            216,
+            50,
             {0.5},
             [100],
         ),
@@ -44,6 +101,7 @@ def test_conditioning_power_configs_load_and_build_complete_designs(
     experiment_type,
     setup_count,
     design_count,
+    expected_nsim,
     expected_rho,
     expected_npermutations,
 ):
@@ -51,7 +109,7 @@ def test_conditioning_power_configs_load_and_build_complete_designs(
     design = build_factorial_design(config)
 
     assert config["experiment_type"] == experiment_type
-    assert config["simulation"]["nsim"] == 100
+    assert config["simulation"]["nsim"] == expected_nsim
     assert config["simulation"]["seed"] == 1
     assert config["simulation"]["n"] == [100, 300, 500]
     assert config["simulation"]["k"] == [3]
@@ -151,8 +209,8 @@ def test_merged_null_config_partitions_sampler_specific_sweeps():
         if row["setup"][0].keywords.get("post_nonlinear_noise") is not None
     ]
 
-    assert len(conditional_rows) == 648
-    assert len(post_nonlinear_rows) == 144
+    assert len(conditional_rows) == 324
+    assert len(post_nonlinear_rows) == 36
     assert all(row["rho"] == 0.0 for row in design)
     assert {
         row["setup"][0].keywords["conditional_copula"]
@@ -164,8 +222,6 @@ def test_merged_null_config_partitions_sampler_specific_sweeps():
         row["setup"][0].keywords["center_latent"] is False
         for row in conditional_rows + post_nonlinear_rows
     )
-    equicorrelated_z = np.full((3, 3), 0.5) + np.eye(3) * 0.5
-    equicorrelated_stratum = np.full((4, 4), 0.5) + np.eye(4) * 0.5
     assert {
         tuple(
             np.asarray(row["setup"][0].keywords["column_covariance"]).ravel()
@@ -173,7 +229,6 @@ def test_merged_null_config_partitions_sampler_specific_sweeps():
         for row in conditional_rows
     } == {
         tuple(np.eye(3).ravel()),
-        tuple(equicorrelated_z.ravel()),
     }
     post_nonlinear_covariance_pairs = {
         (
@@ -191,18 +246,104 @@ def test_merged_null_config_partitions_sampler_specific_sweeps():
         for row in post_nonlinear_rows
     }
     assert post_nonlinear_covariance_pairs == {
-        (tuple(column.ravel()), tuple(stratum.ravel()))
-        for column in (np.eye(3), equicorrelated_z)
-        for stratum in (np.eye(4), equicorrelated_stratum)
+        (tuple(np.eye(3).ravel()), tuple(np.eye(4).ravel()))
     }
+
+
+@pytest.mark.parametrize(
+    "filename, expected_dgp, expected_prefix",
+    [
+        (
+            "config_conditioning_null_gaussian.yaml",
+            dgp.GaussianNetwork,
+            "conditioning_ac_null_gaussian",
+        ),
+        (
+            "config_conditioning_null_bernoulli.yaml",
+            dgp.BernoulliNetwork,
+            "conditioning_ac_null_bernoulli",
+        ),
+    ],
+)
+def test_split_null_configs_select_one_network_type(
+    filename, expected_dgp, expected_prefix
+):
+    config = load_config(ROOT / filename)
+    design = build_factorial_design(config)
+    conditional_rows = [
+        row
+        for row in design
+        if row["setup"][0].keywords.get("conditional_copula") is not None
+    ]
+    post_nonlinear_rows = [
+        row
+        for row in design
+        if row["setup"][0].keywords.get("post_nonlinear_noise") is not None
+    ]
+
+    assert len(config["setups"]) == 4
+    assert len(conditional_rows) == 162
+    assert len(post_nonlinear_rows) == 18
+    assert all(factory.func is expected_dgp for factory, _ in config["setups"])
+    assert config["output"]["file_prefix"] == expected_prefix
+
+
+@pytest.mark.parametrize(
+    "filename, expected_dgp, setup_count, design_count, expected_prefix",
+    [
+        (
+            "config_conditional_copula_gaussian.yaml",
+            dgp.GaussianNetwork,
+            12,
+            972,
+            "conditional_copula_ac_power_alternative_gaussian",
+        ),
+        (
+            "config_conditional_copula_bernoulli.yaml",
+            dgp.BernoulliNetwork,
+            12,
+            972,
+            "conditional_copula_ac_power_alternative_bernoulli",
+        ),
+        (
+            "config_postlinearnoise_gaussian.yaml",
+            dgp.GaussianNetwork,
+            8,
+            216,
+            "postlinearnoise_ac_power_alternative_gaussian",
+        ),
+        (
+            "config_postlinearnoise_bernoulli.yaml",
+            dgp.BernoulliNetwork,
+            8,
+            216,
+            "postlinearnoise_ac_power_alternative_bernoulli",
+        ),
+    ],
+)
+def test_split_alternative_configs_select_one_network_type(
+    filename, expected_dgp, setup_count, design_count, expected_prefix
+):
+    config = load_config(ROOT / filename)
+
+    assert len(config["setups"]) == setup_count
+    assert len(build_factorial_design(config)) == design_count
+    assert all(factory.func is expected_dgp for factory, _ in config["setups"])
+    assert config["output"]["file_prefix"] == expected_prefix
 
 
 @pytest.mark.parametrize(
     "filename",
     [
         "config_conditioning_null.yaml",
+        "config_conditioning_null_gaussian.yaml",
+        "config_conditioning_null_bernoulli.yaml",
         "config_conditional_copula.yaml",
+        "config_conditional_copula_gaussian.yaml",
+        "config_conditional_copula_bernoulli.yaml",
         "config_postlinearnoise.yaml",
+        "config_postlinearnoise_gaussian.yaml",
+        "config_postlinearnoise_bernoulli.yaml",
     ],
 )
 def test_conditioning_config_representative_scenario_runs(filename):
@@ -228,5 +369,5 @@ def test_conditioning_config_representative_scenario_runs(filename):
     assert data["X"].shape == (24, 1)
     assert np.isfinite(method.test_stat_estimate)
     assert len(method.permutation_distribution) == 2
-    if filename == "config_postlinearnoise.yaml":
+    if dgp_factory.keywords.get("post_nonlinear_noise") is not None:
         assert dgp.latent_sampler.function_type == row["function_type"]

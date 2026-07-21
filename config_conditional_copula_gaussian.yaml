@@ -1,0 +1,111 @@
+# Alternative-hypothesis conditional-copula study for Gaussian weighted networks.
+
+simulation:
+  nsim: 50
+  seed: 1
+  n: [100, 300, 500]
+  k: [3]
+  ky: [1]
+  rho: [0.2]
+  alpha: [0.05]
+  edge_var: [3]
+
+  marginals_z:
+    - gaussian
+    - "uniform -1 1"
+    - "chi 5"
+
+  marginals_y:
+    - gaussian
+    - cauchy
+    - "chi 5"
+
+methods:
+  npermutations: [100]
+  df: [3]
+  use_true_latent: [false]
+  list:
+    - name: MultivariateACTest
+      kwargs:
+        M: 1
+    - name: MultivariateACTest
+      kwargs:
+        M: sqrt
+    - name: MultivariateACTest
+      kwargs:
+        M: half
+
+covariances:
+  identity_z: &identity_z
+    - [1.0, 0.0, 0.0]
+    - [0.0, 1.0, 0.0]
+    - [0.0, 0.0, 1.0]
+  equicorrelated_z: &equicorrelated_z
+    - [1.0, 0.5, 0.5]
+    - [0.5, 1.0, 0.5]
+    - [0.5, 0.5, 1.0]
+
+setup_templates:
+  gaussian_copula: &gaussian_copula
+    dgp: GaussianNetwork
+    solver: ASE
+    conditional_copula: gaussian
+    center_latent: false
+  student_t_copula: &student_t_copula
+    dgp: GaussianNetwork
+    solver: ASE
+    conditional_copula: student_t
+    center_latent: false
+    df: 3
+  clayton_copula: &clayton_copula
+    dgp: GaussianNetwork
+    solver: ASE
+    conditional_copula: clayton
+    center_latent: false
+
+setups:
+  - <<: *gaussian_copula
+    C: 2
+    column_covariance: *identity_z
+  - <<: *gaussian_copula
+    C: 2
+    column_covariance: *equicorrelated_z
+  - <<: *gaussian_copula
+    C: 3
+    column_covariance: *identity_z
+  - <<: *gaussian_copula
+    C: 3
+    column_covariance: *equicorrelated_z
+
+  - <<: *student_t_copula
+    C: 2
+    column_covariance: *identity_z
+  - <<: *student_t_copula
+    C: 2
+    column_covariance: *equicorrelated_z
+  - <<: *student_t_copula
+    C: 3
+    column_covariance: *identity_z
+  - <<: *student_t_copula
+    C: 3
+    column_covariance: *equicorrelated_z
+
+  - <<: *clayton_copula
+    C: 2
+    column_covariance: *identity_z
+  - <<: *clayton_copula
+    C: 2
+    column_covariance: *equicorrelated_z
+  - <<: *clayton_copula
+    C: 3
+    column_covariance: *identity_z
+  - <<: *clayton_copula
+    C: 3
+    column_covariance: *equicorrelated_z
+
+metrics:
+  compute_all: true
+
+output:
+  results_dir: results
+  file_prefix: conditional_copula_ac_power_alternative_gaussian
