@@ -1,6 +1,7 @@
 from .ac_test import EstimateAC, MultivariateACTest
 from .cca_test import CanonicalCorrelationTest
 from .distance_correlation_test import DistanceCorrelationTest
+from .QAP import MRQAP, QAP
 from .rv_test import EstimateRV, RVTest
 
 __all__ = [
@@ -8,6 +9,8 @@ __all__ = [
     "MultivariateACTest",
     "CanonicalCorrelationTest",
     "DistanceCorrelationTest",
+    "MRQAP",
+    "QAP",
     "EstimateRV",
     "RVTest",
 ]

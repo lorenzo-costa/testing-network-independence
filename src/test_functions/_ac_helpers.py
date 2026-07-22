@@ -327,6 +327,8 @@ def _validate_m(M: int, n: int) -> int:
             M = int(n / 3)
         elif M.lower() == "quarter":
             M = int(n / 4)
+        elif M.lower() == "minus_one":
+            M = int(n - 1)
         else:
             raise ValueError("M must be a positive integer or 'sqrt' or 'log'.")
     elif isinstance(M, (int, np.integer)):

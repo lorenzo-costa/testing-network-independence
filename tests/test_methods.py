@@ -10,6 +10,8 @@ def test_methods_package_exports_public_components():
         "MultivariateACTest",
         "CanonicalCorrelationTest",
         "DistanceCorrelationTest",
+        "MRQAP",
+        "QAP",
         "EstimateRV",
         "RVTest",
     }

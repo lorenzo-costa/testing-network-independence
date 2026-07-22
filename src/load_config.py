@@ -55,6 +55,7 @@ METHOD_REGISTRY = {
     "DiffusionCorrelation": DistanceCorrelationTest,
     "MultivariateACTest": MultivariateACTest,
     "CanonicalCorrelation": CanonicalCorrelationTest,
+    "MRQAP": MRQAP,
 }
 
 # Latent-sim shapes that do NOT accept sim_kwargs={'noise': True}

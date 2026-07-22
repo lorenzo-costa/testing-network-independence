@@ -15,11 +15,34 @@ class BaseMetric:
 
 
 class ReturnMetric(BaseMetric):
+    def __init__(self, only_return=None):
+        super().__init__()
+        self.only_return = only_return
+        
     def __call__(self, results, is_null=None):
         estimated = results["estimated_latent"]
         truth = results["true_latent"]
         test_stat = results.get("test_stat", None)
         p_value = results.get("p-value", None)
+        only_return = self.only_return
+        
+        if only_return is not None:
+            if only_return == "estimated":
+                return estimated
+            elif only_return == "truth":
+                return truth
+            elif only_return == "Y":
+                return results.get("observed_Y")
+            elif only_return == "X":
+                return results.get("conditioning_X")
+            elif only_return == "test_stat":
+                return test_stat
+            elif only_return == "p-value":
+                return p_value
+            elif only_return == "is_null":
+                return is_null
+            else:
+                raise ValueError(f"Invalid value for 'only_return': {only_return}")
         return {
             "estimated": estimated,
             "truth": truth,

@@ -137,6 +137,7 @@ def plot_with_bands(x_axis, y_axis, **kwargs):
     linestyles = kwargs.pop("linestyles", None)
     hline = kwargs.pop("hline", None)
     hline_name = kwargs.pop("hline_name", "Reference Line")
+    marker = kwargs.pop("marker", "o")
 
     ax = plt.gca()
     hue_variable = factors[0] if factors is not None and len(factors) >= 1 else None
@@ -154,7 +155,7 @@ def plot_with_bands(x_axis, y_axis, **kwargs):
             line = ax.plot(
                 subset[x_axis],
                 subset[y_axis],
-                marker="o",
+                marker=marker,
                 linestyle=linestyles,
                 color=color,
                 label=hue_var,
@@ -173,7 +174,7 @@ def plot_with_bands(x_axis, y_axis, **kwargs):
         # assume single line
         subset = data.sort_values(x_axis)
         line = ax.plot(
-            subset[x_axis], subset[y_axis], marker="o", linestyle="-", label=None
+            subset[x_axis], subset[y_axis], marker=marker, linestyle="-", label=None
         )
         color = line[0].get_color()
 
