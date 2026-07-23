@@ -81,7 +81,7 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
     behavior.
     """
 
-    _ADAPTIVE_EXPONENTS = (0.1, 0.3, 0.5, 0.7, 0.9)
+    _ADAPTIVE_EXPONENTS = (0.3, 0.5, 0.7, 0.9)
 
     def __init__(
         self,

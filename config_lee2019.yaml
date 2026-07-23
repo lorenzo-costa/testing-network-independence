@@ -13,17 +13,17 @@ simulation:
   nsim: 100
   seed: 1
 
-  n: [100, 300, 500]   # Includes n=50 to probe small-sample behaviour
-  k: [1]                    # Single latent dimension (scalar latent variable)
+  n: [100, 300, 500]   
+  k: [1]                    
   alpha: [0.05]
-  edge_var: [3]          # Two edge variances: standard and inflated noise
+  edge_var: [3]          
 
 # -----------------------------------------------------------------------------
 # Testing Methods
 # -----------------------------------------------------------------------------
 methods:
-  npermutations: [200]      # Number of permutations used in permutation-based tests
-  df: [3]                   # Degrees of freedom (used in Student-t approximations)
+  npermutations: [200]      
+  df: [3]                   
   use_true_latent: [False]
 
   # List of test methods to benchmark. 'kwargs' are passed to the method constructor.
@@ -31,27 +31,26 @@ methods:
     - name: DiffusionCorrelation
       kwargs: {}
 
+    - name: RVtest
+      kwargs:
+        approximation: asymptotic
+
+    - name: RVtest
+      kwargs:
+        approximation: permutation
+        permutation_type: latent
+
     - name: MultivariateACTest
       kwargs:
         M: 1
 
     - name: MultivariateACTest
       kwargs:
-        M: sqrt
+        M: 0.5
 
     - name: MultivariateACTest
       kwargs:
-        M: quarter
-
-    - name: MultivariateACTest
-      kwargs:
-        M: sqrt
-        aggregate_coeff: max
-
-    - name: MultivariateACTest
-      kwargs:
-        M: quarter
-        aggregate_coeff: max
+        adaptive_m: true
 
 
 # -----------------------------------------------------------------------------
@@ -81,10 +80,9 @@ setups:
     - ellipse
     - two_parabolas
     - uncorrelated_bernoulli
-    - multimodal_independence   # No noise kwarg for this one (see loader)
+    - multimodal_independence   
 
   # --- Bernoulli (binary-edge) networks ---
-  # All use rdpg='minmax' rescaling so edge probabilities stay in [0,1]
   bernoulli_latent_sims:
     - linear
     - exponential
@@ -103,9 +101,9 @@ setups:
     - ellipse
     - two_parabolas
     - uncorrelated_bernoulli
-    - multimodal_independence   # No noise kwarg for this one (see loader)
+    - multimodal_independence   
 
-  bernoulli_rdpg: hypersphere        # RDPG rescaling strategy for Bernoulli networks
+  bernoulli_rdpg: hypersphere        
 
 
 # -----------------------------------------------------------------------------

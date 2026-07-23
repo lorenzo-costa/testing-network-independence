@@ -582,6 +582,9 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
         if "noise_type" in sim:
             names.append("noise_type")
             vals.append(sim["noise_type"])
+        if "column_covariance" in sim:
+            names.append("column_covariance")
+            vals.append(sim["column_covariance"])
 
         if mth["approximation"] is not None:
             names.append("approximation")
