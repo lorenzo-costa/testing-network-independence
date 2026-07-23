@@ -75,11 +75,6 @@ def _resolve_method(entry: dict):
     kwargs = entry.get("kwargs") or {}
     cls = METHOD_REGISTRY[name]
 
-    if name == "MultivariateACTest":
-        M = kwargs.get("M", 1)
-        aggregate_coeff = kwargs.get("aggregate_coeff", None)
-        return partial(cls, M=M, aggregate_coeff=aggregate_coeff) if kwargs else cls
-
     return partial(cls, **kwargs) if kwargs else cls
 
 

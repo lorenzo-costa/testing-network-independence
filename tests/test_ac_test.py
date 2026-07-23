@@ -3,6 +3,7 @@ import importlib
 import numpy as np
 import pytest
 
+from src.load_config import _resolve_method
 from src.methods.ac_test import EstimateAC, MultivariateACTest
 
 
@@ -24,6 +25,22 @@ def test_module_imports_ac_methods():
 
     assert module.EstimateAC is EstimateAC
     assert module.MultivariateACTest is MultivariateACTest
+
+
+def test_config_resolver_forwards_adaptive_m_option():
+    resolved = _resolve_method(
+        {
+            "name": "MultivariateACTest",
+            "kwargs": {"adaptive_m": True, "M": 99, "aggregate_coeff": "max"},
+        }
+    )
+
+    assert resolved.func is MultivariateACTest
+    assert resolved.keywords == {
+        "adaptive_m": True,
+        "M": 99,
+        "aggregate_coeff": "max",
+    }
 
 
 def test_estimate_ac_runs_with_true_latent_positions():
@@ -59,6 +76,29 @@ def test_multivariate_ac_test_runs_permutations_by_itself():
     assert np.isfinite(result["test_stat"])
     assert 0.0 <= result["p-value"] <= 1.0
     assert isinstance(result["reject_null"], bool)
+
+
+def test_adaptive_ac_test_runs_with_real_coefficients():
+    data = latent_data()
+    data["Y"] = data["Y"][:, :1]
+    method = MultivariateACTest(
+        use_true_latent=True,
+        adaptive_m=True,
+        npermutations=3,
+        rng=np.random.default_rng(3),
+    )
+
+    method.fit(data)
+    result = method.get_estimated()
+
+    assert len(method.permutation_distribution) == 3
+    assert method.adaptive_s_statistics.shape == (
+        4,
+        len(method.adaptive_m_values),
+    )
+    assert np.isfinite(result["test_stat"])
+    assert 0.0 <= result["p-value"] <= 1.0
+    assert method.get_name() == "MultivariateAC_PermutationTest_covariate_adaptive"
 
 
 def test_multivariate_ac_requires_observed_y():
@@ -140,3 +180,138 @@ def test_ac_permutations_remain_global_when_x_is_none(monkeypatch):
 
     expected = np.random.default_rng(seed).permutation(data["Y"].shape[0])
     np.testing.assert_array_equal(method.permutation_indices[0], expected)
+
+
+def test_adaptive_m_grid_is_rounded_deduplicated_and_capped():
+    np.testing.assert_array_equal(
+        MultivariateACTest._adaptive_m_grid(10),
+        [1, 2, 3, 5, 8],
+    )
+    np.testing.assert_array_equal(MultivariateACTest._adaptive_m_grid(2), [1])
+
+
+def test_adaptive_s_statistic_preserves_options_and_ignores_m_aggregation(
+    monkeypatch,
+):
+    calls = []
+
+    def recording_ac(**kwargs):
+        calls.append(kwargs)
+        return float(kwargs["Y"][0, 0])
+
+    monkeypatch.setattr("src.methods.ac_test.ac_coefficient", recording_ac)
+    method = MultivariateACTest(
+        use_true_latent=True,
+        M=99,
+        aggregate_coeff="max",
+        use_permutation_coeff=True,
+        use_right_neighbor=True,
+        adaptive_m=True,
+        rng=np.random.default_rng(30),
+    )
+    method.X = np.ones((3, 1))
+    method._ignore_X = False
+    y = np.array([[2.0], [1.0], [0.0]])
+    z = np.arange(3, dtype=float).reshape(-1, 1)
+
+    assert method._adaptive_s_statistic(z, y, 2) == 2.0
+    assert len(calls) == 2
+    assert calls[0]["Y"] is y
+    np.testing.assert_array_equal(calls[1]["Y"], -y)
+    for call in calls:
+        assert call["M"] == 2
+        assert call["aggregate"] is None
+        assert call["X"] is method.X
+        assert call["permutation"] is True
+        assert call["right_neighbor"] is True
+
+
+def test_adaptive_test_uses_sample_standardization_and_corrected_pvalue(
+    monkeypatch,
+):
+    s_statistics = np.array(
+        [
+            [1.0, 4.0, 2.0, 8.0, 5.0],
+            [2.0, 1.0, 3.0, 4.0, 7.0],
+            [4.0, 2.0, 5.0, 3.0, 6.0],
+        ]
+    )
+    values = iter(s_statistics.ravel())
+    seen_y = []
+
+    def fixed_s_statistic(self, Z, Y, M):
+        seen_y.append(Y.copy())
+        return next(values)
+
+    monkeypatch.setattr(
+        MultivariateACTest, "_adaptive_s_statistic", fixed_s_statistic
+    )
+    data = {
+        "Y": np.arange(10, dtype=float).reshape(-1, 1),
+        "Z": np.arange(20, dtype=float).reshape(10, 2),
+    }
+    method = MultivariateACTest(
+        use_true_latent=True,
+        M=99,
+        aggregate_coeff="max",
+        adaptive_m=True,
+        npermutations=2,
+        rng=np.random.default_rng(31),
+    )
+    method.fit(data)
+
+    expected_means = s_statistics.mean(axis=0)
+    expected_stds = s_statistics.std(axis=0, ddof=1)
+    expected_z = (s_statistics - expected_means) / expected_stds
+    expected_a = expected_z.max(axis=1)
+    expected_pvalue = (
+        1 + np.count_nonzero(expected_a[1:] >= expected_a[0])
+    ) / 3
+
+    np.testing.assert_array_equal(method.adaptive_m_values, [1, 2, 3, 5, 8])
+    np.testing.assert_allclose(method.adaptive_s_statistics, s_statistics)
+    np.testing.assert_allclose(method.adaptive_m_means, expected_means)
+    np.testing.assert_allclose(method.adaptive_m_stds, expected_stds)
+    np.testing.assert_allclose(method.adaptive_z_statistics, expected_z)
+    assert method.test_stat_estimate == pytest.approx(expected_a[0])
+    assert method.permutation_distribution == pytest.approx(expected_a[1:])
+    assert method.pvalue == pytest.approx(expected_pvalue)
+    assert len(method.permutation_indices) == 2
+
+    grid_size = len(method.adaptive_m_values)
+    for permutation_number, permutation in enumerate(method.permutation_indices, 1):
+        start = permutation_number * grid_size
+        stop = start + grid_size
+        for passed_y in seen_y[start:stop]:
+            np.testing.assert_array_equal(passed_y, data["Y"][permutation])
+
+
+def test_adaptive_test_rejects_multivariate_y():
+    method = MultivariateACTest(
+        use_true_latent=True,
+        adaptive_m=True,
+        npermutations=2,
+    )
+
+    with pytest.raises(ValueError, match="requires univariate Y"):
+        method.fit(latent_data())
+
+
+def test_adaptive_test_raises_when_an_m_specific_std_is_zero(monkeypatch):
+    monkeypatch.setattr(
+        MultivariateACTest,
+        "_adaptive_s_statistic",
+        lambda self, Z, Y, M: 1.0,
+    )
+    data = {
+        "Y": np.arange(10, dtype=float).reshape(-1, 1),
+        "Z": np.arange(20, dtype=float).reshape(10, 2),
+    }
+    method = MultivariateACTest(
+        use_true_latent=True,
+        adaptive_m=True,
+        npermutations=2,
+    )
+
+    with pytest.raises(ValueError, match="standard deviation is zero"):
+        method.fit(data)

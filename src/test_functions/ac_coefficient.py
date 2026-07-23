@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import numpy as np
 from scipy.stats import rankdata
-from math import isqrt
 from ._ac_helpers import (
     _as_2d,
     _neighbor_maps,
@@ -17,6 +16,7 @@ from ._ac_helpers import (
     _orthant_counts,
     _validate_aggregate,
     _validate_m,
+    _validate_m_bounds,
     _make_permutations,
     _aggregate_coefficients,
 )
@@ -41,8 +41,14 @@ def ac_coefficient(Y, Z, X=None, *, M=None, aggregate=None, permutation=False,
         Predictor variable(s). If Z is multivariate, the coordinate-permutation estimator is used.
     X : array-like, optional
         Conditioning variable(s). If X is provided, the conditional version of the coefficient is computed. 
-    M : int, optional
-        Number of nearest neighbors to use. If None, the default is 1 for univariate Y and floor(sqrt(n)) for multivariate Y.
+    M : int, float, list, or tuple, optional
+        When ``aggregate`` is None, an integer is the number of nearest
+        neighbors and a float smaller than 1 is an exponent, giving
+        ``round(n**M)`` neighbors. When aggregating, an integer or float is the
+        inclusive upper bound and the lower bound is ``round(n**0.2)``. A
+        two-item list or tuple supplies inclusive lower and upper bounds; each
+        bound may independently be an integer or float exponent. If omitted,
+        M defaults to 1 without aggregation and ``round(n**0.5)`` with it.
     aggregate : str, optional
         How to aggregate the coefficients over M. Options are "avg" (default), "max", or None (no aggregation). 
     permutation : bool, optional
@@ -100,20 +106,22 @@ def _aggregate_m_ac_coefficient(
     rng=None,
     block_size = 2048,
 ) -> float:
-    """Aggregate AC coefficients for every ``M`` in ``1, ..., floor(sqrt(n))``.
+    """Aggregate AC coefficients over an inclusive range of neighbor counts.
 
-    Parameters are the same as :func:`ac_coefficient`, except that ``M`` is
-    selected automatically. ``aggregate`` must be either:
+    A scalar ``M`` sets the upper bound and uses ``round(n**0.2)`` as the
+    lower bound. A two-item list or tuple sets both bounds. Float bounds are
+    interpreted as exponents of n and rounded to the nearest integer. If M is
+    omitted, the upper bound is ``round(n**0.5)``. ``aggregate`` must be either:
 
     - ``"avg"``: arithmetic mean of the coefficients across M;
     - ``"max"``: largest coefficient across M.
 
-    The implementation computes the first ``floor(sqrt(n))`` neighbors and,
+    The implementation computes the first ``max_m`` neighbors and,
     for multivariate Y, the needed orthant counts only once. It then derives
     every M-specific coefficient from cumulative sums.
 
     With exact distance ties, it uses one random tie-broken ordering of the
-    K-nearest neighbors, where K = floor(sqrt(n)). Each prefix is a valid
+    K-nearest neighbors, where K is the resolved upper bound. Each prefix is a valid
     M-nearest-neighbor set. This may differ from repeatedly calling
     :func:`ac_coefficient` with independently redrawn tie breaks for each M.
     """
@@ -124,10 +132,16 @@ def _aggregate_m_ac_coefficient(
     if n < 2:
         raise ValueError("At least two observations are required.")
     
-    if M is not None:
-        max_m = _validate_m(M, n)
+    if isinstance(M, (list, tuple)):
+        min_m, max_m = _validate_m_bounds(M, n)
     else:
-        max_m = isqrt(n)
+        min_m = _validate_m(0.2, n)
+        max_m = _validate_m(0.5 if M is None else M, n)
+        if max_m < min_m:
+            raise ValueError(
+                "The upper aggregate M bound must be at least "
+                "round(n**0.2)."
+            )
         
     z = _as_2d(Z, name="Z", n=n)
 
@@ -174,7 +188,7 @@ def _aggregate_m_ac_coefficient(
             block_size=block_size,
         )
 
-    return _aggregate_coefficients(coefficients, aggregate)
+    return _aggregate_coefficients(coefficients[min_m - 1 : max_m], aggregate)
 
 def _single_m_ac_coefficient(
     Y,
@@ -434,5 +448,4 @@ def _scalar_coefficients_over_m(
         out=np.zeros(max_m, dtype=float),
         where=denominators != 0,
     )
-
 

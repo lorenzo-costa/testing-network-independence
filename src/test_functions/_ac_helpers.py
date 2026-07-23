@@ -314,34 +314,63 @@ def _knn_prefix_indices(
 
     return neighbors
 
-# validation functions 
-def _validate_m(M: int, n: int) -> int:
-    if isinstance(M, str):
-        if M.lower() == "sqrt":
-            M = int(np.sqrt(n))
-        elif M.lower() == "log":
-            M = int(np.log(n))
-        elif M.lower() == "half":
-            M = int(n / 2)
-        elif M.lower() == "third":
-            M = int(n / 3)
-        elif M.lower() == "quarter":
-            M = int(n / 4)
-        elif M.lower() == "minus_one":
-            M = int(n - 1)
-        else:
-            raise ValueError("M must be a positive integer or 'sqrt' or 'log'.")
-    elif isinstance(M, (int, np.integer)):
-        if M < 1:
-            raise ValueError("M must be a positive integer.")
-        elif M >= n:
-            raise ValueError("M must be smaller than n.")
-        else:
-            M = int(M)
+# validation functions
+def _validate_m(M: int | float, n: int) -> int:
+    """Resolve an integer neighbor count or a sublinear exponent of ``n``."""
+    if isinstance(M, (bool, np.bool_)):
+        raise ValueError(
+            "M must be a positive integer or a finite float smaller than 1."
+        )
+
+    if isinstance(M, (int, np.integer)):
+        resolved_m = int(M)
+    elif isinstance(M, (float, np.floating)):
+        exponent = float(M)
+        if not np.isfinite(exponent) or exponent >= 1:
+            raise ValueError("A float M must be finite and smaller than 1.")
+        resolved_m = round(n**exponent)
     else:
-        raise ValueError("M must be a positive integer or 'sqrt' or 'log', got type {}".format(type(M)))
-      
-    return int(M)
+        raise ValueError(
+            "M must be a positive integer or a finite float smaller than 1, "
+            f"got type {type(M)}."
+        )
+
+    if resolved_m < 1:
+        raise ValueError("M must resolve to a positive integer.")
+    if resolved_m >= n:
+        raise ValueError("M must resolve to a value smaller than n.")
+
+    return resolved_m
+
+
+def _validate_m_bounds(M: list | tuple, n: int) -> tuple[int, int]:
+    """Validate and resolve inclusive lower and upper aggregation bounds."""
+    if len(M) != 2:
+        raise ValueError("An aggregate M list or tuple must contain two bounds.")
+
+    lower, upper = M
+    numeric_types = (int, np.integer, float, np.floating)
+    if (
+        isinstance(lower, (bool, np.bool_))
+        or isinstance(upper, (bool, np.bool_))
+        or not isinstance(lower, numeric_types)
+        or not isinstance(upper, numeric_types)
+    ):
+        raise ValueError("Aggregate M bounds must each be an integer or float.")
+    if not upper > lower:
+        raise ValueError(
+            "The upper aggregate M bound must be greater than the lower bound."
+        )
+
+    min_m = _validate_m(lower, n)
+    max_m = _validate_m(upper, n)
+    if max_m <= min_m:
+        raise ValueError(
+            "The upper aggregate M bound must remain greater than the lower "
+            "bound after resolving float exponents."
+        )
+
+    return min_m, max_m
 
 def _validate_aggregate(aggregate: str) -> str:
     if not isinstance(aggregate, str):
