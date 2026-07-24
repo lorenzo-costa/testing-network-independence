@@ -16,7 +16,7 @@ simulation:
   alpha: [0.05]           # Nominal significance level(s) for hypothesis tests
   edge_var: [3]           # Edge weight variance (used in Gaussian networks)
 
-  marginals_z::
+  marginals_z:
     - gaussian
     - "uniform -1 1"
     # - cauchy
