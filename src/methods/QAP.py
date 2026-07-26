@@ -190,8 +190,7 @@ class MRQAP(BaseMethod):
         self.batch_size = None if batch_size is None else int(batch_size)
         self.rng = np.random.default_rng() if rng is None else rng
 
-        # BaseMethod.get_estimated compatibility. MRQAP does not estimate
-        # latent positions.
+        # BaseMethod.get_estimated compatibility
         self.X = None
         self.Z = None
         self.Zhat = None

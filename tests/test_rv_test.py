@@ -2,6 +2,7 @@ import importlib
 
 import numpy as np
 import pytest
+from scipy.stats import chi2
 
 from src.methods.rv_test import EstimateRV, RVTest
 
@@ -59,6 +60,36 @@ def test_rv_permutation_test_runs_by_itself():
     assert np.isfinite(result["test_stat"])
     assert 0.0 <= result["p-value"] <= 1.0
     assert isinstance(result["reject_null"], bool)
+
+
+def test_asymptotic_rv_null_calibration_with_identity_covariance():
+    """The default RV statistic should follow its Gaussian identity-null limit."""
+    rng = np.random.default_rng(20260726)
+    n = 300
+    k = 3
+    repetitions = 2_000
+    alpha = 0.05
+
+    method = RVTest(
+        use_true_latent=True,
+        approximation="asymptotic",
+        alpha=alpha,
+    )
+    critical_value = chi2.ppf(1.0 - alpha, df=k) / np.sqrt(k)
+
+    rejection_count = 0
+    for _ in range(repetitions):
+        Z = rng.normal(size=(n, k))
+        Y = rng.normal(size=(n, 1))
+        rejection_count += n * method.test_function(Z, Y) > critical_value
+
+    rejection_rate = rejection_count / repetitions
+    monte_carlo_se = np.sqrt(alpha * (1.0 - alpha) / repetitions)
+
+    assert abs(rejection_rate - alpha) <= 4.0 * monte_carlo_se, (
+        f"Gaussian identity-null rejection rate {rejection_rate:.4f} is not "
+        f"calibrated at alpha={alpha:.2f}"
+    )
 
 
 def test_rv_test_rejects_unknown_approximation():

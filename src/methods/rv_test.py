@@ -70,7 +70,7 @@ class RVTest(BasePermutationTest):
         rng=None,
         solver=None,
         use_true_latent=False,
-        test_function=rv_coefficient_adjusted,
+        test_function=rv_coefficient,
         permutation_type="covariate",
         **kwargs,
     ):
@@ -116,22 +116,14 @@ class RVTest(BasePermutationTest):
         rv = self.test_function(Zhat, Y)
         self.test_stat_estimate = rv
 
-        # Plug-in eigenvalues of the covariance of vec(Y_i Z_i^T).
-        #
-        # Its non-zero eigenvalues equal those of the (n × n) Gram matrix
-        #   (1/n) G, where G_ij = (Y_i^T Y_j)(Z_i^T Z_j),
-        # so we never form the (pq × pq) object.
+        GX = Y @ Y.T 
+        GZ = Zhat @ Zhat.T  
+        Omega_gram = (GX * GZ) / n  
 
-        GX = Y @ Y.T  # (n, n) Gram matrix of observed Y
-        GZ = Zhat @ Zhat.T  # (n, n)  Gram matrix of Z
-        Omega_gram = (GX * GZ) / n  # (n, n)  Hadamard product — Gram rep. of Ω̂
-
-        hat_lambda = np.linalg.eigvalsh(Omega_gram)  # ascending
-        hat_lambda = np.sort(hat_lambda)[::-1]  # descending
-        # drop numerical zeros (rank ≤ min(n, p·q) in practice)
+        hat_lambda = np.linalg.eigvalsh(Omega_gram)  
+        hat_lambda = np.sort(hat_lambda)[::-1]  
         hat_lambda = hat_lambda[hat_lambda > 1e-10 * hat_lambda[0]]
 
-        # ── Normalisation: den = sqrt(tr(Ω̂²)) = sqrt(Σᵢ λ̂ᵢ²) ─────────────────
         den = np.sqrt(np.sum(hat_lambda**2))
 
         weights = hat_lambda / den

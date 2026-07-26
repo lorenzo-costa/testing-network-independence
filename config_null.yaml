@@ -40,8 +40,8 @@ methods:
   use_true_latent: [False]
 
   list:
-    - name: DiffusionCorrelation
-      kwargs: {}
+    # - name: DiffusionCorrelation
+    #   kwargs: {}
 
     - name: RVtest
       kwargs:
@@ -52,17 +52,17 @@ methods:
         approximation: permutation
         permutation_type: latent
 
-    - name: MultivariateACTest
-      kwargs:
-        M: 1
+    # - name: MultivariateACTest
+    #   kwargs:
+    #     M: 1
 
-    - name: MultivariateACTest
-      kwargs:
-        M: 0.5
+    # - name: MultivariateACTest
+    #   kwargs:
+    #     M: 0.5
 
-    - name: MultivariateACTest
-      kwargs:
-        adaptive_m: true
+    # - name: MultivariateACTest
+    #   kwargs:
+    #     adaptive_m: true
 
 # -----------------------------------------------------------------------------
 # Gaussian-copula network setups under the null
