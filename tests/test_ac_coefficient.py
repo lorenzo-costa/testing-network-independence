@@ -78,3 +78,54 @@ def test_aggregate_bounds_are_inclusive(monkeypatch):
     assert ac_coefficient(y, z, M=4, aggregate="avg", rng=0) == 3.0
     # Explicit mixed bounds include both round(16**0.2)=2 and M=4.
     assert ac_coefficient(y, z, M=(0.2, 4), aggregate="max", rng=0) == 4.0
+
+
+def test_multivariate_permutation_is_used_to_construct_y_tilde(monkeypatch):
+    ac_module = importlib.import_module("src.test_functions.ac_coefficient")
+    y = np.array(
+        [
+            [10.0, 11.0],
+            [20.0, 21.0],
+            [30.0, 31.0],
+            [40.0, 41.0],
+        ]
+    )
+    z = np.arange(4, dtype=float).reshape(-1, 1)
+    permutations = np.array(
+        [
+            [3, 2, 1, 0],
+            [1, 0, 3, 2],
+        ]
+    )
+    captured = {}
+
+    def fixed_permutations(n, d_y, rng=None):
+        assert (n, d_y) == y.shape
+        return permutations
+
+    def recording_coefficient(
+        passed_y,
+        y_tilde,
+        m_idx,
+        n_idx,
+        *,
+        block_size,
+    ):
+        captured["y"] = passed_y.copy()
+        captured["y_tilde"] = y_tilde.copy()
+        return 0.375
+
+    monkeypatch.setattr(ac_module, "_make_permutations", fixed_permutations)
+    monkeypatch.setattr(
+        ac_module,
+        "_multivariate_coefficient",
+        recording_coefficient,
+    )
+
+    result = ac_coefficient(y, z, M=1, permutation=True, rng=0)
+
+    expected_y_tilde = np.take_along_axis(y, permutations.T, axis=0)
+    assert result == pytest.approx(0.375)
+    np.testing.assert_array_equal(captured["y"], y)
+    np.testing.assert_array_equal(captured["y_tilde"], expected_y_tilde)
+    assert not np.array_equal(captured["y_tilde"], y)

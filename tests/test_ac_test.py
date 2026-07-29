@@ -1,10 +1,14 @@
 import importlib
+from pathlib import Path
 
 import numpy as np
 import pytest
 
-from src.load_config import _resolve_method
+from src.load_config import _resolve_method, load_config
 from src.methods.ac_test import EstimateAC, MultivariateACTest
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def dummy_solver(matrix, k, rng=None):
@@ -31,7 +35,12 @@ def test_config_resolver_forwards_adaptive_m_option():
     resolved = _resolve_method(
         {
             "name": "MultivariateACTest",
-            "kwargs": {"adaptive_m": True, "M": 99, "aggregate_coeff": "max"},
+            "kwargs": {
+                "adaptive_m": True,
+                "M": 99,
+                "aggregate_coeff": "max",
+                "use_permutation_coeff": True,
+            },
         }
     )
 
@@ -40,7 +49,33 @@ def test_config_resolver_forwards_adaptive_m_option():
         "adaptive_m": True,
         "M": 99,
         "aggregate_coeff": "max",
+        "use_permutation_coeff": True,
     }
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "config_gaussian.yaml",
+        "config_maema.yaml",
+        "config_functionals.yaml",
+        "config_null.yaml",
+    ],
+)
+def test_multivariate_configs_enable_permuted_y_coefficients(filename):
+    config = load_config(ROOT / filename)
+    ac_methods = [
+        method
+        for method in config["methods"]["list"]
+        if getattr(method, "func", method) is MultivariateACTest
+    ]
+
+    assert config["simulation"]["ky"] == [3]
+    assert len(ac_methods) == 3
+    assert all(
+        method.keywords["use_permutation_coeff"] is True
+        for method in ac_methods
+    )
 
 
 def test_estimate_ac_runs_with_true_latent_positions():
@@ -76,6 +111,29 @@ def test_multivariate_ac_test_runs_permutations_by_itself():
     assert np.isfinite(result["test_stat"])
     assert 0.0 <= result["p-value"] <= 1.0
     assert isinstance(result["reject_null"], bool)
+
+
+def test_fixed_m_ac_test_forwards_multivariate_y_permutation_option(monkeypatch):
+    calls = []
+
+    def recording_ac(**kwargs):
+        calls.append(kwargs)
+        return 0.25
+
+    monkeypatch.setattr("src.methods.ac_test.ac_coefficient", recording_ac)
+    data = latent_data()
+    method = MultivariateACTest(
+        use_true_latent=True,
+        M=1,
+        npermutations=1,
+        use_permutation_coeff=True,
+        rng=np.random.default_rng(4),
+    )
+    method.fit(data)
+
+    assert len(calls) == 2
+    assert all(call["permutation"] is True for call in calls)
+    assert all(call["Y"].shape[1] == 2 for call in calls)
 
 
 @pytest.mark.parametrize("y_columns", [1, 2])

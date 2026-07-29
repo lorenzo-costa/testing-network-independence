@@ -42,8 +42,8 @@ methods:
 
   # List of test methods to benchmark. 'kwargs' are passed to the method constructor.
   list:
-    # - name: DiffusionCorrelation
-    #   kwargs: {}
+    - name: DiffusionCorrelation
+      kwargs: {}
 
     - name: RVtest
       kwargs:
