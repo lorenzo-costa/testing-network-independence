@@ -54,15 +54,19 @@ def test_config_resolver_forwards_adaptive_m_option():
 
 
 @pytest.mark.parametrize(
-    "filename",
+    ("filename", "expected_ky", "expected_permutation"),
     [
-        "config_gaussian.yaml",
-        "config_maema.yaml",
-        "config_functionals.yaml",
-        "config_null.yaml",
+        ("config_gaussian.yaml", [1], False),
+        ("config_maema.yaml", [1], False),
+        ("config_functionals.yaml", [3], True),
+        ("config_null.yaml", [3], True),
     ],
 )
-def test_multivariate_configs_enable_permuted_y_coefficients(filename):
+def test_ac_configs_set_expected_response_and_coefficient_permutation(
+    filename,
+    expected_ky,
+    expected_permutation,
+):
     config = load_config(ROOT / filename)
     ac_methods = [
         method
@@ -70,12 +74,27 @@ def test_multivariate_configs_enable_permuted_y_coefficients(filename):
         if getattr(method, "func", method) is MultivariateACTest
     ]
 
-    assert config["simulation"]["ky"] == [3]
+    assert config["simulation"]["ky"] == expected_ky
     assert len(ac_methods) == 3
     assert all(
-        method.keywords["use_permutation_coeff"] is True
+        method.keywords.get("use_permutation_coeff", False) is expected_permutation
         for method in ac_methods
     )
+
+
+@pytest.mark.parametrize(
+    "filename",
+    ["config_gaussian.yaml", "config_maema.yaml"],
+)
+def test_univariate_power_configs_use_requested_grid_and_gaussian_copula(filename):
+    config = load_config(ROOT / filename)
+
+    assert config["simulation"]["n"] == [50, 100, 200, 400]
+    assert config["simulation"]["rho"] == [0.1, 0.2, 0.3, 0.4, 0.5]
+    assert {
+        setup[0].keywords["copula_model"]
+        for setup in config["setups"]
+    } == {"gaussian"}
 
 
 def test_estimate_ac_runs_with_true_latent_positions():

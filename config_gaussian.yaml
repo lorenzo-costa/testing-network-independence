@@ -9,24 +9,21 @@ simulation:
   nsim: 100          # Number of Monte Carlo repetitions per parameter combination
   seed: 1                 # Master RNG seed for reproducibility (passed to np.random.default_rng)
 
-  n: [100, 300, 500]      # Sample sizes (number of nodes)
+  n: [50, 100, 200, 400]  # Sample sizes (number of nodes)
   k: [3]                  # Number of latent dimensions for the network embedding
-  ky: [3]
-  rho: [0.3]              # Correlation parameter under H1 (signal strength); 0.0 = null hypothesis
+  ky: [1]
+  rho: [0.1, 0.2, 0.3, 0.4, 0.5]              # Correlation parameter under H1 (signal strength); 0.0 = null hypothesis
   alpha: [0.05]           # Nominal significance level(s) for hypothesis tests
   edge_var: [3]           # Edge weight variance (used in Gaussian networks)
 
   marginals_z:
     - gaussian
     - "uniform -1 1"
-    # - cauchy
-    # - "t 5"
     - "chi 5"
 
   marginals_y: 
     - gaussian
     - cauchy
-    # - "t 5"
     - "chi 5"
 
   # column_covariance:
@@ -59,17 +56,14 @@ methods:
     - name: MultivariateACTest
       kwargs:
         M: 1
-        use_permutation_coeff: true
 
     - name: MultivariateACTest
       kwargs:
         M: 0.5
-        use_permutation_coeff: true
 
     - name: MultivariateACTest
       kwargs:
         adaptive_m: true
-        use_permutation_coeff: true
 
 # -----------------------------------------------------------------------------
 # DGP & Solver Setups (H1: rho > 0)
@@ -82,20 +76,20 @@ setups:
     copula_model: gaussian
     solver: ASE 
 
-  - dgp: GaussianNetwork
-    copula_model: clayton          
-    solver: ASE
+  # - dgp: GaussianNetwork
+  #   copula_model: clayton
+  #   solver: ASE
 
-  - dgp: GaussianNetwork
-    copula_model: student_t
-    df: 3                          
-    solver: ASE
+  # - dgp: GaussianNetwork
+  #   copula_model: student_t
+  #   df: 3
+  #   solver: ASE
 
-  - dgp: GaussianNetwork
-    copula_model: mixture_uniform
-    weights: [0.5, 0.5]           
-    correlations: [0.8, -0.8]     
-    solver: ASE
+  # - dgp: GaussianNetwork
+  #   copula_model: mixture_uniform
+  #   weights: [0.5, 0.5]
+  #   correlations: [0.8, -0.8]
+  #   solver: ASE
 
 # -----------------------------------------------------------------------------
 # Metrics
