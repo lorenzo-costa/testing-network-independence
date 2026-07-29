@@ -78,9 +78,10 @@ def test_multivariate_ac_test_runs_permutations_by_itself():
     assert isinstance(result["reject_null"], bool)
 
 
-def test_adaptive_ac_test_runs_with_real_coefficients():
+@pytest.mark.parametrize("y_columns", [1, 2])
+def test_adaptive_ac_test_runs_with_real_coefficients(y_columns):
     data = latent_data()
-    data["Y"] = data["Y"][:, :1]
+    data["Y"] = data["Y"][:, :y_columns]
     method = MultivariateACTest(
         use_true_latent=True,
         adaptive_m=True,
@@ -185,7 +186,7 @@ def test_ac_permutations_remain_global_when_x_is_none(monkeypatch):
 def test_adaptive_m_grid_is_rounded_deduplicated_and_capped():
     np.testing.assert_array_equal(
         MultivariateACTest._adaptive_m_grid(10),
-        [1, 2, 3, 5, 8],
+        [2, 3, 5, 8],
     )
     np.testing.assert_array_equal(MultivariateACTest._adaptive_m_grid(2), [1])
 
@@ -215,9 +216,8 @@ def test_adaptive_s_statistic_preserves_options_and_ignores_m_aggregation(
     z = np.arange(3, dtype=float).reshape(-1, 1)
 
     assert method._adaptive_s_statistic(z, y, 2) == 2.0
-    assert len(calls) == 2
+    assert len(calls) == 1
     assert calls[0]["Y"] is y
-    np.testing.assert_array_equal(calls[1]["Y"], -y)
     for call in calls:
         assert call["M"] == 2
         assert call["aggregate"] is None
@@ -231,9 +231,9 @@ def test_adaptive_test_uses_sample_standardization_and_corrected_pvalue(
 ):
     s_statistics = np.array(
         [
-            [1.0, 4.0, 2.0, 8.0, 5.0],
-            [2.0, 1.0, 3.0, 4.0, 7.0],
-            [4.0, 2.0, 5.0, 3.0, 6.0],
+            [4.0, 2.0, 8.0, 5.0],
+            [1.0, 3.0, 4.0, 7.0],
+            [2.0, 5.0, 3.0, 6.0],
         ]
     )
     values = iter(s_statistics.ravel())
@@ -268,7 +268,7 @@ def test_adaptive_test_uses_sample_standardization_and_corrected_pvalue(
         1 + np.count_nonzero(expected_a[1:] >= expected_a[0])
     ) / 3
 
-    np.testing.assert_array_equal(method.adaptive_m_values, [1, 2, 3, 5, 8])
+    np.testing.assert_array_equal(method.adaptive_m_values, [2, 3, 5, 8])
     np.testing.assert_allclose(method.adaptive_s_statistics, s_statistics)
     np.testing.assert_allclose(method.adaptive_m_means, expected_means)
     np.testing.assert_allclose(method.adaptive_m_stds, expected_stds)
@@ -286,15 +286,31 @@ def test_adaptive_test_uses_sample_standardization_and_corrected_pvalue(
             np.testing.assert_array_equal(passed_y, data["Y"][permutation])
 
 
-def test_adaptive_test_rejects_multivariate_y():
+def test_adaptive_test_passes_multivariate_y_to_each_m_statistic(monkeypatch):
+    seen_shapes = []
+
+    def shape_based_s_statistic(self, Z, Y, M):
+        seen_shapes.append(Y.shape)
+        row_weights = np.arange(1, Y.shape[0] + 1)
+        return float(M + row_weights @ Y[:, 0])
+
+    monkeypatch.setattr(
+        MultivariateACTest,
+        "_adaptive_s_statistic",
+        shape_based_s_statistic,
+    )
+    data = latent_data()
     method = MultivariateACTest(
         use_true_latent=True,
         adaptive_m=True,
         npermutations=2,
+        rng=np.random.default_rng(32),
     )
+    method.fit(data)
 
-    with pytest.raises(ValueError, match="requires univariate Y"):
-        method.fit(latent_data())
+    expected_calls = (method.npermutations + 1) * len(method.adaptive_m_values)
+    assert seen_shapes == [data["Y"].shape] * expected_calls
+    assert np.isfinite(method.test_stat_estimate)
 
 
 def test_adaptive_test_raises_when_an_m_specific_std_is_zero(monkeypatch):

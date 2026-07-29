@@ -6,13 +6,13 @@
 # Simulation Setup
 # -----------------------------------------------------------------------------
 simulation:
-  nsim: 50          # Number of Monte Carlo repetitions per parameter combination
+  nsim: 100          # Number of Monte Carlo repetitions per parameter combination
   seed: 1                 # Master RNG seed for reproducibility (passed to np.random.default_rng)
 
-  n: [50, 100, 300, 500]      # Sample sizes (number of nodes)
+  n: [100, 300, 500]      # Sample sizes (number of nodes)
   k: [3]                  # Number of latent dimensions for the network embedding
-  ky: [1]
-  rho: [0.1, 0.2, 0.4, 0.5]              # Correlation parameter under H1 (signal strength); 0.0 = null hypothesis
+  ky: [3]
+  rho: [0.3]              # Correlation parameter under H1 (signal strength); 0.0 = null hypothesis
   alpha: [0.05]           # Nominal significance level(s) for hypothesis tests
   edge_var: [3]           # Edge weight variance (used in Gaussian networks)
 
@@ -44,8 +44,8 @@ methods:
 
   # List of test methods to benchmark. 'kwargs' are passed to the method constructor.
   list:
-    # - name: DiffusionCorrelation
-    #   kwargs: {}
+    - name: DiffusionCorrelation
+      kwargs: {}
 
     - name: RVtest
       kwargs:
@@ -59,14 +59,17 @@ methods:
     - name: MultivariateACTest
       kwargs:
         M: 1
+        use_permutation_coeff: true
 
     - name: MultivariateACTest
       kwargs:
         M: 0.5
+        use_permutation_coeff: true
 
     - name: MultivariateACTest
       kwargs:
         adaptive_m: true
+        use_permutation_coeff: true
 
 # -----------------------------------------------------------------------------
 # DGP & Solver Setups (H1: rho > 0)

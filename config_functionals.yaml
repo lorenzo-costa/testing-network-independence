@@ -11,7 +11,7 @@ simulation:
 
   n: [100, 300, 500]      
   k: [3]                  
-  ky: [1]
+  ky: [3]
   rho: [0.2]              
   alpha: [0.05]           
   edge_var: [3]           
@@ -64,17 +64,20 @@ methods:
         approximation: permutation
         permutation_type: latent
 
-    # - name: MultivariateACTest
-    #   kwargs:
-    #     M: 1
+    - name: MultivariateACTest
+      kwargs:
+        M: 1
+        use_permutation_coeff: true
 
-    # - name: MultivariateACTest
-    #   kwargs:
-    #     M: 0.5
+    - name: MultivariateACTest
+      kwargs:
+        M: 0.5
+        use_permutation_coeff: true
 
-    # - name: MultivariateACTest
-    #   kwargs:
-    #     adaptive_m: true
+    - name: MultivariateACTest
+      kwargs:
+        adaptive_m: true
+        use_permutation_coeff: true
 
 # -----------------------------------------------------------------------------
 # DGP & Solver Setups (H1: rho > 0)
