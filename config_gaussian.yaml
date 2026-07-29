@@ -80,22 +80,22 @@ setups:
   # --- Gaussian (continuous-weight) networks ---
   - dgp: GaussianNetwork
     copula_model: gaussian
+    solver: ASE 
+
+  - dgp: GaussianNetwork
+    copula_model: clayton          
     solver: ASE
 
-  # - dgp: GaussianNetwork
-  #   copula_model: clayton          
-  #   solver: ASE
+  - dgp: GaussianNetwork
+    copula_model: student_t
+    df: 3                          
+    solver: ASE
 
-  # - dgp: GaussianNetwork
-  #   copula_model: student_t
-  #   df: 3                          
-  #   solver: ASE
-
-  # - dgp: GaussianNetwork
-  #   copula_model: mixture_uniform
-  #   weights: [0.5, 0.5]           
-  #   correlations: [0.8, -0.8]     
-  #   solver: ASE
+  - dgp: GaussianNetwork
+    copula_model: mixture_uniform
+    weights: [0.5, 0.5]           
+    correlations: [0.8, -0.8]     
+    solver: ASE
 
 # -----------------------------------------------------------------------------
 # Metrics

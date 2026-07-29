@@ -24,7 +24,6 @@ simulation:
   marginals_y:
     - gaussian
     - cauchy
-    # - "t 5"
     - "chi 5"
 
   # column_covariance:
@@ -80,20 +79,20 @@ setups:
     copula_model: gaussian
     solver: pgd_fit_wrapper
 
-  # - dgp: BernoulliNetwork
-  #   copula_model: clayton          # Lower-tail dependent copula
-  #   solver: pgd_fit_wrapper
+  - dgp: BernoulliNetwork
+    copula_model: clayton          # Lower-tail dependent copula
+    solver: pgd_fit_wrapper
 
-  # - dgp: BernoulliNetwork
-  #   copula_model: student_t
-  #   df: 3                          # Degrees of freedom for the Student-t copula
-  #   solver: pgd_fit_wrapper
+  - dgp: BernoulliNetwork
+    copula_model: student_t
+    df: 3                          # Degrees of freedom for the Student-t copula
+    solver: pgd_fit_wrapper
 
-  # - dgp: BernoulliNetwork
-  #   copula_model: mixture_uniform
-  #   weights: [0.5, 0.5]           # Mixture weights for the two uniform components
-  #   correlations: [0.8, -0.8]     # Correlation of each mixture component
-  #   solver: pgd_fit_wrapper
+  - dgp: BernoulliNetwork
+    copula_model: mixture_uniform
+    weights: [0.5, 0.5]           # Mixture weights for the two uniform components
+    correlations: [0.8, -0.8]     # Correlation of each mixture component
+    solver: pgd_fit_wrapper
 
 # -----------------------------------------------------------------------------
 # Metrics
