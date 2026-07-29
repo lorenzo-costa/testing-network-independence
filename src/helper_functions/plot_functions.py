@@ -1063,7 +1063,7 @@ def plot_grid(grouped_stats, x_axis, y_axis, factors, plotting_function=None, **
                 ax.invert_xaxis()
 
     if save_path is not None:
-        plt.savefig(save_path + ".png", dpi=300, bbox_inches="tight")
+        plt.savefig(save_path + ".png", dpi=600, bbox_inches="tight")
         # plt.savefig(save_path + ".pdf", dpi=300, bbox_inches="tight")
     else:
         plt.show()

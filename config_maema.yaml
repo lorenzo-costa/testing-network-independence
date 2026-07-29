@@ -6,13 +6,13 @@
 # Simulation Setup
 # -----------------------------------------------------------------------------
 simulation:
-  nsim: 100          # Number of Monte Carlo repetitions per parameter combination
+  nsim: 50          # Number of Monte Carlo repetitions per parameter combination
   seed: 1                 # Master RNG seed for reproducibility (passed to np.random.default_rng)
 
-  n: [100, 300, 500]      # Sample sizes (number of nodes)
+  n: [50, 100, 300, 500]      # Sample sizes (number of nodes)
   k: [3]                  # Number of latent dimensions for the network embedding
   ky: [1]
-  rho: [0.3]              # Correlation parameter under H1 (signal strength); 0.0 = null hypothesis
+  rho: [0.1, 0.2, 0.4, 0.5]              # Correlation parameter under H1 (signal strength); 0.0 = null hypothesis
   alpha: [0.05]           # Nominal significance level(s) for hypothesis tests
   edge_var: [3]           # Edge weight variance (used in Gaussian networks)
 
@@ -54,17 +54,17 @@ methods:
         approximation: permutation
         permutation_type: latent
 
-    # - name: MultivariateACTest
-    #   kwargs:
-    #     M: 1
+    - name: MultivariateACTest
+      kwargs:
+        M: 1
 
-    # - name: MultivariateACTest
-    #   kwargs:
-    #     M: 0.5
+    - name: MultivariateACTest
+      kwargs:
+        M: 0.5
 
-    # - name: MultivariateACTest
-    #   kwargs:
-    #     adaptive_m: true
+    - name: MultivariateACTest
+      kwargs:
+        adaptive_m: true
 
 # -----------------------------------------------------------------------------
 # DGP & Solver Setups (H1: rho > 0)
@@ -77,20 +77,20 @@ setups:
     copula_model: gaussian
     solver: pgd_fit_wrapper
 
-  - dgp: BernoulliNetwork
-    copula_model: clayton          # Lower-tail dependent copula
-    solver: pgd_fit_wrapper
+  # - dgp: BernoulliNetwork
+  #   copula_model: clayton          # Lower-tail dependent copula
+  #   solver: pgd_fit_wrapper
 
-  - dgp: BernoulliNetwork
-    copula_model: student_t
-    df: 3                          # Degrees of freedom for the Student-t copula
-    solver: pgd_fit_wrapper
+  # - dgp: BernoulliNetwork
+  #   copula_model: student_t
+  #   df: 3                          # Degrees of freedom for the Student-t copula
+  #   solver: pgd_fit_wrapper
 
-  - dgp: BernoulliNetwork
-    copula_model: mixture_uniform
-    weights: [0.5, 0.5]           # Mixture weights for the two uniform components
-    correlations: [0.8, -0.8]     # Correlation of each mixture component
-    solver: pgd_fit_wrapper
+  # - dgp: BernoulliNetwork
+  #   copula_model: mixture_uniform
+  #   weights: [0.5, 0.5]           # Mixture weights for the two uniform components
+  #   correlations: [0.8, -0.8]     # Correlation of each mixture component
+  #   solver: pgd_fit_wrapper
 
 # -----------------------------------------------------------------------------
 # Metrics

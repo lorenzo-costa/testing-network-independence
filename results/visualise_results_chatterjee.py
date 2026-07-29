@@ -1,0 +1,1040 @@
+#!/usr/bin/env python3
+"""Create paper-quality figures from ``visualise_results_chatterjee.ipynb``.
+
+The script reads the same two batches of simulation CSVs, applies the notebook's
+row-matched replacement of ``RVTest_asymptotic`` results, and redesigns every
+active notebook figure at publication dimensions. Each figure is written as a
+vector PDF and a 600-DPI PNG.
+
+Run from anywhere with:
+
+    python results/visualise_results_chatterjee.py
+
+By default, figures are saved under ``results/chatterjee_figures``.
+"""
+
+from __future__ import annotations
+
+import argparse
+from collections.abc import Callable, Mapping
+from pathlib import Path
+import sys
+
+import matplotlib
+
+matplotlib.use("Agg")
+
+import matplotlib.pyplot as plt
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
+from matplotlib.lines import Line2D
+import numpy as np
+import pandas as pd
+
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPOSITORY_ROOT))
+
+from results.results_processing import process_results
+from src.helper_functions.analyse_functions import aggregate_results
+
+
+OLD_RESULT_FILES = (
+    "simulation_results_20260723_1332.csv",  # Gaussian network
+    "simulation_results_20260723_1407.csv",  # Bernoulli network
+    "simulation_results_20260723_1155.csv",  # functional alternatives
+    "simulation_results_20260723_1322.csv",  # latent simulations
+    "simulation_results_20260723_1554.csv",  # null simulations
+)
+
+NEW_RESULT_FILES = (
+    "simulation_results_20260726_0347.csv",  # Gaussian network
+    "simulation_results_20260726_0353.csv",  # Bernoulli network
+    "simulation_results_20260726_0339.csv",  # functional alternatives
+    "simulation_results_20260726_0342.csv",  # latent simulations
+    "simulation_results_20260726_0400.csv",  # null simulations
+)
+
+COLUMNS_TO_REPLACE = (
+    "RelativeFrobeniusNorm_x",
+    "RelativeFrobeniusNorm_z",
+    "ProcrustesDistance_x",
+    "ProcrustesDistance_z",
+    "FalseRejection",
+    "Power",
+    "Rejection",
+    "avg_rel_frob_z",
+    "avg_proc_dist_z",
+)
+
+COLUMNS_TO_MATCH = (
+    "density",
+    "n",
+    "k",
+    "edge_var",
+    "approximation",
+    "solver",
+    "rho",
+    "method",
+    "marginals",
+    "density_A",
+    "density_B",
+    "make_sparse",
+    "use_true_x",
+    "use_true_z",
+    "latent_sim",
+    "aggregate",
+    "copula",
+    "marginal_y",
+    "marginal_z",
+    "degree",
+    "NN_number",
+    "functional_form",
+    "sbm_covariate_sampling",
+    "assortativity",
+    "x_distribution",
+    "adaptive_m",
+    "column_covariance",
+    "dgp_name",
+    "column_covariance_type",
+    "column_covariance_condition_number",
+)
+
+COLORS = {
+    "DC": "#0072B2",
+    "AC_1": "#D55E00",
+    "AC_sqrt": "#009E73",
+    "AC_adaptive": "#CC79A7",
+    "RVTest_permutation": "#E69F00",
+    "RVTest_asymptotic": "#222222",
+}
+
+MARKERS = {
+    "DC": "x",
+    "AC_1": "D",
+    "AC_sqrt": "^",
+    "AC_adaptive": "s",
+    "RVTest_permutation": "v",
+    "RVTest_asymptotic": "o",
+}
+
+LINESTYLES = {
+    "DC": "-",
+    "AC_1": "-",
+    "AC_sqrt": "-",
+    "AC_adaptive": "-",
+    "RVTest_permutation": "-",
+    "RVTest_asymptotic": "-",
+}
+
+METHOD_LABELS = {
+    "DC": "DC",
+    "AC_1": r"AC ($k=1$)",
+    "AC_sqrt": r"AC ($k=\sqrt{n}$)",
+    "AC_adaptive": "AC (adaptive)",
+    "RVTest_permutation": "RV (permutation)",
+    "RVTest_asymptotic": "RV (asymptotic)",
+}
+
+METHODS = tuple(COLORS)
+
+COPULAS = ("gaussian", "student_t", "clayton", "mixture")
+MARGINALS_Z = ("gaussian", "chi df=5")
+MARGINALS_Y = ("gaussian", "chi df=5", "cauchy")
+
+LATENT_SIMULATIONS = (
+    "linear",
+    "exponential",
+    "cubic",
+    "step",
+    "circle",
+    "ellipse",
+    "spiral",
+    "quadratic",
+    "fourth_root",
+    "log",
+    "w_shaped",
+    "two_parabolas",
+    "bernoulli",
+    "square",
+    "diamond",
+    "sin_sixteen_pi",
+)
+
+FUNCTIONAL_FORMS = (
+    "linear",
+    "interaction",
+    "pareto",
+    "max",
+    "abs_max",
+    "radial",
+    "sine",
+    "tanh_product",
+)
+
+CATEGORY_LABELS = {
+    "student_t": "Student t",
+    "fourth_root": "Fourth\nroot",
+    "w_shaped": "W-shaped",
+    "two_parabolas": "Two\nparabolas",
+    "sin_sixteen_pi": r"$\sin(16\pi)$",
+    "abs_max": "Absolute\nmaximum",
+    "tanh_product": "Tanh\nproduct",
+}
+
+MARGINAL_LABELS = {
+    "gaussian": r"$\mathcal{N}(0, 1)$",
+    "chi df=5": r"$\chi^2_5$",
+    "unif(-1, 1)": r"$U(-1, 1)$",
+}
+
+PNG_DPI = 600
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Create paper-quality versions of all active figures in "
+            "visualise_results_chatterjee.ipynb."
+        )
+    )
+    parser.add_argument(
+        "--results-dir",
+        type=Path,
+        default=Path(__file__).resolve().parent,
+        help="Directory containing the simulation CSV files (default: script directory).",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path(__file__).resolve().parent / "chatterjee_figures",
+        help="Directory in which to save PDF and PNG figures.",
+    )
+    return parser.parse_args()
+
+
+def configure_plot_style() -> None:
+    """Set physical sizes, fonts, strokes, and embedded-font output defaults."""
+    plt.rcParams.update(
+        {
+            "figure.figsize": (7.0, 4.8),
+            "figure.dpi": 120,
+            "savefig.dpi": PNG_DPI,
+            "text.usetex": False,
+            "font.family": "sans-serif",
+            "font.sans-serif": ["DejaVu Sans"],
+            "mathtext.fontset": "dejavusans",
+            "font.size": 8.5,
+            "axes.labelsize": 9,
+            "axes.titlesize": 9,
+            "figure.titlesize": 10,
+            "legend.fontsize": 7.5,
+            "legend.title_fontsize": 7.5,
+            "lines.linewidth": 1.25,
+            "lines.markersize": 4.5,
+            "lines.markeredgewidth": 0.9,
+            "patch.linewidth": 0.6,
+            "axes.linewidth": 0.6,
+            "axes.facecolor": "white",
+            "axes.grid": False,
+            "axes.axisbelow": True,
+            "axes.spines.top": False,
+            "axes.spines.right": False,
+            "xtick.direction": "out",
+            "ytick.direction": "out",
+            "xtick.major.size": 3,
+            "ytick.major.size": 3,
+            "xtick.major.width": 0.6,
+            "ytick.major.width": 0.6,
+            "xtick.labelsize": 7.5,
+            "ytick.labelsize": 7.5,
+            "pdf.fonttype": 42,
+            "ps.fonttype": 42,
+            "svg.fonttype": "none",
+            "savefig.facecolor": "white",
+            "savefig.edgecolor": "white",
+            "savefig.transparent": False,
+        }
+    )
+
+
+def read_result_batch(results_dir: Path, filenames: tuple[str, ...]) -> pd.DataFrame:
+    missing = [filename for filename in filenames if not (results_dir / filename).is_file()]
+    if missing:
+        formatted = "\n".join(f"  - {results_dir / filename}" for filename in missing)
+        raise FileNotFoundError(f"Missing simulation result files:\n{formatted}")
+
+    frames = []
+    for filename in filenames:
+        path = results_dir / filename
+        print(f"Reading {path}")
+        frames.append(pd.read_csv(path))
+    return pd.concat(frames, ignore_index=True)
+
+
+def make_comparable(value: object) -> object:
+    """Convert nested dataframe values into hashable row-key components."""
+    if isinstance(value, np.generic):
+        value = value.item()
+
+    if isinstance(value, np.ndarray):
+        return ("array", make_comparable(value.tolist()))
+
+    if isinstance(value, Mapping):
+        items = (
+            (make_comparable(key), make_comparable(item))
+            for key, item in value.items()
+        )
+        return ("dict", tuple(sorted(items, key=repr)))
+
+    if isinstance(value, (list, tuple)):
+        return ("sequence", tuple(make_comparable(item) for item in value))
+
+    try:
+        if pd.isna(value):
+            return ("missing",)
+    except (TypeError, ValueError):
+        pass
+
+    return value
+
+
+def make_row_keys(frame: pd.DataFrame) -> pd.Series:
+    return frame[list(COLUMNS_TO_MATCH)].apply(
+        lambda row: tuple(make_comparable(value) for value in row),
+        axis=1,
+    )
+
+
+def replace_asymptotic_results(
+    old_results: pd.DataFrame,
+    new_results: pd.DataFrame,
+) -> pd.DataFrame:
+    """Apply cell 7's one-to-one replacement of matching asymptotic-test rows."""
+    method = "RVTest_asymptotic"
+    target_positions = np.flatnonzero(old_results["method"].eq(method).to_numpy())
+    source_positions = np.flatnonzero(new_results["method"].eq(method).to_numpy())
+
+    target = old_results.iloc[target_positions].copy()
+    source = new_results.iloc[source_positions].copy()
+    target["_position"] = target_positions
+    source["_position"] = source_positions
+    target["_key"] = make_row_keys(target)
+    source["_key"] = make_row_keys(source)
+    target["_occurrence"] = target.groupby("_key", sort=False).cumcount()
+    source["_occurrence"] = source.groupby("_key", sort=False).cumcount()
+
+    matches = target[["_position", "_key", "_occurrence"]].merge(
+        source[["_position", "_key", "_occurrence"]],
+        on=["_key", "_occurrence"],
+        how="inner",
+        suffixes=("_target", "_source"),
+        validate="one_to_one",
+    )
+
+    if len(matches) != 47_400:
+        raise RuntimeError(
+            f"Expected 47,400 matching asymptotic rows, found {len(matches)}."
+        )
+
+    result = old_results.copy()
+    target_columns = result.columns.get_indexer(COLUMNS_TO_REPLACE)
+    source_columns = new_results.columns.get_indexer(COLUMNS_TO_REPLACE)
+    if (target_columns < 0).any() or (source_columns < 0).any():
+        raise KeyError("One or more replacement columns are missing.")
+
+    result.iloc[
+        matches["_position_target"].to_numpy(),
+        target_columns,
+    ] = new_results.iloc[
+        matches["_position_source"].to_numpy(),
+        source_columns,
+    ].to_numpy()
+    return result
+
+
+def prepare_results(results_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
+    old_results = process_results(read_result_batch(results_dir, OLD_RESULT_FILES))
+    new_results = process_results(read_result_batch(results_dir, NEW_RESULT_FILES))
+    all_results = replace_asymptotic_results(old_results, new_results)
+
+    gaussian = all_results[all_results["dgp_name"] == "GaussianNetwork"].copy()
+    bernoulli = all_results[all_results["dgp_name"] == "BernoulliNetwork"].copy()
+    return gaussian, bernoulli
+
+
+def aggregate_inputs(
+    gaussian: pd.DataFrame,
+    bernoulli: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    null_factors = [
+        "method",
+        "copula",
+        "marginal_z",
+        "marginal_y",
+        "column_covariance_condition_number",
+    ]
+    alternative_factors = [
+        "marginal_y",
+        "marginal_z",
+        "method",
+        "latent_sim",
+        "make_sparse",
+        "functional_form",
+        "copula",
+        "sbm_covariate_sampling",
+        "assortativity",
+        "x_distribution",
+    ]
+
+    null_gaussian = gaussian[gaussian["rho"] == 0.0]
+    null_bernoulli = bernoulli[bernoulli["rho"] == 0.0]
+    alternative_gaussian = gaussian[gaussian["rho"] != 0.0]
+    alternative_bernoulli = bernoulli[bernoulli["rho"] != 0.0]
+
+    return (
+        aggregate_results(
+            null_gaussian,
+            y_axis="FalseRejection",
+            x_axis="n",
+            factors=null_factors,
+        ),
+        aggregate_results(
+            null_bernoulli,
+            y_axis="FalseRejection",
+            x_axis="n",
+            factors=null_factors,
+        ),
+        aggregate_results(
+            alternative_gaussian,
+            y_axis="Rejection",
+            x_axis="n",
+            factors=alternative_factors,
+        ),
+        aggregate_results(
+            alternative_bernoulli,
+            y_axis="Rejection",
+            x_axis="n",
+            factors=alternative_factors,
+        ),
+    )
+
+
+def display_label(value: object) -> str:
+    text = str(value)
+    return CATEGORY_LABELS.get(text, text.replace("_", " ").title())
+
+
+def display_marginal_label(value: object) -> str:
+    text = str(value)
+    return MARGINAL_LABELS.get(text, display_label(text))
+
+
+def assert_unique(data: pd.DataFrame, keys: list[str], context: str) -> None:
+    """Prevent future data additions from silently drawing duplicate points."""
+    duplicates = data.duplicated(keys, keep=False)
+    if duplicates.any():
+        raise ValueError(
+            f"{context} contains {int(duplicates.sum())} rows duplicated on {keys}. "
+            "Add the omitted configuration as a facet or filter before plotting."
+        )
+
+
+def method_handles(*, lines: bool) -> list[Line2D]:
+    handles = []
+    for method in METHODS:
+        handles.append(
+            Line2D(
+                [0],
+                [0],
+                color=COLORS[method],
+                linestyle=LINESTYLES[method] if lines else "none",
+                linewidth=1.25,
+                marker=MARKERS[method],
+                markersize=4.5,
+                markerfacecolor="none",
+                markeredgewidth=0.9,
+                label=METHOD_LABELS[method],
+            )
+        )
+    return handles
+
+
+def add_shared_legend(fig: Figure, *, lines: bool) -> None:
+    layout_engine = fig.get_layout_engine()
+    if layout_engine is not None:
+        # Reserve a stable header band: title at the top, legend immediately below.
+        layout_engine.set(rect=(0.0, 0.0, 1.0, 0.86))
+    fig.legend(
+        handles=method_handles(lines=lines),
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.94),
+        ncols=3,
+        frameon=False,
+        handlelength=2.5 if lines else 1.2,
+        columnspacing=1.3,
+        handletextpad=0.5,
+    )
+
+
+def style_probability_axis(ax: Axes, *, null: bool = False) -> None:
+    if null:
+        # Leave room above the largest observed rates and their SEM ribbons.
+        ax.set_ylim(0, 0.15)
+        ax.set_yticks([0, 0.025, 0.05, 0.075, 0.10, 0.125, 0.15])
+    else:
+        # Markers and symmetric error bars at exactly 0 or 1 need visual headroom.
+        ax.set_ylim(-0.05, 1.08)
+        ax.set_yticks([0, 0.25, 0.50, 0.75, 1.00])
+
+    ax.grid(axis="y", color="#E2E2E2", linewidth=0.45)
+    ax.margins(x=0.04)
+
+
+def plot_line_panel(
+    ax: Axes,
+    data: pd.DataFrame,
+    *,
+    y_mean: str,
+    y_sem: str,
+    band_alpha: float = 0.13,
+) -> None:
+    assert_unique(data, ["n", "method"], "Line panel")
+    for method in METHODS:
+        subset = data[data["method"] == method].sort_values("n")
+        if subset.empty:
+            continue
+
+        x = subset["n"].to_numpy(dtype=float)
+        mean = subset[y_mean].to_numpy(dtype=float)
+        sem = subset[y_sem].to_numpy(dtype=float)
+        ax.plot(
+            x,
+            mean,
+            color=COLORS[method],
+            linestyle=LINESTYLES[method],
+            marker=MARKERS[method],
+            markerfacecolor="none",
+            markeredgewidth=0.9,
+            zorder=3,
+        )
+        ax.fill_between(
+            x,
+            mean - sem,
+            mean + sem,
+            color=COLORS[method],
+            alpha=band_alpha,
+            linewidth=0,
+            zorder=2,
+        )
+
+    if not data.empty:
+        ax.set_xticks(sorted(data["n"].unique()))
+
+
+def plot_scatter_panel(
+    ax: Axes,
+    data: pd.DataFrame,
+    *,
+    category: str,
+    categories: tuple[str, ...],
+    y_mean: str = "Rejection_mean",
+    category_labeler: Callable[[object], str] = display_label,
+) -> None:
+    assert_unique(data, [category, "method"], "Scatter panel")
+    base_positions = np.arange(len(categories), dtype=float)
+    offsets = dict(zip(METHODS, np.linspace(-0.25, 0.25, len(METHODS))))
+
+    for method in METHODS:
+        subset = data[data["method"] == method].set_index(category)
+        subset = subset.reindex(categories)
+        mean = pd.to_numeric(subset[y_mean], errors="coerce").to_numpy(dtype=float)
+        valid = np.isfinite(mean)
+        if not valid.any():
+            continue
+
+        ax.plot(
+            base_positions[valid] + offsets[method],
+            mean[valid],
+            color=COLORS[method],
+            linestyle="none",
+            marker=MARKERS[method],
+            markerfacecolor="none",
+            markeredgewidth=0.9,
+            markersize=4.5,
+            zorder=3,
+        )
+
+    ax.set_xlim(-0.55, len(categories) - 0.45)
+    ax.set_xticks(base_positions)
+    ax.set_xticklabels([category_labeler(value) for value in categories])
+
+
+def add_facet_labels(
+    axes: np.ndarray,
+    *,
+    column_values: tuple[str, ...],
+    column_prefix: str,
+    row_values: tuple[str, ...] = (),
+    row_prefix: str = "",
+    column_labeler: Callable[[object], str] = display_label,
+    row_labeler: Callable[[object], str] = display_label,
+) -> None:
+    for column, value in enumerate(column_values):
+        axes[0, column].set_title(f"{column_prefix}{column_labeler(value)}")
+
+    for row, value in enumerate(row_values):
+        axes[row, -1].annotate(
+            f"{row_prefix}{row_labeler(value)}",
+            xy=(1.04, 0.5),
+            xycoords="axes fraction",
+            ha="left",
+            va="center",
+            rotation=270,
+            fontsize=8,
+            annotation_clip=False,
+        )
+
+
+def save_figure(fig: Figure, output_dir: Path, filename: str) -> None:
+    pdf_path = output_dir / f"{filename}.pdf"
+    png_path = output_dir / f"{filename}.png"
+    metadata = {"Creator": "visualise_results_chatterjee.py"}
+    print(f"Saving {pdf_path}")
+    fig.savefig(pdf_path, metadata=metadata)
+    print(f"Saving {png_path}")
+    fig.savefig(png_path, dpi=PNG_DPI, metadata=metadata)
+    plt.close(fig)
+
+
+def plot_null_network(
+    data: pd.DataFrame,
+    output_dir: Path,
+    *,
+    title: str,
+    filename: str,
+) -> None:
+    condition_number = pd.to_numeric(
+        data["column_covariance_condition_number"],
+        errors="coerce",
+    )
+    data = data[np.isclose(condition_number, 1.0, equal_nan=False)].copy()
+    marginal_order = ("gaussian", "chi df=5", "cauchy")
+    columns = tuple(value for value in marginal_order if value in set(data["marginal_z"]))
+    rows = tuple(value for value in marginal_order if value in set(data["marginal_y"]))
+
+    assert_unique(
+        data,
+        ["n", "method", "marginal_z", "marginal_y"],
+        title,
+    )
+    fig, axes = plt.subplots(
+        len(rows),
+        len(columns),
+        figsize=(7.0, 5.5),
+        sharex=True,
+        sharey=True,
+        squeeze=False,
+        layout="constrained",
+    )
+    for row, marginal_y in enumerate(rows):
+        for column, marginal_z in enumerate(columns):
+            ax = axes[row, column]
+            panel = data[
+                (data["marginal_y"] == marginal_y)
+                & (data["marginal_z"] == marginal_z)
+            ]
+            plot_line_panel(
+                ax,
+                panel,
+                y_mean="FalseRejection_mean",
+                y_sem="FalseRejection_sem",
+                band_alpha=0.08,
+            )
+            style_probability_axis(ax, null=True)
+
+    add_facet_labels(
+        axes,
+        column_values=columns,
+        column_prefix="Z marginal: ",
+        row_values=rows,
+        row_prefix="Y marginal: ",
+        column_labeler=display_marginal_label,
+        row_labeler=display_marginal_label,
+    )
+    fig.suptitle(title)
+    fig.supxlabel(r"Network size, $n$")
+    fig.supylabel("Type I error rate")
+    add_shared_legend(fig, lines=True)
+    save_figure(fig, output_dir, filename)
+
+
+def plot_null_figures(
+    null_gaussian: pd.DataFrame,
+    null_bernoulli: pd.DataFrame,
+    output_dir: Path,
+) -> None:
+    plot_null_network(
+        null_gaussian,
+        output_dir,
+        title="Type I error under independence — Gaussian weighted network",
+        filename="01_null_gaussian",
+    )
+    plot_null_network(
+        null_bernoulli,
+        output_dir,
+        title="Type I error under independence — Bernoulli binary network",
+        filename="02_null_bernoulli",
+    )
+
+
+def filtered_copula_results(data: pd.DataFrame) -> pd.DataFrame:
+    return data[
+        data["copula"].isin(COPULAS)
+        & data["marginal_z"].isin(MARGINALS_Z)
+        & data["marginal_y"].isin(MARGINALS_Y)
+        & data["method"].isin(METHODS)
+    ].copy()
+
+
+def plot_copula_network(
+    data: pd.DataFrame,
+    output_dir: Path,
+    *,
+    network_name: str,
+    filename_prefix: str,
+    first_number: int,
+) -> None:
+    scatter_data = data[data["n"] == 300].copy()
+    assert_unique(
+        scatter_data,
+        ["method", "copula", "marginal_z", "marginal_y"],
+        f"{network_name} copula point ranges",
+    )
+    fig, axes = plt.subplots(
+        len(MARGINALS_Z),
+        len(COPULAS),
+        figsize=(7.0, 4.2),
+        sharex=True,
+        sharey=True,
+        squeeze=False,
+        layout="constrained",
+    )
+    for row, marginal_z in enumerate(MARGINALS_Z):
+        for column, copula in enumerate(COPULAS):
+            ax = axes[row, column]
+            panel = scatter_data[
+                (scatter_data["marginal_z"] == marginal_z)
+                & (scatter_data["copula"] == copula)
+            ]
+            plot_scatter_panel(
+                ax,
+                panel,
+                category="marginal_y",
+                categories=MARGINALS_Y,
+                category_labeler=display_marginal_label,
+            )
+            style_probability_axis(ax)
+
+    add_facet_labels(
+        axes,
+        column_values=COPULAS,
+        column_prefix="",
+        row_values=MARGINALS_Z,
+        row_prefix="Z marginal: ",
+        row_labeler=display_marginal_label,
+    )
+    fig.suptitle(f"Power across Y marginals — {network_name}, $n=300$")
+    fig.supxlabel("Y marginal distribution")
+    fig.supylabel("Power")
+    add_shared_legend(fig, lines=False)
+    save_figure(
+        fig,
+        output_dir,
+        f"{first_number:02d}_{filename_prefix}_copulas_n300",
+    )
+
+    line_data = data[data["marginal_z"] == "gaussian"].copy()
+    assert_unique(
+        line_data,
+        ["n", "method", "copula", "marginal_y"],
+        f"{network_name} copula curves",
+    )
+    fig, axes = plt.subplots(
+        len(MARGINALS_Y),
+        len(COPULAS),
+        figsize=(7.0, 5.2),
+        sharex=True,
+        sharey=True,
+        squeeze=False,
+        layout="constrained",
+    )
+    for row, marginal_y in enumerate(MARGINALS_Y):
+        for column, copula in enumerate(COPULAS):
+            ax = axes[row, column]
+            panel = line_data[
+                (line_data["marginal_y"] == marginal_y)
+                & (line_data["copula"] == copula)
+            ]
+            plot_line_panel(
+                ax,
+                panel,
+                y_mean="Rejection_mean",
+                y_sem="Rejection_sem",
+            )
+            style_probability_axis(ax)
+
+    add_facet_labels(
+        axes,
+        column_values=COPULAS,
+        column_prefix="",
+        row_values=MARGINALS_Y,
+        row_prefix="Y marginal: ",
+        row_labeler=display_marginal_label,
+    )
+    fig.suptitle(
+        f"Power by network size — {network_name} "
+        f"(Z marginal: {display_marginal_label('gaussian')})"
+    )
+    fig.supxlabel(r"Network size, $n$")
+    fig.supylabel("Power")
+    add_shared_legend(fig, lines=True)
+    save_figure(
+        fig,
+        output_dir,
+        f"{first_number + 1:02d}_{filename_prefix}_copulas_by_n",
+    )
+
+
+def plot_copula_figures(
+    alternative_gaussian: pd.DataFrame,
+    alternative_bernoulli: pd.DataFrame,
+    output_dir: Path,
+) -> None:
+    plot_copula_network(
+        filtered_copula_results(alternative_bernoulli),
+        output_dir,
+        network_name="Bernoulli binary network",
+        filename_prefix="binary",
+        first_number=3,
+    )
+    plot_copula_network(
+        filtered_copula_results(alternative_gaussian),
+        output_dir,
+        network_name="Gaussian weighted network",
+        filename_prefix="gaussian",
+        first_number=5,
+    )
+
+
+def plot_latent_network(
+    data: pd.DataFrame,
+    output_dir: Path,
+    *,
+    network_name: str,
+    filename: str,
+) -> None:
+    data = data[
+        data["latent_sim"].isin(LATENT_SIMULATIONS)
+        & data["method"].isin(METHODS)
+        & (data["n"] == 300)
+    ].copy()
+    assert_unique(
+        data,
+        ["method", "latent_sim"],
+        f"{network_name} latent simulations",
+    )
+
+    category_rows = (
+        LATENT_SIMULATIONS[:8],
+        LATENT_SIMULATIONS[8:],
+    )
+    fig, axes = plt.subplots(
+        2,
+        1,
+        figsize=(7.0, 4.5),
+        sharey=True,
+        squeeze=False,
+        layout="constrained",
+    )
+    for row, categories in enumerate(category_rows):
+        ax = axes[row, 0]
+        panel = data[data["latent_sim"].isin(categories)]
+        plot_scatter_panel(
+            ax,
+            panel,
+            category="latent_sim",
+            categories=categories,
+        )
+        style_probability_axis(ax)
+        ax.set_title(f"({chr(ord('a') + row)})", loc="left")
+
+    fig.suptitle(f"Power across latent dependence structures — {network_name}, $n=300$")
+    fig.supxlabel("Latent dependence structure")
+    fig.supylabel("Power")
+    add_shared_legend(fig, lines=False)
+    save_figure(fig, output_dir, filename)
+
+
+def plot_latent_simulation_figures(
+    alternative_gaussian: pd.DataFrame,
+    alternative_bernoulli: pd.DataFrame,
+    output_dir: Path,
+) -> None:
+    plot_latent_network(
+        alternative_bernoulli,
+        output_dir,
+        network_name="Bernoulli binary network",
+        filename="07_binary_latent_simulations_n300",
+    )
+    plot_latent_network(
+        alternative_gaussian,
+        output_dir,
+        network_name="Gaussian weighted network",
+        filename="08_gaussian_latent_simulations_n300",
+    )
+
+
+def plot_functional_curves(
+    data: pd.DataFrame,
+    output_dir: Path,
+    *,
+    network_name: str,
+    filename: str,
+) -> None:
+    categories = FUNCTIONAL_FORMS
+    panel_data = data[data["functional_form"].isin(categories)].copy()
+    assert_unique(
+        panel_data,
+        ["n", "method", "functional_form"],
+        f"{network_name} functional curves",
+    )
+    fig, axes = plt.subplots(
+        2,
+        4,
+        figsize=(7.0, 5.0),
+        sharex=True,
+        sharey=True,
+        squeeze=False,
+        layout="constrained",
+    )
+    for index, category in enumerate(categories):
+        row, column = divmod(index, 4)
+        ax = axes[row, column]
+        plot_line_panel(
+            ax,
+            panel_data[panel_data["functional_form"] == category],
+            y_mean="Rejection_mean",
+            y_sem="Rejection_sem",
+        )
+        style_probability_axis(ax)
+        ax.set_title(display_label(category))
+
+    fig.suptitle(f"Power by network size — {network_name}")
+    fig.supxlabel(r"Network size, $n$")
+    fig.supylabel("Power")
+    add_shared_legend(fig, lines=True)
+    save_figure(fig, output_dir, filename)
+
+
+def plot_functional_figures(
+    data: pd.DataFrame,
+    output_dir: Path,
+    *,
+    network_name: str,
+    scatter_n: int,
+    filename_prefix: str,
+    figure_numbers: tuple[int, int],
+) -> None:
+    data = data[
+        data["functional_form"].isin(FUNCTIONAL_FORMS)
+        & data["method"].isin(METHODS)
+    ].copy()
+
+    point_data = data[data["n"] == scatter_n].copy()
+    assert_unique(
+        point_data,
+        ["method", "functional_form"],
+        f"{network_name} functional point ranges",
+    )
+    fig, axes = plt.subplots(
+        1,
+        1,
+        figsize=(7.0, 2.9),
+        squeeze=False,
+        layout="constrained",
+    )
+    ax = axes[0, 0]
+    plot_scatter_panel(
+        ax,
+        point_data,
+        category="functional_form",
+        categories=FUNCTIONAL_FORMS,
+    )
+    style_probability_axis(ax)
+    fig.suptitle(f"Power across functional alternatives — {network_name}, $n={scatter_n}$")
+    fig.supxlabel("Functional alternative")
+    fig.supylabel("Power")
+    add_shared_legend(fig, lines=False)
+    save_figure(
+        fig,
+        output_dir,
+        f"{figure_numbers[0]:02d}_{filename_prefix}_functional_forms_n{scatter_n}",
+    )
+
+    plot_functional_curves(
+        data,
+        output_dir,
+        network_name=network_name,
+        filename=f"{figure_numbers[1]:02d}_{filename_prefix}_functional_forms_by_n",
+    )
+
+
+def main() -> None:
+    args = parse_args()
+    results_dir = args.results_dir.expanduser().resolve()
+    output_dir = args.output_dir.expanduser().resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    configure_plot_style()
+    gaussian, bernoulli = prepare_results(results_dir)
+    (
+        null_gaussian,
+        null_bernoulli,
+        alternative_gaussian,
+        alternative_bernoulli,
+    ) = aggregate_inputs(gaussian, bernoulli)
+
+    plot_null_figures(null_gaussian, null_bernoulli, output_dir)
+    plot_copula_figures(
+        alternative_gaussian,
+        alternative_bernoulli,
+        output_dir,
+    )
+    plot_latent_simulation_figures(
+        alternative_gaussian,
+        alternative_bernoulli,
+        output_dir,
+    )
+    plot_functional_figures(
+        alternative_bernoulli,
+        output_dir,
+        network_name="Bernoulli binary network",
+        scatter_n=300,
+        filename_prefix="binary",
+        figure_numbers=(9, 10),
+    )
+    plot_functional_figures(
+        alternative_gaussian,
+        output_dir,
+        network_name="Gaussian weighted network",
+        scatter_n=500,
+        filename_prefix="gaussian",
+        figure_numbers=(11, 12),
+    )
+
+    print(f"Saved 12 figures as PDF and PNG to {output_dir}")
+
+
+if __name__ == "__main__":
+    main()
