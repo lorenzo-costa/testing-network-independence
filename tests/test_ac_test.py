@@ -56,8 +56,8 @@ def test_config_resolver_forwards_adaptive_m_option():
 @pytest.mark.parametrize(
     ("filename", "expected_ky", "expected_permutation"),
     [
-        ("config_gaussian.yaml", [1], False),
-        ("config_maema.yaml", [1], False),
+        ("config_gaussian.yaml", [3], True),
+        ("config_maema.yaml", [3], True),
         ("config_functionals.yaml", [3], True),
         ("config_null.yaml", [3], True),
     ],
