@@ -4,7 +4,7 @@
 The script reads the same two batches of simulation CSVs, applies the notebook's
 row-matched replacement of ``RVTest_asymptotic`` results, and redesigns every
 active notebook figure at publication dimensions. Each figure is written as a
-vector PDF and a 600-DPI PNG.
+600-DPI PNG.
 
 Run from anywhere with:
 
@@ -208,13 +208,13 @@ def parse_args() -> argparse.Namespace:
         "--output-dir",
         type=Path,
         default=Path(__file__).resolve().parent / "chatterjee_figures",
-        help="Directory in which to save PDF and PNG figures.",
+        help="Directory in which to save PNG figures.",
     )
     return parser.parse_args()
 
 
 def configure_plot_style() -> None:
-    """Set physical sizes, fonts, strokes, and embedded-font output defaults."""
+    """Set physical sizes, fonts, strokes, and output defaults."""
     plt.rcParams.update(
         {
             "figure.figsize": (7.0, 4.8),
@@ -248,9 +248,6 @@ def configure_plot_style() -> None:
             "ytick.major.width": 0.6,
             "xtick.labelsize": 7.5,
             "ytick.labelsize": 7.5,
-            "pdf.fonttype": 42,
-            "ps.fonttype": 42,
-            "svg.fonttype": "none",
             "savefig.facecolor": "white",
             "savefig.edgecolor": "white",
             "savefig.transparent": False,
@@ -597,11 +594,8 @@ def add_facet_labels(
 
 
 def save_figure(fig: Figure, output_dir: Path, filename: str) -> None:
-    pdf_path = output_dir / f"{filename}.pdf"
     png_path = output_dir / f"{filename}.png"
     metadata = {"Creator": "visualise_results_chatterjee.py"}
-    print(f"Saving {pdf_path}")
-    fig.savefig(pdf_path, metadata=metadata)
     print(f"Saving {png_path}")
     fig.savefig(png_path, dpi=PNG_DPI, metadata=metadata)
     plt.close(fig)
@@ -1033,7 +1027,7 @@ def main() -> None:
         figure_numbers=(11, 12),
     )
 
-    print(f"Saved 12 figures as PDF and PNG to {output_dir}")
+    print(f"Saved 12 figures as PNG to {output_dir}")
 
 
 if __name__ == "__main__":

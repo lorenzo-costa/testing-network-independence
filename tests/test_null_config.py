@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from src.load_config import build_factorial_design, load_config
 
@@ -8,8 +9,18 @@ from src.load_config import build_factorial_design, load_config
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_null_config_crosses_networks_marginals_and_column_covariances():
-    config = load_config(ROOT / "config_null.yaml")
+@pytest.mark.parametrize(
+    ("filename", "expected_network"),
+    [
+        ("config_null_gaussian.yaml", "GaussianNetwork"),
+        ("config_null_bernoulli.yaml", "BernoulliNetwork"),
+    ],
+)
+def test_null_configs_cross_marginals_and_column_covariances(
+    filename,
+    expected_network,
+):
+    config = load_config(ROOT / filename)
     design = build_factorial_design(config)
 
     network_types = {row["setup"][0].func.__name__ for row in design}
@@ -21,14 +32,18 @@ def test_null_config_crosses_networks_marginals_and_column_covariances():
     }
 
     assert config["simulation"]["rho"] == [0.0]
-    assert network_types == {"GaussianNetwork", "BernoulliNetwork"}
+    assert network_types == {expected_network}
     assert len(marginal_pairs) == 9
     assert len(covariance_matrices) == 3
-    assert len(design) == 972
+    assert len(design) == 486
 
 
-def test_null_config_column_covariance_reaches_the_latent_sampler():
-    config = load_config(ROOT / "config_null.yaml")
+@pytest.mark.parametrize(
+    "filename",
+    ["config_null_gaussian.yaml", "config_null_bernoulli.yaml"],
+)
+def test_null_config_column_covariance_reaches_the_latent_sampler(filename):
+    config = load_config(ROOT / filename)
     row = build_factorial_design(config)[0]
     dgp_factory, _ = row["setup"]
     runtime = dict(row)

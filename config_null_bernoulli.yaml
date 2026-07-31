@@ -1,5 +1,5 @@
 # =============================================================================
-# Null Simulation Configuration
+# Bernoulli Network Null Simulation Configuration
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -68,13 +68,9 @@ methods:
         use_permutation_coeff: true
 
 # -----------------------------------------------------------------------------
-# Gaussian-copula network setups under the null
+# Gaussian-copula Bernoulli network setup under the null
 # -----------------------------------------------------------------------------
 setups:
-  - dgp: GaussianNetwork
-    copula_model: gaussian
-    solver: ASE
-
   - dgp: BernoulliNetwork
     copula_model: gaussian
     solver: pgd_fit_wrapper

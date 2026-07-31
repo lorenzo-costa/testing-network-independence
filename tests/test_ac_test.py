@@ -59,7 +59,8 @@ def test_config_resolver_forwards_adaptive_m_option():
         ("config_gaussian.yaml", [3], True),
         ("config_maema.yaml", [3], True),
         ("config_functionals.yaml", [3], True),
-        ("config_null.yaml", [3], True),
+        ("config_null_gaussian.yaml", [3], True),
+        ("config_null_bernoulli.yaml", [3], True),
     ],
 )
 def test_ac_configs_set_expected_response_and_coefficient_permutation(
