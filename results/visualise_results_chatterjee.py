@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Create paper-quality figures from ``visualise_results_chatterjee.ipynb``.
 
-The script reads the same two batches of simulation CSVs, applies the notebook's
-row-matched replacement of ``RVTest_asymptotic`` results, and redesigns every
-active notebook figure at publication dimensions. Each figure is written as a
-600-DPI PNG.
+The script applies the notebook's row-matched replacement of
+``RVTest_asymptotic`` results to the original ky=1 simulation batches. It also
+reads the ky=3 copula and null batches directly, without replacing their
+asymptotic RV results. Every figure is written as a 600-DPI PNG.
 
 Run from anywhere with:
 
@@ -53,6 +53,18 @@ NEW_RESULT_FILES = (
     "simulation_results_20260726_0339.csv",  # functional alternatives
     "simulation_results_20260726_0342.csv",  # latent simulations
     "simulation_results_20260726_0400.csv",  # null simulations
+)
+
+KY3_GAUSSIAN_COPULA_RESULT_FILES = (
+    "simulation_results_20260730_2105.csv",
+)
+
+KY3_BERNOULLI_COPULA_RESULT_FILES = (
+    "simulation_results_20260730_2244.csv",
+)
+
+KY3_NULL_RESULT_FILES = (
+    "simulation_results_20260731_0523.csv",
 )
 
 COLUMNS_TO_REPLACE = (
@@ -360,10 +372,30 @@ def prepare_results(results_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
     return gaussian, bernoulli
 
 
-def aggregate_inputs(
-    gaussian: pd.DataFrame,
-    bernoulli: pd.DataFrame,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def prepare_ky3_copula_results(
+    results_dir: Path,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Read the ky=3 copula batches without replacing asymptotic RV results."""
+    gaussian = process_results(
+        read_result_batch(results_dir, KY3_GAUSSIAN_COPULA_RESULT_FILES)
+    )
+    bernoulli = process_results(
+        read_result_batch(results_dir, KY3_BERNOULLI_COPULA_RESULT_FILES)
+    )
+    return gaussian, bernoulli
+
+
+def prepare_ky3_null_results(
+    results_dir: Path,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Read the ky=3 null batch without replacing asymptotic RV results."""
+    results = process_results(read_result_batch(results_dir, KY3_NULL_RESULT_FILES))
+    gaussian = results[results["dgp_name"] == "GaussianNetwork"].copy()
+    bernoulli = results[results["dgp_name"] == "BernoulliNetwork"].copy()
+    return gaussian, bernoulli
+
+
+def aggregate_null_results(data: pd.DataFrame) -> pd.DataFrame:
     null_factors = [
         "method",
         "copula",
@@ -371,6 +403,15 @@ def aggregate_inputs(
         "marginal_y",
         "column_covariance_condition_number",
     ]
+    return aggregate_results(
+        data[data["rho"] == 0.0],
+        y_axis="FalseRejection",
+        x_axis="n",
+        factors=null_factors,
+    )
+
+
+def aggregate_alternative_results(data: pd.DataFrame) -> pd.DataFrame:
     alternative_factors = [
         "marginal_y",
         "marginal_z",
@@ -383,37 +424,23 @@ def aggregate_inputs(
         "assortativity",
         "x_distribution",
     ]
+    return aggregate_results(
+        data[data["rho"] != 0.0],
+        y_axis="Rejection",
+        x_axis="n",
+        factors=alternative_factors,
+    )
 
-    null_gaussian = gaussian[gaussian["rho"] == 0.0]
-    null_bernoulli = bernoulli[bernoulli["rho"] == 0.0]
-    alternative_gaussian = gaussian[gaussian["rho"] != 0.0]
-    alternative_bernoulli = bernoulli[bernoulli["rho"] != 0.0]
 
+def aggregate_inputs(
+    gaussian: pd.DataFrame,
+    bernoulli: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     return (
-        aggregate_results(
-            null_gaussian,
-            y_axis="FalseRejection",
-            x_axis="n",
-            factors=null_factors,
-        ),
-        aggregate_results(
-            null_bernoulli,
-            y_axis="FalseRejection",
-            x_axis="n",
-            factors=null_factors,
-        ),
-        aggregate_results(
-            alternative_gaussian,
-            y_axis="Rejection",
-            x_axis="n",
-            factors=alternative_factors,
-        ),
-        aggregate_results(
-            alternative_bernoulli,
-            y_axis="Rejection",
-            x_axis="n",
-            factors=alternative_factors,
-        ),
+        aggregate_null_results(gaussian),
+        aggregate_null_results(bernoulli),
+        aggregate_alternative_results(gaussian),
+        aggregate_alternative_results(bernoulli),
     )
 
 
@@ -607,6 +634,7 @@ def plot_null_network(
     *,
     title: str,
     filename: str,
+    ky: int,
 ) -> None:
     condition_number = pd.to_numeric(
         data["column_covariance_condition_number"],
@@ -656,7 +684,7 @@ def plot_null_network(
         column_labeler=display_marginal_label,
         row_labeler=display_marginal_label,
     )
-    fig.suptitle(title)
+    fig.suptitle(f"{title}, $k_y={ky}$")
     fig.supxlabel(r"Network size, $n$")
     fig.supylabel("Type I error rate")
     add_shared_legend(fig, lines=True)
@@ -667,18 +695,23 @@ def plot_null_figures(
     null_gaussian: pd.DataFrame,
     null_bernoulli: pd.DataFrame,
     output_dir: Path,
+    *,
+    ky: int,
+    figure_numbers: tuple[int, int],
 ) -> None:
     plot_null_network(
         null_gaussian,
         output_dir,
         title="Type I error under independence — Gaussian weighted network",
-        filename="01_null_gaussian",
+        filename=f"{figure_numbers[0]:02d}_null_gaussian_ky{ky}",
+        ky=ky,
     )
     plot_null_network(
         null_bernoulli,
         output_dir,
         title="Type I error under independence — Bernoulli binary network",
-        filename="02_null_bernoulli",
+        filename=f"{figure_numbers[1]:02d}_null_bernoulli_ky{ky}",
+        ky=ky,
     )
 
 
@@ -698,8 +731,11 @@ def plot_copula_network(
     network_name: str,
     filename_prefix: str,
     first_number: int,
+    chi_squared_number: int,
+    point_n: int,
+    ky: int,
 ) -> None:
-    scatter_data = data[data["n"] == 300].copy()
+    scatter_data = data[data["n"] == point_n].copy()
     assert_unique(
         scatter_data,
         ["method", "copula", "marginal_z", "marginal_y"],
@@ -738,86 +774,111 @@ def plot_copula_network(
         row_prefix="Z marginal: ",
         row_labeler=display_marginal_label,
     )
-    fig.suptitle(f"Power across Y marginals — {network_name}, $n=300$")
+    fig.suptitle(
+        f"Power across Y marginals — {network_name}, "
+        f"$n={point_n}$, $k_y={ky}$"
+    )
     fig.supxlabel("Y marginal distribution")
     fig.supylabel("Power")
     add_shared_legend(fig, lines=False)
     save_figure(
         fig,
         output_dir,
-        f"{first_number:02d}_{filename_prefix}_copulas_n300",
+        f"{first_number:02d}_{filename_prefix}_copulas_n{point_n}_ky{ky}",
     )
 
-    line_data = data[data["marginal_z"] == "gaussian"].copy()
-    assert_unique(
-        line_data,
-        ["n", "method", "copula", "marginal_y"],
-        f"{network_name} copula curves",
+    by_n_specs = (
+        (
+            "gaussian",
+            f"{first_number + 1:02d}_{filename_prefix}_copulas_by_n_ky{ky}",
+        ),
+        (
+            "chi df=5",
+            (
+                f"{chi_squared_number:02d}_{filename_prefix}_copulas_by_n_"
+                f"z_chi_squared_ky{ky}"
+            ),
+        ),
     )
-    fig, axes = plt.subplots(
-        len(MARGINALS_Y),
-        len(COPULAS),
-        figsize=(7.0, 5.2),
-        sharex=True,
-        sharey=True,
-        squeeze=False,
-        layout="constrained",
-    )
-    for row, marginal_y in enumerate(MARGINALS_Y):
-        for column, copula in enumerate(COPULAS):
-            ax = axes[row, column]
-            panel = line_data[
-                (line_data["marginal_y"] == marginal_y)
-                & (line_data["copula"] == copula)
-            ]
-            plot_line_panel(
-                ax,
-                panel,
-                y_mean="Rejection_mean",
-                y_sem="Rejection_sem",
-            )
-            style_probability_axis(ax)
+    for marginal_z, filename in by_n_specs:
+        line_data = data[data["marginal_z"] == marginal_z].copy()
+        assert_unique(
+            line_data,
+            ["n", "method", "copula", "marginal_y"],
+            f"{network_name} copula curves with Z marginal {marginal_z}",
+        )
+        fig, axes = plt.subplots(
+            len(MARGINALS_Y),
+            len(COPULAS),
+            figsize=(7.0, 5.2),
+            sharex=True,
+            sharey=True,
+            squeeze=False,
+            layout="constrained",
+        )
+        for row, marginal_y in enumerate(MARGINALS_Y):
+            for column, copula in enumerate(COPULAS):
+                ax = axes[row, column]
+                panel = line_data[
+                    (line_data["marginal_y"] == marginal_y)
+                    & (line_data["copula"] == copula)
+                ]
+                plot_line_panel(
+                    ax,
+                    panel,
+                    y_mean="Rejection_mean",
+                    y_sem="Rejection_sem",
+                )
+                style_probability_axis(ax)
 
-    add_facet_labels(
-        axes,
-        column_values=COPULAS,
-        column_prefix="",
-        row_values=MARGINALS_Y,
-        row_prefix="Y marginal: ",
-        row_labeler=display_marginal_label,
-    )
-    fig.suptitle(
-        f"Power by network size — {network_name} "
-        f"(Z marginal: {display_marginal_label('gaussian')})"
-    )
-    fig.supxlabel(r"Network size, $n$")
-    fig.supylabel("Power")
-    add_shared_legend(fig, lines=True)
-    save_figure(
-        fig,
-        output_dir,
-        f"{first_number + 1:02d}_{filename_prefix}_copulas_by_n",
-    )
+        add_facet_labels(
+            axes,
+            column_values=COPULAS,
+            column_prefix="",
+            row_values=MARGINALS_Y,
+            row_prefix="Y marginal: ",
+            row_labeler=display_marginal_label,
+        )
+        fig.suptitle(
+            f"Power by network size — {network_name} "
+            f"(Z marginal: {display_marginal_label(marginal_z)}), "
+            f"$k_y={ky}$"
+        )
+        fig.supxlabel(r"Network size, $n$")
+        fig.supylabel("Power")
+        add_shared_legend(fig, lines=True)
+        save_figure(fig, output_dir, filename)
 
 
 def plot_copula_figures(
     alternative_gaussian: pd.DataFrame,
     alternative_bernoulli: pd.DataFrame,
     output_dir: Path,
+    *,
+    ky: int,
+    point_n: int,
+    first_numbers: tuple[int, int],
+    chi_squared_numbers: tuple[int, int],
 ) -> None:
     plot_copula_network(
         filtered_copula_results(alternative_bernoulli),
         output_dir,
         network_name="Bernoulli binary network",
         filename_prefix="binary",
-        first_number=3,
+        first_number=first_numbers[0],
+        chi_squared_number=chi_squared_numbers[0],
+        point_n=point_n,
+        ky=ky,
     )
     plot_copula_network(
         filtered_copula_results(alternative_gaussian),
         output_dir,
         network_name="Gaussian weighted network",
         filename_prefix="gaussian",
-        first_number=5,
+        first_number=first_numbers[1],
+        chi_squared_number=chi_squared_numbers[1],
+        point_n=point_n,
+        ky=ky,
     )
 
 
@@ -827,6 +888,7 @@ def plot_latent_network(
     *,
     network_name: str,
     filename: str,
+    ky: int,
 ) -> None:
     data = data[
         data["latent_sim"].isin(LATENT_SIMULATIONS)
@@ -863,7 +925,10 @@ def plot_latent_network(
         style_probability_axis(ax)
         ax.set_title(f"({chr(ord('a') + row)})", loc="left")
 
-    fig.suptitle(f"Power across latent dependence structures — {network_name}, $n=300$")
+    fig.suptitle(
+        f"Power across latent dependence structures — {network_name}, "
+        f"$n=300$, $k_y={ky}$"
+    )
     fig.supxlabel("Latent dependence structure")
     fig.supylabel("Power")
     add_shared_legend(fig, lines=False)
@@ -874,18 +939,22 @@ def plot_latent_simulation_figures(
     alternative_gaussian: pd.DataFrame,
     alternative_bernoulli: pd.DataFrame,
     output_dir: Path,
+    *,
+    ky: int,
 ) -> None:
     plot_latent_network(
         alternative_bernoulli,
         output_dir,
         network_name="Bernoulli binary network",
-        filename="07_binary_latent_simulations_n300",
+        filename=f"07_binary_latent_simulations_n300_ky{ky}",
+        ky=ky,
     )
     plot_latent_network(
         alternative_gaussian,
         output_dir,
         network_name="Gaussian weighted network",
-        filename="08_gaussian_latent_simulations_n300",
+        filename=f"08_gaussian_latent_simulations_n300_ky{ky}",
+        ky=ky,
     )
 
 
@@ -895,6 +964,7 @@ def plot_functional_curves(
     *,
     network_name: str,
     filename: str,
+    ky: int,
 ) -> None:
     categories = FUNCTIONAL_FORMS
     panel_data = data[data["functional_form"].isin(categories)].copy()
@@ -924,7 +994,7 @@ def plot_functional_curves(
         style_probability_axis(ax)
         ax.set_title(display_label(category))
 
-    fig.suptitle(f"Power by network size — {network_name}")
+    fig.suptitle(f"Power by network size — {network_name}, $k_y={ky}$")
     fig.supxlabel(r"Network size, $n$")
     fig.supylabel("Power")
     add_shared_legend(fig, lines=True)
@@ -939,6 +1009,7 @@ def plot_functional_figures(
     scatter_n: int,
     filename_prefix: str,
     figure_numbers: tuple[int, int],
+    ky: int,
 ) -> None:
     data = data[
         data["functional_form"].isin(FUNCTIONAL_FORMS)
@@ -966,21 +1037,31 @@ def plot_functional_figures(
         categories=FUNCTIONAL_FORMS,
     )
     style_probability_axis(ax)
-    fig.suptitle(f"Power across functional alternatives — {network_name}, $n={scatter_n}$")
+    fig.suptitle(
+        f"Power across functional alternatives — {network_name}, "
+        f"$n={scatter_n}$, $k_y={ky}$"
+    )
     fig.supxlabel("Functional alternative")
     fig.supylabel("Power")
     add_shared_legend(fig, lines=False)
     save_figure(
         fig,
         output_dir,
-        f"{figure_numbers[0]:02d}_{filename_prefix}_functional_forms_n{scatter_n}",
+        (
+            f"{figure_numbers[0]:02d}_{filename_prefix}_functional_forms_"
+            f"n{scatter_n}_ky{ky}"
+        ),
     )
 
     plot_functional_curves(
         data,
         output_dir,
         network_name=network_name,
-        filename=f"{figure_numbers[1]:02d}_{filename_prefix}_functional_forms_by_n",
+        filename=(
+            f"{figure_numbers[1]:02d}_{filename_prefix}_functional_forms_"
+            f"by_n_ky{ky}"
+        ),
+        ky=ky,
     )
 
 
@@ -992,23 +1073,42 @@ def main() -> None:
 
     configure_plot_style()
     gaussian, bernoulli = prepare_results(results_dir)
+    gaussian_ky3, bernoulli_ky3 = prepare_ky3_copula_results(results_dir)
+    null_gaussian_ky3_raw, null_bernoulli_ky3_raw = prepare_ky3_null_results(
+        results_dir
+    )
     (
         null_gaussian,
         null_bernoulli,
         alternative_gaussian,
         alternative_bernoulli,
     ) = aggregate_inputs(gaussian, bernoulli)
+    alternative_gaussian_ky3 = aggregate_alternative_results(gaussian_ky3)
+    alternative_bernoulli_ky3 = aggregate_alternative_results(bernoulli_ky3)
+    null_gaussian_ky3 = aggregate_null_results(null_gaussian_ky3_raw)
+    null_bernoulli_ky3 = aggregate_null_results(null_bernoulli_ky3_raw)
 
-    plot_null_figures(null_gaussian, null_bernoulli, output_dir)
+    plot_null_figures(
+        null_gaussian,
+        null_bernoulli,
+        output_dir,
+        ky=1,
+        figure_numbers=(1, 2),
+    )
     plot_copula_figures(
         alternative_gaussian,
         alternative_bernoulli,
         output_dir,
+        ky=1,
+        point_n=300,
+        first_numbers=(3, 5),
+        chi_squared_numbers=(17, 18),
     )
     plot_latent_simulation_figures(
         alternative_gaussian,
         alternative_bernoulli,
         output_dir,
+        ky=1,
     )
     plot_functional_figures(
         alternative_bernoulli,
@@ -1017,6 +1117,7 @@ def main() -> None:
         scatter_n=300,
         filename_prefix="binary",
         figure_numbers=(9, 10),
+        ky=1,
     )
     plot_functional_figures(
         alternative_gaussian,
@@ -1025,9 +1126,26 @@ def main() -> None:
         scatter_n=500,
         filename_prefix="gaussian",
         figure_numbers=(11, 12),
+        ky=1,
+    )
+    plot_copula_figures(
+        alternative_gaussian_ky3,
+        alternative_bernoulli_ky3,
+        output_dir,
+        ky=3,
+        point_n=200,
+        first_numbers=(13, 15),
+        chi_squared_numbers=(19, 20),
+    )
+    plot_null_figures(
+        null_gaussian_ky3,
+        null_bernoulli_ky3,
+        output_dir,
+        ky=3,
+        figure_numbers=(21, 22),
     )
 
-    print(f"Saved 12 figures as PNG to {output_dir}")
+    print(f"Saved 22 figures as PNG to {output_dir}")
 
 
 if __name__ == "__main__":
