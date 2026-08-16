@@ -1,5 +1,4 @@
-import numpy as np
-from ._base_class import BasePermutationTest, BaseEstimationMethod
+from ._base_class import BasePermutationTest
 from ..test_functions.rv_cca_coefficients import first_cca_component
 
 
@@ -37,7 +36,7 @@ class CanonicalCorrelationTest(BasePermutationTest):
         rng=None,
         solver=None,
         use_true_latent=False,
-        permutation_type="covariate",
+        permutation_type="latent",
         k=None,
         **kwargs,
     ):
@@ -59,8 +58,7 @@ class CanonicalCorrelationTest(BasePermutationTest):
         Parameters
         ----------
         data : dict
-            A dictionary containing observed ``Y`` and either true ``Z`` or
-            adjacency matrix ``A``.
+            DGP output containing ``Ay``, ``Ax``, ``Y``, and ``X``.
         """
 
         self._process_input(data)

@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+from src.dgp import BernoulliNetwork, GaussianNetwork
 from src.load_config import _resolve_method
 from src.methods import MRQAP, QAP
 
@@ -26,20 +27,128 @@ def _upper(network):
     return network[indices]
 
 
-def test_qap_uses_finite_permutation_pvalue_correction():
-    rng = np.random.default_rng(4)
-    data = {
-        "A": _symmetric(rng.normal(size=(8, 8))),
-        "B": _symmetric(rng.normal(size=(8, 8))),
-    }
+def _global_qap_data(seed=4, n=14):
+    rng = np.random.default_rng(seed)
+    ax_1 = _symmetric(rng.normal(size=(n, n)))
+    ax_2 = _symmetric(rng.normal(size=(n, n)))
+    noise = _symmetric(rng.normal(scale=0.4, size=(n, n)))
+    ay = 0.8 * ax_1 - 0.5 * ax_2 + noise
+    return {"Ay": ay, "Ax": [ax_1, ax_2]}
+
+
+def test_qap_fits_all_ax_and_uses_studentized_global_wald_statistic():
+    data = _global_qap_data()
+    method = QAP(npermutations=5, rng=np.random.default_rng(18))
+
+    method.fit(data)
+
+    mask = ~np.eye(data["Ay"].shape[0], dtype=bool)
+    design = np.column_stack([network[mask] for network in data["Ax"]])
+    design = np.column_stack((np.ones(mask.sum()), design))
+    expected_coefficients = np.linalg.lstsq(
+        design, data["Ay"][mask], rcond=None
+    )[0][1:]
+
+    np.testing.assert_allclose(method.coefficients, expected_coefficients)
+    assert method.coefficient_covariance.shape == (2, 2)
+    np.testing.assert_allclose(
+        method.coefficient_covariance,
+        method.coefficient_covariance.T,
+    )
+    assert method.test_stat_estimate >= 0
+
+
+def test_qap_permutes_only_ay_and_uses_finite_pvalue_correction():
+    data = _global_qap_data(seed=9)
     method = QAP(npermutations=9, rng=np.random.default_rng(18))
 
     method.fit(data)
 
+    expected_null = [
+        method._compute_studentized_wald(
+            data["Ay"][permutation][:, permutation],
+            data["Ax"],
+        )[0]
+        for permutation in method.permutation_indices
+    ]
+    np.testing.assert_allclose(method.permutation_distribution, expected_null)
+
     null = np.asarray(method.permutation_distribution)
-    extreme = np.count_nonzero(np.abs(null) >= abs(method.test_stat_estimate))
+    extreme = np.count_nonzero(null >= method.test_stat_estimate)
     assert method.pvalue == (extreme + 1) / 10
     assert method.pvalue >= 0.1
+
+
+@pytest.mark.parametrize("network_type", [GaussianNetwork, BernoulliNetwork])
+def test_qap_runs_on_dgp_output(network_type):
+    data = network_type(
+        n=20,
+        k=[2, 1, 3],
+        rng=np.random.default_rng(31),
+    ).generate()
+    method = QAP(npermutations=4, rng=np.random.default_rng(32))
+
+    method.fit(data)
+
+    assert method.coefficients.shape == (2,)
+    assert len(method.permutation_distribution) == 4
+    assert 0.0 <= method.pvalue <= 1.0
+    assert isinstance(method.reject_null, bool)
+
+
+def test_qap_ignores_diagonal_entries():
+    data = _global_qap_data(seed=17)
+    changed = {
+        "Ay": data["Ay"].copy(),
+        "Ax": [network.copy() for network in data["Ax"]],
+    }
+    np.fill_diagonal(changed["Ay"], 1e8)
+    for network in changed["Ax"]:
+        np.fill_diagonal(network, -1e8)
+
+    original = QAP(npermutations=4, rng=np.random.default_rng(22))
+    modified = QAP(npermutations=4, rng=np.random.default_rng(22))
+    original.fit(data)
+    modified.fit(changed)
+
+    assert original.test_stat_estimate == pytest.approx(modified.test_stat_estimate)
+    np.testing.assert_allclose(
+        original.permutation_distribution,
+        modified.permutation_distribution,
+    )
+
+
+def test_qap_rejects_directed_or_degenerate_networks():
+    data = _global_qap_data(seed=25)
+    directed = {"Ay": data["Ay"].copy(), "Ax": data["Ax"]}
+    directed["Ay"][0, 1] += 1
+
+    with pytest.raises(ValueError, match="Ay must be symmetric"):
+        QAP(npermutations=2).fit(directed)
+
+    with pytest.raises(ValueError, match="degenerate"):
+        QAP(npermutations=2).fit(
+            {"Ay": data["Ay"], "Ax": [data["Ax"][0], data["Ax"][0]]}
+        )
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"alpha": 0}, "alpha"),
+        ({"npermutations": 0}, "npermutations"),
+    ],
+)
+def test_qap_rejects_invalid_constructor_options(kwargs, message):
+    with pytest.raises(ValueError, match=message):
+        QAP(**kwargs)
+
+
+def test_qap_is_resolvable_from_simulation_configuration():
+    resolved = _resolve_method({"name": "QAP"})
+    method = resolved(npermutations=3, rng=np.random.default_rng(2))
+
+    assert isinstance(method, QAP)
 
 
 def test_y_permutation_matches_manual_ols_and_corrected_pvalue():

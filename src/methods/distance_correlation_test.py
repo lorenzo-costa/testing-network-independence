@@ -6,10 +6,10 @@ import warnings
 from ._base_class import BasePermutationTest
 
 
-def _distance_correlation(Z, Y):
+def _distance_correlation(Y, X):
     """Biased sample distance correlation, used as a permutation statistic."""
-    distance_z = squareform(pdist(Z, metric="euclidean"))
     distance_y = squareform(pdist(Y, metric="euclidean"))
+    distance_x = squareform(pdist(X, metric="euclidean"))
 
     def center(distance):
         return (
@@ -19,19 +19,19 @@ def _distance_correlation(Z, Y):
             + distance.mean()
         )
 
-    centered_z = center(distance_z)
     centered_y = center(distance_y)
-    covariance = np.mean(centered_z * centered_y)
-    variance_z = np.mean(centered_z**2)
+    centered_x = center(distance_x)
+    covariance = np.mean(centered_y * centered_x)
     variance_y = np.mean(centered_y**2)
-    denominator = np.sqrt(variance_z * variance_y)
+    variance_x = np.mean(centered_x**2)
+    denominator = np.sqrt(variance_y * variance_x)
     return 0.0 if denominator == 0 else covariance / denominator
 
 
-def _mgc_statistic(Z, Y):
+def _mgc_statistic(Y, X):
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=RuntimeWarning)
-        return multiscale_graphcorr(Z, Y, reps=0, workers=1).statistic
+        return multiscale_graphcorr(Y, X, reps=0, workers=1).statistic
 
 
 class DistanceCorrelationTest(BasePermutationTest):
@@ -44,7 +44,7 @@ class DistanceCorrelationTest(BasePermutationTest):
         rng=None,
         solver=None,
         use_true_latent=False,
-        permutation_type="covariate",
+        permutation_type="latent",
         **kwargs,
     ):
         if test_method not in {"dcorr", "mgc"}:

@@ -6,8 +6,6 @@ import src.methods as methods
 def test_methods_package_exports_public_components():
     package = importlib.import_module("src.methods")
     expected_exports = {
-        "EstimateAC",
-        "MultivariateACTest",
         "CanonicalCorrelationTest",
         "DistanceCorrelationTest",
         "MRQAP",

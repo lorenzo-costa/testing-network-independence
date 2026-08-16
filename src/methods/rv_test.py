@@ -1,6 +1,6 @@
 import numpy as np
 from ._base_class import BasePermutationTest, BaseEstimationMethod
-from ..test_functions.rv_cca_coefficients import rv_coefficient, rv_coefficient_adjusted
+from ..test_functions.rv_cca_coefficients import rv_coefficient
 from ..helper_functions.imhof import imhof
 
 import sys
@@ -26,10 +26,10 @@ class EstimateRV(BaseEstimationMethod):
         self.test_function = test_function
 
     def fit(self, data, **kwargs):
-        """Estimate the RV coefficient between tested Z and observed Y."""
+        """Estimate the RV coefficient between Y and all combined X blocks."""
 
         self._process_input(data)
-        self.test_stat_estimate = self.test_function(self.Zhat, self.Y)
+        self.test_stat_estimate = self.test_function(self.Yhat, self.Xhat)
         self.pvalue = None
         self.reject_null = None
 
@@ -50,13 +50,13 @@ class RVTest(BasePermutationTest):
         Significance level for the test.
     solver : callable
         Function to estimate latent positions from the adjacency matrix.
-    k : int
-        Number of dimensions for the latent space.
+    k : list of int
+        Dimensions in the order ``[ky, kx[0], ..., kx[p - 1]]``.
     test_function : callable
         Function to compute the test statistic.
     permutation_type : str
-        ``covariate`` permutes Y, ``latent`` permutes the tested Z, and
-        ``observed`` relabels A and refits Z for each permutation.
+        ``latent`` permutes the rows of the Y latent positions, while
+        ``observed`` relabels Ay and refits the Y latent positions.
     rng : np.random.Generator
         Random number generator for reproducibility.
     """
@@ -71,7 +71,7 @@ class RVTest(BasePermutationTest):
         solver=None,
         use_true_latent=False,
         test_function=rv_coefficient,
-        permutation_type="covariate",
+        permutation_type="latent",
         **kwargs,
     ):
         super().__init__(
@@ -107,18 +107,19 @@ class RVTest(BasePermutationTest):
         return
 
     def _fit_asymptotic(self):
-        Zhat = self.Zhat.copy()
-        Y = self.Y.copy()
-        Zhat = Zhat - Zhat.mean(axis=0)
-        Y = Y - Y.mean(axis=0)
-        n, _ = Zhat.shape
+        raise NotImplementedError(
+            "Asymptotic approximation is not yet implemented for the RV test."
+        )
+        Yhat = self.Yhat - self.Yhat.mean(axis=0)
+        Xhat = self.Xhat - self.Xhat.mean(axis=0)
+        n = Yhat.shape[0]
 
-        rv = self.test_function(Zhat, Y)
+        rv = self.test_function(Yhat, Xhat)
         self.test_stat_estimate = rv
 
-        GX = Y @ Y.T 
-        GZ = Zhat @ Zhat.T  
-        Omega_gram = (GX * GZ) / n  
+        gram_y = Yhat @ Yhat.T
+        gram_x = Xhat @ Xhat.T
+        Omega_gram = (gram_y * gram_x) / n
 
         hat_lambda = np.linalg.eigvalsh(Omega_gram)  
         hat_lambda = np.sort(hat_lambda)[::-1]  
