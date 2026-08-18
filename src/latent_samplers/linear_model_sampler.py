@@ -37,6 +37,12 @@ class LinearModelGenerator:
         every X block or a list of length p, one specification per block.
     noise_scale : float, default=1.0
         Multiplicative scale applied to epsilon after sampling.
+    target_r2 : float, optional
+        Desired population fraction of total Y variance explained jointly by
+        all X blocks. Must lie in ``[0, 1)``. The sampled or supplied
+        coefficient matrices determine the signal direction and are rescaled
+        by one common factor to attain this value. Requires finite, positive
+        marginal variances when greater than zero.
     center_latent : bool, default=False
         If True, each X coordinate and each epsilon coordinate are centered
         by their sample means before Y is formed. This keeps the linear
@@ -53,23 +59,36 @@ class LinearModelGenerator:
         B=None,
         marginals=None,
         noise_scale=1.0,
+        target_r2=None,
         center_latent=False,
         rng=None,
         **kwargs,
     ):
-        self._validate_args(n=n, k=k, noise_scale=noise_scale)
+        self._validate_args(
+            n=n,
+            k=k,
+            noise_scale=noise_scale,
+            target_r2=target_r2,
+        )
         self.n = int(n)
         self.ky = int(k[0])
         self.kx = tuple(int(kj) for kj in k[1:])
         self.p = len(self.kx)  # Number of predictor blocks
 
         self.noise_scale = float(noise_scale)
+        self.target_r2 = None if target_r2 is None else float(target_r2)
         self.center_latent = bool(center_latent)
         self.rng = rng if rng is not None else np.random.default_rng()
 
+        self._convert_marginals(marginals)
+
         # Coefficients are sampled once and retained for every latent draw.
         self.B = self._sample_coefficients(B)
-        self._convert_marginals(marginals)
+        self.coefficient_scale = 1.0
+        self.population_signal_variance = None
+        self.population_noise_variance = None
+        self.population_r2 = None
+        self._calibrate_coefficients(B)
 
         self.is_null = all(np.allclose(Bj, 0.0) for Bj in self.B)
 
@@ -120,7 +139,7 @@ class LinearModelGenerator:
 
         return coefficients
 
-    def _validate_args(self, n, k, noise_scale):
+    def _validate_args(self, n, k, noise_scale, target_r2):
         if n <= 0:
             raise ValueError("n must be positive")
         if not isinstance(k, (list, tuple)) or len(k) < 2:
@@ -130,6 +149,15 @@ class LinearModelGenerator:
                 raise ValueError(f"k[{i}] (= {ki}) must be positive")
         if noise_scale < 0:
             raise ValueError("noise_scale must be nonnegative")
+        if target_r2 is not None:
+            if isinstance(target_r2, (bool, np.bool_)) or not np.isscalar(target_r2):
+                raise TypeError("target_r2 must be a real scalar or None")
+            try:
+                target_r2 = float(target_r2)
+            except (TypeError, ValueError) as exc:
+                raise TypeError("target_r2 must be a real scalar or None") from exc
+            if not np.isfinite(target_r2) or not 0 <= target_r2 < 1:
+                raise ValueError("target_r2 must satisfy 0 <= target_r2 < 1")
 
     @staticmethod
     def _parse_dist(dist_spec):
@@ -259,6 +287,78 @@ class LinearModelGenerator:
 
         return coefficient_samplers[strategy]()
 
+    @staticmethod
+    def _finite_scalar_variance(distribution, name):
+        """Return a finite scalar marginal variance or raise a clear error."""
+        try:
+            variance = np.asarray(distribution.var(), dtype=float)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"Cannot determine the variance of {name} for target_r2 calibration"
+            ) from exc
+        if variance.ndim != 0 or not np.isfinite(variance):
+            raise ValueError(
+                f"{name} must have a finite scalar variance for target_r2 calibration"
+            )
+        if variance < 0:
+            raise ValueError(f"{name} variance must be nonnegative")
+        return float(variance)
+
+    def _calibrate_coefficients(self, B_specification):
+        """Rescale all coefficient matrices to attain the requested population R2."""
+        if self.target_r2 is None:
+            return
+
+        if self.target_r2 == 0:
+            self.B = [np.zeros_like(Bj) for Bj in self.B]
+            self.coefficient_scale = 0.0
+            self.population_signal_variance = 0.0
+            self.population_noise_variance = None
+            self.population_r2 = 0.0
+            return
+
+        if isinstance(B_specification, str) and B_specification == "zero":
+            raise ValueError("B='zero' is incompatible with target_r2 > 0")
+
+        predictor_variances = [
+            self._finite_scalar_variance(distribution, f'marginals["x"][{index}]')
+            for index, distribution in enumerate(self.marginal_x)
+        ]
+        epsilon_variance = self._finite_scalar_variance(
+            self.marginal_epsilon,
+            'marginals["epsilon"]',
+        )
+
+        unscaled_signal_variance = sum(
+            variance * np.sum(Bj**2)
+            for variance, Bj in zip(predictor_variances, self.B)
+        )
+        noise_variance = self.ky * self.noise_scale**2 * epsilon_variance
+
+        if not np.isfinite(unscaled_signal_variance) or unscaled_signal_variance <= 0:
+            raise ValueError(
+                "Positive target_r2 requires nonzero coefficients and positive "
+                "predictor variance"
+            )
+        if not np.isfinite(noise_variance) or noise_variance <= 0:
+            raise ValueError(
+                "Positive target_r2 below one requires positive finite noise variance"
+            )
+
+        target_signal_to_noise = self.target_r2 / (1.0 - self.target_r2)
+        self.coefficient_scale = np.sqrt(
+            target_signal_to_noise * noise_variance / unscaled_signal_variance
+        )
+        self.B = [self.coefficient_scale * Bj for Bj in self.B]
+
+        self.population_signal_variance = (
+            self.coefficient_scale**2 * unscaled_signal_variance
+        )
+        self.population_noise_variance = noise_variance
+        self.population_r2 = self.population_signal_variance / (
+            self.population_signal_variance + self.population_noise_variance
+        )
+
     def _sample_latent_linear(self, return_noise=False):
         """Sample latent positions from the linear model.
 
@@ -283,7 +383,8 @@ class LinearModelGenerator:
         return Y, X
 
     def get_name(self):
+        r2_name = "free" if self.target_r2 is None else f"{self.target_r2:g}"
         return (
             f"linear_p{self.p}_dx{'x'.join(map(str, self.kx))}_dy{self.ky}_"
-            f"noise{self.noise_scale:g}_null{int(self.is_null)}"
+            f"noise{self.noise_scale:g}_r2{r2_name}_null{int(self.is_null)}"
         )

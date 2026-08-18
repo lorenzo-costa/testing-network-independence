@@ -7,6 +7,7 @@ from src.methods import (
     DistanceCorrelationTest,
     RVTest,
 )
+from src.metrics import ComputeAll, ReturnMetric
 from src.solvers.weighted_network import ASE
 
 
@@ -60,3 +61,13 @@ def test_multiple_network_global_independence_pipeline(
     assert np.isfinite(result["test_stat"])
     assert 0.0 <= result["p-value"] <= 1.0
     assert isinstance(result["reject_null"], bool)
+
+    returned = ReturnMetric()(result)
+    assert returned["Y"].shape == (n, 2)
+    assert [block.shape for block in returned["X"]] == [(n, 1), (n, 3)]
+
+    metrics = ComputeAll()(result)
+    assert len(metrics["RelativeFrobeniusNorm"]) == 3
+    assert len(metrics["ProcrustesDistance"]) == 3
+    assert np.isfinite(metrics["RelativeFrobeniusNorm"]).all()
+    assert np.isfinite(metrics["ProcrustesDistance"]).all()

@@ -6,12 +6,79 @@ from scipy import stats
 import sys
 from pathlib import Path
 from src.metrics import (
+    AdjustedRVCoefficient,
+    ComputeAll,
+    MSE,
+    ReturnMetric,
+    RobustRelativeProcrustesDistance,
+    RVCoefficient,
     rv_coefficient,
     Rejection,
     TrueRejection,
     FalseRejection,
     RelativeFrobeniusNorm,
 )
+
+
+def _linear_model_results():
+    y = np.array([[1.0], [2.0], [3.0], [4.0]])
+    x1 = np.array([[1.0], [0.0], [2.0], [1.0]])
+    x2 = np.array(
+        [[1.0, 0.0], [0.0, 1.0], [2.0, 1.0], [1.0, 2.0]]
+    )
+    return {
+        "estimated_latent": [y.copy(), x1.copy(), x2.copy()],
+        "true_latent": [y, x1, x2],
+        "observed_Y": y,
+        "observed_X": [x1, x2],
+        "test_stat": 0.5,
+        "p-value": 0.25,
+        "reject_null": False,
+    }
+
+
+def test_return_metric_uses_linear_model_observed_blocks():
+    results = _linear_model_results()
+
+    returned = ReturnMetric()(results)
+
+    assert returned["Y"] is results["observed_Y"]
+    assert returned["X"] is results["observed_X"]
+    assert ReturnMetric(only_return="X")(results) is results["observed_X"]
+
+
+@pytest.mark.parametrize(
+    "metric",
+    [
+        RVCoefficient(),
+        AdjustedRVCoefficient(),
+        MSE(),
+        RelativeFrobeniusNorm(),
+        RobustRelativeProcrustesDistance(),
+    ],
+)
+def test_latent_metrics_handle_heterogeneous_linear_model_blocks(metric):
+    values = metric(_linear_model_results())
+
+    assert isinstance(values, list)
+    assert len(values) == 3
+    assert np.isfinite(values).all()
+
+
+def test_compute_all_returns_every_linear_model_latent_block():
+    output = ComputeAll()(_linear_model_results(), is_null=True)
+
+    assert set(output) == {
+        "Rejection",
+        "FalseRejection",
+        "FalseAcceptance",
+        "TrueRejection",
+        "TrueAcceptance",
+        "RelativeFrobeniusNorm",
+        "ProcrustesDistance",
+    }
+    assert output["RelativeFrobeniusNorm"] == pytest.approx([0.0, 0.0, 0.0])
+    assert output["ProcrustesDistance"] == pytest.approx([0.0, 0.0, 0.0])
 
 
 @pytest.mark.parametrize(
@@ -122,8 +189,9 @@ class TestRelativeFrobeniusNorm:
         val = metric(results)
         assert np.isclose(val, 3.0)
 
-    def test_tuple_input_multiple_networks(self):
-        """Test handling of tuple inputs (looping over multiple latent positions)."""
+    @pytest.mark.parametrize("container", [tuple, list])
+    def test_multiple_networks(self, container):
+        """Test tuple and list inputs with multiple latent-position blocks."""
         # Network 1
         t1 = np.array([[1.0, 0.0], [0.0, 1.0]])
         e1 = np.array([[1.0, 0.0], [0.0, 1.0]])  # Perfect match
@@ -132,7 +200,10 @@ class TestRelativeFrobeniusNorm:
         t2 = np.array([[2.0]])
         e2 = np.array([[4.0]])  # Double the value
 
-        results = {"estimated_latent": (e1, e2), "true_latent": (t1, t2)}
+        results = {
+            "estimated_latent": container((e1, e2)),
+            "true_latent": container((t1, t2)),
+        }
 
         metric = RelativeFrobeniusNorm(gram_matrix=False)
         output = metric(results)

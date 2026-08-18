@@ -3,6 +3,60 @@ from .test_functions.rv_cca_coefficients import rv_coefficient, rv_coefficient_a
 import numpy as np
 
 
+def _latent_pairs(results):
+    """Return corresponding estimated/true latent blocks.
+
+    Linear-model methods return ``[Y, X[0], ..., X[p - 1]]``.  Single-array
+    inputs remain supported for metrics used outside that pipeline.
+    """
+
+    estimated = results["estimated_latent"]
+    truth = results["true_latent"]
+    estimated_is_blocked = isinstance(estimated, (list, tuple))
+    truth_is_blocked = isinstance(truth, (list, tuple))
+
+    if estimated_is_blocked != truth_is_blocked:
+        raise ValueError(
+            "estimated_latent and true_latent must both be arrays or both be "
+            "lists/tuples of latent blocks"
+        )
+
+    if estimated_is_blocked:
+        if len(estimated) != len(truth):
+            raise ValueError(
+                "estimated_latent and true_latent must contain the same number "
+                "of blocks"
+            )
+        if len(estimated) == 0:
+            raise ValueError("latent block lists must not be empty")
+        raw_pairs = zip(estimated, truth)
+    else:
+        raw_pairs = [(estimated, truth)]
+
+    pairs = []
+    for index, (estimated_block, true_block) in enumerate(raw_pairs):
+        estimated_block = np.asarray(estimated_block, dtype=float)
+        true_block = np.asarray(true_block, dtype=float)
+        if estimated_block.ndim != 2 or true_block.ndim != 2:
+            label = f" block {index}" if estimated_is_blocked else ""
+            raise ValueError(f"latent{label} values must be two-dimensional")
+        if estimated_block.shape[0] != true_block.shape[0]:
+            label = f"[{index}]" if estimated_is_blocked else ""
+            raise ValueError(
+                f"estimated_latent{label} and true_latent{label} must have the "
+                "same number of rows"
+            )
+        pairs.append((estimated_block, true_block))
+
+    return pairs, estimated_is_blocked
+
+
+def _blockwise_metric(results, function):
+    pairs, is_blocked = _latent_pairs(results)
+    values = [function(estimated, truth) for estimated, truth in pairs]
+    return values if is_blocked else values[0]
+
+
 class BaseMetric:
     def __init__(self):
         pass
@@ -34,7 +88,7 @@ class ReturnMetric(BaseMetric):
             elif only_return == "Y":
                 return results.get("observed_Y")
             elif only_return == "X":
-                return results.get("conditioning_X")
+                return results.get("observed_X")
             elif only_return == "test_stat":
                 return test_stat
             elif only_return == "p-value":
@@ -47,7 +101,7 @@ class ReturnMetric(BaseMetric):
             "estimated": estimated,
             "truth": truth,
             "Y": results.get("observed_Y"),
-            "X": results.get("conditioning_X"),
+            "X": results.get("observed_X"),
             "test_stat": test_stat,
             "p-value": p_value,
             "is_null": is_null,
@@ -59,9 +113,7 @@ class ReturnMetric(BaseMetric):
 
 class RVCoefficient(BaseMetric):
     def __call__(self, results, is_null=None):
-        estimated = results["estimated_latent"]
-        truth = results["true_latent"]
-        return rv_coefficient(estimated, truth)
+        return _blockwise_metric(results, rv_coefficient)
 
     def get_name(self):
         return "RV Coefficient"
@@ -69,9 +121,7 @@ class RVCoefficient(BaseMetric):
 
 class AdjustedRVCoefficient(BaseMetric):
     def __call__(self, results, is_null=None):
-        estimated = results["estimated_latent"]
-        truth = results["true_latent"]
-        return rv_coefficient_adjusted(estimated, truth)
+        return _blockwise_metric(results, rv_coefficient_adjusted)
 
     def get_name(self):
         return "Adjusted RV Coefficient"
@@ -79,9 +129,15 @@ class AdjustedRVCoefficient(BaseMetric):
 
 class MSE(BaseMetric):
     def __call__(self, results, is_null=None):
-        estimated = results["estimated_latent"]
-        truth = results["true_latent"]
-        return ((truth - estimated) ** 2).mean()
+        def mse(estimated, truth):
+            if estimated.shape != truth.shape:
+                raise ValueError(
+                    "estimated and true latent blocks must have matching shapes "
+                    "to compute MSE"
+                )
+            return np.mean((truth - estimated) ** 2)
+
+        return _blockwise_metric(results, mse)
 
     def get_name(self):
         return "Mean Squared Error"
@@ -112,51 +168,27 @@ class RelativeFrobeniusNorm(BaseMetric):
         self.gram_matrix = gram_matrix
 
     def __call__(self, results, is_null=None):
-        estimated = results["estimated_latent"]
-        truth = results["true_latent"]
+        def relative_error(estimated, truth):
+            if not np.isfinite(estimated).all() or not np.isfinite(truth).all():
+                return np.nan
 
-        # handles the case where more than one network's latent pos are returned
-        if isinstance(estimated, tuple):
-            out = []
-            for i in range(len(estimated)):
-                if (
-                    not np.isfinite(estimated[i]).all()
-                    or not np.isfinite(truth[i]).all()
-                ):
-                    out.append(np.nan)
-                else:
-                    if self.gram_matrix:
-                        # Compute the Gram matrix for both estimated and truth
-                        est = estimated[i] @ estimated[i].T
-                        true = truth[i] @ truth[i].T
-                    else:
-                        est = estimated[i]
-                        true = truth[i]
+            if self.gram_matrix:
+                estimated = estimated @ estimated.T
+                truth = truth @ truth.T
+            elif estimated.shape != truth.shape:
+                raise ValueError(
+                    "estimated and true latent blocks must have matching shapes "
+                    "when gram_matrix=False"
+                )
 
-                    num = norm(est - true, "fro")
-                    den = norm(true, "fro")
-                    out.append(num / den if den != 0 else 0)
-            # returns a list
-            return out
+            num = norm(estimated - truth, "fro")
+            den = norm(truth, "fro")
+            return num / den if den != 0 else 0
 
-        # single output computation
-        if not np.isfinite(estimated).all() or not np.isfinite(truth).all():
-            return np.nan
-
-        if self.gram_matrix:
-            # Compute the Gram matrix for both estimated and truth
-            estimated = estimated @ estimated.T
-            truth = truth @ truth.T
-
-        num = norm(estimated - truth, "fro")
-        den = norm(truth, "fro")
-        return num / den if den != 0 else 0
+        return _blockwise_metric(results, relative_error)
 
     def get_name(self):
         return "RelativeFrobeniusNorm"
-
-
-import numpy as np
 
 
 class RobustRelativeProcrustesDistance:
@@ -170,22 +202,9 @@ class RobustRelativeProcrustesDistance:
     """
 
     def __call__(self, results, is_null=None):
-        estimated = results["estimated_latent"]
-        truth = results["true_latent"]
-
-        # Handle single matrix vs tuple of matrices
-        if not isinstance(estimated, (tuple, list)):
-            estimated = (estimated,)
-            truth = (truth,)
-
-        out = []
-        for i in range(len(estimated)):
-            est = estimated[i]
-            true = truth[i]
-
+        def procrustes(est, true):
             if not np.isfinite(est).all() or not np.isfinite(true).all():
-                out.append(np.nan)
-                continue
+                return np.nan
 
             n_true, d_true = true.shape
             n_est, d_est = est.shape
@@ -238,9 +257,9 @@ class RobustRelativeProcrustesDistance:
 
             rel_dist = abs_error / abs_truth if abs_truth > 0 else abs_error
 
-            out.append(rel_dist)
+            return rel_dist
 
-        return out
+        return _blockwise_metric(results, procrustes)
 
     def get_name(self):
         return "RobustRelativeProcrustes"
@@ -252,7 +271,7 @@ class Rejection(BaseMetric):
     Takes as input a results dictionary containing 'reject_null' key.
     """
 
-    def __call__(self, results):
+    def __call__(self, results, is_null=None):
         reject_null = results["reject_null"]
         if reject_null == True:
             return True
@@ -363,16 +382,10 @@ class ComputeAll(BaseMetric):
 
         if estimated_latent is not None and results.get("true_latent") is not None:
             est = RelativeFrobeniusNorm(gram_matrix=self.gram_matrix)(results)
-            latent_metrics = {
-                "RelativeFrobeniusNorm_z": est,
-            }
+            latent_metrics = {"RelativeFrobeniusNorm": est}
 
             est_procrustes = RobustRelativeProcrustesDistance()(results)
-            latent_metrics.update(
-                {
-                    "ProcrustesDistance_z": est_procrustes[0],
-                }
-            )
+            latent_metrics["ProcrustesDistance"] = est_procrustes
             out.update(latent_metrics)
 
         return out

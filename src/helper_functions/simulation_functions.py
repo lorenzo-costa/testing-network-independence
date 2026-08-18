@@ -53,14 +53,11 @@ def run_scenario(metrics, args, seed, method_params=None):
 
     is_null = dgp.is_null if hasattr(dgp, "is_null") else None
 
-    density_A = (data["A"] == 0).sum() / data["A"].size
-
     out_metrics = {
         metric.get_name(): metric(results, is_null=is_null) for metric in metrics
     }
 
     out_metrics["args"] = args
-    out_metrics["density"] = density_A
     return out_metrics
 
 
