@@ -15,78 +15,178 @@ def visualise_latent(
     X_list,
     Z_list,
     titles="Latent Positions Scatterplot",
-    figsize=(18, 6),
+    figsize=(7.0, 2.6),
     sharex=False,
     sharey=False,
     kdplot=True,
     shape=None,
     save_path=None,
     k=0,
+    row_titles=None,
+    column_titles=None,
 ):
-    """Visualise correlaton structure of latent positions
+    """Visualise the correlation structure of latent positions.
+
+    The figure uses the same compact, publication-oriented styling as
+    ``results/visualise_results_chatterjee.py``.  Styling is applied only while
+    this figure is built, so calling the function does not alter global
+    Matplotlib settings.
 
     Parameters
     ----------
-    X_list : _type_
-        _description_
-    Z_list : _type_
-        _description_
-    title : str, optional
-        _description_, by default 'Latent Positions Scatterplot'
+    X_list : list of numpy.ndarray
+        Latent positions plotted on the x-axis.
+    Z_list : list of numpy.ndarray
+        Latent positions plotted on the y-axis.
+    titles : str or list of str, optional
+        Overall figure title, or one title per panel.
     figsize : tuple, optional
-        _description_, by default (18, 6)
+        Figure size in inches, by default ``(7.0, 2.6)``.
     sharex : bool, optional
-        _description_, by default True
+        Share the x-axis limits between panels, by default ``False``.
     sharey : bool, optional
-        _description_, by default True
+        Share the y-axis limits between panels, by default ``False``.
     kdplot : bool, optional
-        _description_, by default True
+        Overlay kernel-density contours, by default ``True``.
+    shape : tuple of int, optional
+        Number of subplot rows and columns. By default, use a single row.
+    save_path : str, optional
+        Output path without an extension. When supplied, both PNG and PDF
+        versions are saved; otherwise the figure is shown.
     k : int, optional
-        _description_, by default 1
+        Latent dimension to plot, by default ``0``.
+    row_titles : list of str, optional
+        One label per subplot row, displayed vertically along the right edge.
+    column_titles : list of str, optional
+        One label per subplot column, displayed above the top row.
     """
 
+    if len(X_list) != len(Z_list):
+        raise ValueError("X_list and Z_list must contain the same number of arrays.")
+    if len(X_list) == 0:
+        raise ValueError("X_list and Z_list must not be empty.")
+    if isinstance(titles, list) and len(titles) != len(X_list):
+        raise ValueError("titles must contain one title per array pair.")
+
     if shape is None:
-        fig, axes = plt.subplots(
-            1, len(X_list), figsize=figsize, sharex=sharex, sharey=sharey
-        )
+        nrows, ncols = 1, len(X_list)
     else:
-        fig, axes = plt.subplots(
-            shape[0], shape[1], figsize=figsize, sharex=sharex, sharey=sharey
+        nrows, ncols = shape
+        if nrows * ncols < len(X_list):
+            raise ValueError("shape must provide at least one panel per array pair.")
+
+    if row_titles is not None and len(row_titles) != nrows:
+        raise ValueError("row_titles must contain one title per subplot row.")
+    if column_titles is not None and len(column_titles) != ncols:
+        raise ValueError("column_titles must contain one title per subplot column.")
+    if column_titles is not None and isinstance(titles, list):
+        raise ValueError(
+            "column_titles cannot be combined with per-panel titles; "
+            "set titles=None or use a single overall title."
         )
-        axes = axes.flatten()
 
-    for ax, i in zip(axes, range(len(X_list))):
-        z, x = X_list[i][:, k], Z_list[i][:, k]
+    plot_style = {
+        "font.family": "sans-serif",
+        "font.sans-serif": ["DejaVu Sans"],
+        "font.size": 8.5,
+        "axes.labelsize": 9,
+        "axes.titlesize": 9,
+        "figure.titlesize": 10,
+        "axes.linewidth": 0.6,
+        "axes.facecolor": "white",
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "xtick.direction": "out",
+        "ytick.direction": "out",
+        "xtick.major.size": 3,
+        "ytick.major.size": 3,
+        "xtick.major.width": 0.6,
+        "ytick.major.width": 0.6,
+        "xtick.labelsize": 7.5,
+        "ytick.labelsize": 7.5,
+        "savefig.facecolor": "white",
+        "savefig.edgecolor": "white",
+        "savefig.transparent": False,
+    }
 
-        ax.scatter(z, x, alpha=0.4, s=10, color="royalblue", label="Samples")
+    with plt.rc_context(plot_style):
+        fig, axes = plt.subplots(
+            nrows,
+            ncols,
+            figsize=figsize,
+            sharex=sharex,
+            sharey=sharey,
+            squeeze=False,
+            layout="constrained",
+        )
+        axes_2d = axes
+        axes = axes_2d.ravel()
 
-        # countour density may make more clear
-        if kdplot:
-            sns.kdeplot(x=z, y=x, ax=ax, levels=5, color="black", linewidths=1.5)
+        for i, ax in enumerate(axes[: len(X_list)]):
+            latent_x = X_list[i][:, k]
+            latent_z = Z_list[i][:, k]
 
-        if isinstance(titles, list):
-            title = titles[i]
+            ax.scatter(
+                latent_x,
+                latent_z,
+                alpha=0.5,
+                s=5,
+                color="#0072B2",
+                linewidths=0,
+                label="Samples",
+                zorder=2,
+            )
+
+            if kdplot:
+                sns.kdeplot(
+                    x=latent_x,
+                    y=latent_z,
+                    ax=ax,
+                    levels=5,
+                    color="#222222",
+                    linewidths=0.8,
+                    warn_singular=False,
+                    zorder=3,
+                )
+
+            if isinstance(titles, list):
+                ax.set_title(titles[i])
+
+            ax.grid(axis="y", color="#E2E2E2", linewidth=0.45)
+            ax.set_axisbelow(True)
+            ax.margins(0.04)
+
+        for ax in axes[len(X_list) :]:
+            ax.set_visible(False)
+
+        if column_titles is not None:
+            for column, title in enumerate(column_titles):
+                axes_2d[0, column].set_title(title)
+
+        if row_titles is not None:
+            for row, title in enumerate(row_titles):
+                axes_2d[row, -1].annotate(
+                    title,
+                    xy=(1.04, 0.5),
+                    xycoords="axes fraction",
+                    ha="left",
+                    va="center",
+                    rotation=270,
+                    fontsize=8,
+                    annotation_clip=False,
+                )
+
+        if titles is not None and not isinstance(titles, list):
+            fig.suptitle(titles)
+        fig.supxlabel("Latent Y")
+        fig.supylabel("Latent Z")
+
+        if save_path is not None:
+            fig.savefig(save_path + ".png", dpi=600, bbox_inches="tight")
+            fig.savefig(save_path + ".pdf", bbox_inches="tight")
         else:
-            title = titles
-        ax.set_title(title, fontsize=14, weight="bold")
-        # ax.set_xlim(-4, 4)
-        # ax.set_ylim(-4, 4)
-        ax.set_xlabel("Latent X", fontsize=12)
-        ax.grid(True, linestyle="--", alpha=0.5)
-
-        # diagonal perfect correlation line
-        # ax.plot([-4, 4], [-4, 4], 'r--', alpha=0.5, label='Perfect Correlation')
-
-        ax.set_ylabel("Latent Z", fontsize=12)
-
-    # axes[0].set_ylabel("Latent X", fontsize=12)
-    plt.tight_layout()
-    if save_path is not None:
-        plt.savefig(save_path + ".png", dpi=300, bbox_inches="tight")
-        plt.savefig(save_path + ".pdf", dpi=300, bbox_inches="tight")
-    else:
-        plt.show()
-    plt.close()
+            plt.show()
+        plt.close(fig)
 
 
 def create_dashed_boxed_message(message):

@@ -3,8 +3,8 @@
 
 The script applies the notebook's row-matched replacement of
 ``RVTest_asymptotic`` results to the original ky=1 simulation batches. It also
-reads the ky=3 copula and null batches directly, without replacing their
-asymptotic RV results. Every figure is written as a 600-DPI PNG.
+reads the ky=3 copula, null, and rho-sweep batches directly, without replacing
+their asymptotic RV results. Every figure is written as a 600-DPI PNG.
 
 Run from anywhere with:
 
@@ -64,7 +64,16 @@ KY3_BERNOULLI_COPULA_RESULT_FILES = (
 )
 
 KY3_NULL_RESULT_FILES = (
-    "simulation_results_20260731_0523.csv",
+    "simulation_results_20260818_0854.csv",  # Bernoulli network
+    "simulation_results_20260818_0806.csv",  # Gaussian network
+)
+
+KY3_RHO_GAUSSIAN_RESULT_FILES = (
+    "simulation_results_20260730_0858.csv",
+)
+
+KY3_RHO_BERNOULLI_RESULT_FILES = (
+    "simulation_results_20260730_0928.csv",
 )
 
 COLUMNS_TO_REPLACE = (
@@ -152,7 +161,9 @@ METHODS = tuple(COLORS)
 
 COPULAS = ("gaussian", "student_t", "clayton", "mixture")
 MARGINALS_Z = ("gaussian", "chi df=5")
+MARGINALS_Z_KY3 = (*MARGINALS_Z, "unif(-1, 1)")
 MARGINALS_Y = ("gaussian", "chi df=5", "cauchy")
+RHO_SWEEP_MARGINALS_Y = ("gaussian", "chi df=5")
 
 LATENT_SIMULATIONS = (
     "linear",
@@ -395,6 +406,19 @@ def prepare_ky3_null_results(
     return gaussian, bernoulli
 
 
+def prepare_ky3_rho_results(
+    results_dir: Path,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Read the ky=3 Gaussian-copula rho sweeps for both network models."""
+    gaussian = process_results(
+        read_result_batch(results_dir, KY3_RHO_GAUSSIAN_RESULT_FILES)
+    )
+    bernoulli = process_results(
+        read_result_batch(results_dir, KY3_RHO_BERNOULLI_RESULT_FILES)
+    )
+    return gaussian, bernoulli
+
+
 def aggregate_null_results(data: pd.DataFrame) -> pd.DataFrame:
     null_factors = [
         "method",
@@ -429,6 +453,25 @@ def aggregate_alternative_results(data: pd.DataFrame) -> pd.DataFrame:
         y_axis="Rejection",
         x_axis="n",
         factors=alternative_factors,
+    )
+
+
+def aggregate_rho_results(data: pd.DataFrame, *, n: int) -> pd.DataFrame:
+    """Aggregate power over rho at one network size for every marginal pair."""
+    data = data[
+        (data["n"] == n)
+        & (data["rho"] > 0.0)
+        & (data["rho"] <= 0.4)
+        & (data["copula"] == "gaussian")
+        & data["marginal_z"].isin(MARGINALS_Z_KY3)
+        & data["marginal_y"].isin(RHO_SWEEP_MARGINALS_Y)
+        & data["method"].isin(METHODS)
+    ].copy()
+    return aggregate_results(
+        data,
+        y_axis="Rejection",
+        x_axis="rho",
+        factors=["method", "marginal_z", "marginal_y"],
     )
 
 
@@ -504,8 +547,8 @@ def add_shared_legend(fig: Figure, *, lines: bool) -> None:
 def style_probability_axis(ax: Axes, *, null: bool = False) -> None:
     if null:
         # Leave room above the largest observed rates and their SEM ribbons.
-        ax.set_ylim(0, 0.15)
-        ax.set_yticks([0, 0.025, 0.05, 0.075, 0.10, 0.125, 0.15])
+        ax.set_ylim(0, 0.20)
+        ax.set_yticks([0, 0.05, 0.10, 0.15, 0.20])
     else:
         # Markers and symmetric error bars at exactly 0 or 1 need visual headroom.
         ax.set_ylim(-0.05, 1.08)
@@ -521,15 +564,16 @@ def plot_line_panel(
     *,
     y_mean: str,
     y_sem: str,
+    x_column: str = "n",
     band_alpha: float = 0.13,
 ) -> None:
-    assert_unique(data, ["n", "method"], "Line panel")
+    assert_unique(data, [x_column, "method"], "Line panel")
     for method in METHODS:
-        subset = data[data["method"] == method].sort_values("n")
+        subset = data[data["method"] == method].sort_values(x_column)
         if subset.empty:
             continue
 
-        x = subset["n"].to_numpy(dtype=float)
+        x = subset[x_column].to_numpy(dtype=float)
         mean = subset[y_mean].to_numpy(dtype=float)
         sem = subset[y_sem].to_numpy(dtype=float)
         ax.plot(
@@ -553,7 +597,7 @@ def plot_line_panel(
         )
 
     if not data.empty:
-        ax.set_xticks(sorted(data["n"].unique()))
+        ax.set_xticks(sorted(data[x_column].unique()))
 
 
 def plot_scatter_panel(
@@ -715,10 +759,14 @@ def plot_null_figures(
     )
 
 
-def filtered_copula_results(data: pd.DataFrame) -> pd.DataFrame:
+def filtered_copula_results(
+    data: pd.DataFrame,
+    *,
+    marginals_z: tuple[str, ...] = MARGINALS_Z,
+) -> pd.DataFrame:
     return data[
         data["copula"].isin(COPULAS)
-        & data["marginal_z"].isin(MARGINALS_Z)
+        & data["marginal_z"].isin(marginals_z)
         & data["marginal_y"].isin(MARGINALS_Y)
         & data["method"].isin(METHODS)
     ].copy()
@@ -732,8 +780,10 @@ def plot_copula_network(
     filename_prefix: str,
     first_number: int,
     chi_squared_number: int,
+    uniform_number: int | None,
     point_n: int,
     ky: int,
+    marginals_z: tuple[str, ...],
 ) -> None:
     scatter_data = data[data["n"] == point_n].copy()
     assert_unique(
@@ -742,15 +792,15 @@ def plot_copula_network(
         f"{network_name} copula point ranges",
     )
     fig, axes = plt.subplots(
-        len(MARGINALS_Z),
+        len(marginals_z),
         len(COPULAS),
-        figsize=(7.0, 4.2),
+        figsize=(7.0, 5.5 if len(marginals_z) == 3 else 4.2),
         sharex=True,
         sharey=True,
         squeeze=False,
         layout="constrained",
     )
-    for row, marginal_z in enumerate(MARGINALS_Z):
+    for row, marginal_z in enumerate(marginals_z):
         for column, copula in enumerate(COPULAS):
             ax = axes[row, column]
             panel = scatter_data[
@@ -770,7 +820,7 @@ def plot_copula_network(
         axes,
         column_values=COPULAS,
         column_prefix="",
-        row_values=MARGINALS_Z,
+        row_values=marginals_z,
         row_prefix="Z marginal: ",
         row_labeler=display_marginal_label,
     )
@@ -787,7 +837,7 @@ def plot_copula_network(
         f"{first_number:02d}_{filename_prefix}_copulas_n{point_n}_ky{ky}",
     )
 
-    by_n_specs = (
+    by_n_specs = [
         (
             "gaussian",
             f"{first_number + 1:02d}_{filename_prefix}_copulas_by_n_ky{ky}",
@@ -799,7 +849,17 @@ def plot_copula_network(
                 f"z_chi_squared_ky{ky}"
             ),
         ),
-    )
+    ]
+    if uniform_number is not None:
+        by_n_specs.append(
+            (
+                "unif(-1, 1)",
+                (
+                    f"{uniform_number:02d}_{filename_prefix}_copulas_by_n_"
+                    f"z_uniform_ky{ky}"
+                ),
+            )
+        )
     for marginal_z, filename in by_n_specs:
         line_data = data[data["marginal_z"] == marginal_z].copy()
         assert_unique(
@@ -859,25 +919,122 @@ def plot_copula_figures(
     point_n: int,
     first_numbers: tuple[int, int],
     chi_squared_numbers: tuple[int, int],
+    uniform_numbers: tuple[int, int] | None = None,
 ) -> None:
+    marginals_z = MARGINALS_Z_KY3 if uniform_numbers is not None else MARGINALS_Z
+    binary_uniform_number = uniform_numbers[0] if uniform_numbers is not None else None
+    gaussian_uniform_number = (
+        uniform_numbers[1] if uniform_numbers is not None else None
+    )
     plot_copula_network(
-        filtered_copula_results(alternative_bernoulli),
+        filtered_copula_results(alternative_bernoulli, marginals_z=marginals_z),
         output_dir,
         network_name="Bernoulli binary network",
         filename_prefix="binary",
         first_number=first_numbers[0],
         chi_squared_number=chi_squared_numbers[0],
+        uniform_number=binary_uniform_number,
         point_n=point_n,
         ky=ky,
+        marginals_z=marginals_z,
     )
     plot_copula_network(
-        filtered_copula_results(alternative_gaussian),
+        filtered_copula_results(alternative_gaussian, marginals_z=marginals_z),
         output_dir,
         network_name="Gaussian weighted network",
         filename_prefix="gaussian",
         first_number=first_numbers[1],
         chi_squared_number=chi_squared_numbers[1],
+        uniform_number=gaussian_uniform_number,
         point_n=point_n,
+        ky=ky,
+        marginals_z=marginals_z,
+    )
+
+
+def plot_rho_sweep_network(
+    data: pd.DataFrame,
+    output_dir: Path,
+    *,
+    network_name: str,
+    filename: str,
+    n: int,
+    ky: int,
+) -> None:
+    """Plot power over rho for every Y- and Z-marginal combination."""
+    assert_unique(
+        data,
+        ["rho", "method", "marginal_z", "marginal_y"],
+        f"{network_name} Gaussian-copula rho sweep",
+    )
+    fig, axes = plt.subplots(
+        len(RHO_SWEEP_MARGINALS_Y),
+        len(MARGINALS_Z_KY3),
+        figsize=(7.0, 4.2),
+        sharex=True,
+        sharey=True,
+        squeeze=False,
+        layout="constrained",
+    )
+    for row, marginal_y in enumerate(RHO_SWEEP_MARGINALS_Y):
+        for column, marginal_z in enumerate(MARGINALS_Z_KY3):
+            ax = axes[row, column]
+            panel = data[
+                (data["marginal_y"] == marginal_y)
+                & (data["marginal_z"] == marginal_z)
+            ]
+            plot_line_panel(
+                ax,
+                panel,
+                y_mean="Rejection_mean",
+                y_sem="Rejection_sem",
+                x_column="rho",
+            )
+            style_probability_axis(ax)
+
+    add_facet_labels(
+        axes,
+        column_values=MARGINALS_Z_KY3,
+        column_prefix="Z marginal: ",
+        row_values=RHO_SWEEP_MARGINALS_Y,
+        row_prefix="Y marginal: ",
+        column_labeler=display_marginal_label,
+        row_labeler=display_marginal_label,
+    )
+    fig.suptitle(
+        f"Power by dependence strength — {network_name}, Gaussian copula, "
+        f"$n={n}$, $k_y={ky}$"
+    )
+    fig.supxlabel(r"Dependence parameter, $\rho$")
+    fig.supylabel("Power")
+    add_shared_legend(fig, lines=True)
+    save_figure(fig, output_dir, filename)
+
+
+def plot_rho_sweep_figures(
+    gaussian: pd.DataFrame,
+    bernoulli: pd.DataFrame,
+    output_dir: Path,
+    *,
+    n: int,
+    ky: int,
+    figure_numbers: tuple[int, int],
+) -> None:
+    """Create the Gaussian- and Bernoulli-network rho-sweep figures."""
+    plot_rho_sweep_network(
+        aggregate_rho_results(gaussian, n=n),
+        output_dir,
+        network_name="Gaussian weighted network",
+        filename=f"{figure_numbers[0]:02d}_gaussian_copula_rho_n{n}_ky{ky}",
+        n=n,
+        ky=ky,
+    )
+    plot_rho_sweep_network(
+        aggregate_rho_results(bernoulli, n=n),
+        output_dir,
+        network_name="Bernoulli binary network",
+        filename=f"{figure_numbers[1]:02d}_binary_copula_rho_n{n}_ky{ky}",
+        n=n,
         ky=ky,
     )
 
@@ -1077,6 +1234,7 @@ def main() -> None:
     null_gaussian_ky3_raw, null_bernoulli_ky3_raw = prepare_ky3_null_results(
         results_dir
     )
+    rho_gaussian_ky3, rho_bernoulli_ky3 = prepare_ky3_rho_results(results_dir)
     (
         null_gaussian,
         null_bernoulli,
@@ -1136,6 +1294,7 @@ def main() -> None:
         point_n=200,
         first_numbers=(13, 15),
         chi_squared_numbers=(19, 20),
+        uniform_numbers=(23, 24),
     )
     plot_null_figures(
         null_gaussian_ky3,
@@ -1144,8 +1303,16 @@ def main() -> None:
         ky=3,
         figure_numbers=(21, 22),
     )
+    plot_rho_sweep_figures(
+        rho_gaussian_ky3,
+        rho_bernoulli_ky3,
+        output_dir,
+        n=200,
+        ky=3,
+        figure_numbers=(25, 26),
+    )
 
-    print(f"Saved 22 figures as PNG to {output_dir}")
+    print(f"Saved 26 figures as PNG to {output_dir}")
 
 
 if __name__ == "__main__":
