@@ -59,6 +59,10 @@ class RVTest(BasePermutationTest):
         ``observed`` relabels A and refits Z for each permutation.
     rng : np.random.Generator
         Random number generator for reproducibility.
+    n_jobs : int
+        Number of permutation worker processes. ``-1`` uses all available CPUs.
+    batch_size : int
+        Target number of work batches per permutation worker.
     """
 
     def __init__(
@@ -72,6 +76,8 @@ class RVTest(BasePermutationTest):
         use_true_latent=False,
         test_function=rv_coefficient,
         permutation_type="covariate",
+        n_jobs=1,
+        batch_size=32,
         **kwargs,
     ):
         super().__init__(
@@ -84,6 +90,8 @@ class RVTest(BasePermutationTest):
             test_function=test_function,
             permutation_type=permutation_type,
             one_sided=True,
+            n_jobs=n_jobs,
+            batch_size=batch_size,
         )
 
         self.approximation = approximation

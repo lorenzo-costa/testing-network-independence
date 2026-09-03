@@ -412,3 +412,4 @@ def _make_permutations(n: int, d_y: int, rng=None) -> np.ndarray:
     base = generator.permutation(n)
     shifts = generator.choice(n, size=d_y, replace=False)
     return np.array([np.roll(base, -shift) for shift in shifts], dtype=np.int64)
+ 

@@ -40,12 +40,16 @@ def test_distance_correlation_runs_mgc_by_itself():
         use_true_latent=True,
         npermutations=3,
         rng=np.random.default_rng(5),
+        n_jobs=2,
+        batch_size=2,
     )
 
     method.fit(latent_data())
     result = method.get_estimated()
 
     assert method.get_name() == "DistanceCorrelation_covariate"
+    assert method.n_jobs == 2
+    assert method.batch_size == 2
     assert np.isfinite(result["test_stat"])
     assert 0.0 <= result["p-value"] <= 1.0
     assert isinstance(result["reject_null"], bool)

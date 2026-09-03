@@ -208,6 +208,16 @@ All methods inherit from `BaseMethod` and expose `fit(data)`, `get_estimated()`,
 | `CanonicalCorrelationTest` | `permutation_type`, `solver` | Permutation test via canonical correlations of estimated latent positions |
 | `FitIndependent` | `solver`, `k` | Not a test; fits the solver independently to each network and stores embeddings |
 
+Permutation-based methods accept `n_jobs` and `batch_size`. The default,
+`n_jobs=1`, evaluates permutations serially; positive values use that many
+worker processes, and `n_jobs=-1` uses all available CPUs. The process-pool
+chunk size is computed as
+`max(1, npermutations // (effective_n_jobs * batch_size))`, with
+`batch_size=32` by default. Set `verbose=True` to show a `tqdm` progress bar
+for either serial or parallel execution. Do not enable permutation-level and
+simulation-level parallelism at the same time. Custom test functions and
+solvers must be picklable when permutation-level parallelism is enabled.
+
 ### Metrics (`metrics.py`)
 
 `ComputeAll` is the recommended metric class — it computes both testing outcomes and latent-position recovery errors in a single pass.

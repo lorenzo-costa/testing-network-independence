@@ -50,12 +50,16 @@ def test_rv_permutation_test_runs_by_itself():
         approximation="permutation",
         npermutations=4,
         rng=np.random.default_rng(10),
+        n_jobs=2,
+        batch_size=2,
     )
 
     method.fit(latent_data())
     result = method.get_estimated()
 
     assert method.get_name() == "RV_PermutationTest_covariate"
+    assert method.n_jobs == 2
+    assert method.batch_size == 2
     assert len(method.permutation_distribution) == 4
     assert np.isfinite(result["test_stat"])
     assert 0.0 <= result["p-value"] <= 1.0
