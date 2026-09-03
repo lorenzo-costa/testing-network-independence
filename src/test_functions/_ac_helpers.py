@@ -53,31 +53,6 @@ def _neighbor_maps(
         n_idx = _knn_indices(x, M, rng=rng)
         return m_idx, n_idx
 
-def _neighbor_prefix_maps(
-    z: np.ndarray,
-    x,
-    *,
-    n: int,
-    max_m: int,
-    rng=None,
-    right_neighbor=False,
-) -> tuple[np.ndarray, np.ndarray | None]:
-    """Return ordered neighbor maps whose first M columns define each M-NN map."""
-    if right_neighbor is True:
-        if x is not None:
-            raise ValueError("right_neighbor is only used when X is None.")
-        return _right_neighbor_indices(z, max_m, rng=rng), None
-
-    if x is None:
-        return _knn_prefix_indices(z, max_m, rng=rng), None
-
-    x = _as_2d(x, name="X", n=n)
-    return (
-        _knn_prefix_indices(np.hstack((x, z)), max_m, rng=rng),
-        _knn_prefix_indices(x, max_m, rng=rng),
-    )
-
-
 # NN-indices
 
 def _cutoff_radii(
@@ -259,61 +234,6 @@ def _right_neighbor_indices(
     return neighbors
 
 
-def _knn_prefix_indices(
-    points: np.ndarray,
-    max_m: int,
-    *,
-    rng=None,
-) -> np.ndarray:
-    """Return an ordered K-NN map; column m is the (m+1)-th neighbor.
-
-    This retains the reference implementation's exact ordering and RNG
-    consumption, while batching the cutoff-radius searches across all rows.
-    Thus the first M columns match the reference output for every M.
-    """
-    points = np.asarray(points, dtype=float)
-    n = len(points)
-    if not 1 <= max_m < n:
-        raise ValueError("Require 1 <= max_m < n.")
-
-    generator = (
-        rng
-        if isinstance(rng, np.random.Generator)
-        else np.random.default_rng(rng)
-    )
-    tree = cKDTree(points)
-    distances, indices = tree.query(points, k=max_m + 1)
-    distances = np.atleast_2d(distances)
-    indices = np.atleast_2d(indices)
-
-    _, radii = _cutoff_radii(tree, points, distances, indices, max_m)
-    candidate_lists = tree.query_ball_point(
-        points,
-        radii,
-        return_sorted=False,
-    )
-
-    neighbors = np.empty((n, max_m), dtype=np.int64)
-    all_indices = np.arange(n, dtype=np.int64)
-
-    for i, candidate_list in enumerate(candidate_lists):
-        candidates = np.asarray(candidate_list, dtype=np.int64)
-        candidates = candidates[candidates != i]
-
-        # Preserve the reference numerical guard.
-        if candidates.size < max_m:
-            candidates = np.delete(all_indices, i)
-
-        candidate_distances = np.linalg.norm(
-            points[candidates] - points[i],
-            axis=1,
-        )
-        tie_breaker = generator.random(candidates.size)
-        order = np.lexsort((tie_breaker, candidate_distances))
-        neighbors[i] = candidates[order[:max_m]]
-
-    return neighbors
-
 # validation functions
 def _validate_m(M: int | float, n: int) -> int:
     """Resolve an integer neighbor count or a sublinear exponent of ``n``."""
@@ -343,44 +263,6 @@ def _validate_m(M: int | float, n: int) -> int:
     return resolved_m
 
 
-def _validate_m_bounds(M: list | tuple, n: int) -> tuple[int, int]:
-    """Validate and resolve inclusive lower and upper aggregation bounds."""
-    if len(M) != 2:
-        raise ValueError("An aggregate M list or tuple must contain two bounds.")
-
-    lower, upper = M
-    numeric_types = (int, np.integer, float, np.floating)
-    if (
-        isinstance(lower, (bool, np.bool_))
-        or isinstance(upper, (bool, np.bool_))
-        or not isinstance(lower, numeric_types)
-        or not isinstance(upper, numeric_types)
-    ):
-        raise ValueError("Aggregate M bounds must each be an integer or float.")
-    if not upper > lower:
-        raise ValueError(
-            "The upper aggregate M bound must be greater than the lower bound."
-        )
-
-    min_m = _validate_m(lower, n)
-    max_m = _validate_m(upper, n)
-    if max_m <= min_m:
-        raise ValueError(
-            "The upper aggregate M bound must remain greater than the lower "
-            "bound after resolving float exponents."
-        )
-
-    return min_m, max_m
-
-def _validate_aggregate(aggregate: str) -> str:
-    if not isinstance(aggregate, str):
-        raise TypeError("aggregate must be either 'avg' or 'max'.")
-
-    aggregate = aggregate.lower()
-    if aggregate not in {"avg", "max"}:
-        raise ValueError("aggregate must be either 'avg' or 'max'.")
-    return aggregate
-
 # misc helpers
 def _as_2d(values, *, name: str, n: int | None = None) -> np.ndarray:
     """Return a finite array with shape ``(n, d)``."""
@@ -397,9 +279,6 @@ def _as_2d(values, *, name: str, n: int | None = None) -> np.ndarray:
     if not np.isfinite(values).all():
         raise ValueError(f"{name} must contain only finite values.")
     return values
-
-def _aggregate_coefficients(coefficients: np.ndarray, aggregate: str) -> float:
-    return float(coefficients.max() if aggregate == "max" else coefficients.mean())
 
 def _make_permutations(n: int, d_y: int, rng=None) -> np.ndarray:
     """Make coordinate permutations with distinct source rows per observation."""

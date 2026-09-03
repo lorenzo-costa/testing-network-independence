@@ -104,7 +104,6 @@ COLUMNS_TO_MATCH = (
     "use_true_x",
     "use_true_z",
     "latent_sim",
-    "aggregate",
     "copula",
     "marginal_y",
     "marginal_z",

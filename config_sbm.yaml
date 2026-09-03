@@ -52,16 +52,6 @@ methods:
       kwargs:
         M: quarter
 
-    - name: MultivariateACTest
-      kwargs:
-        M: sqrt
-        aggregate_coeff: max
-
-    - name: MultivariateACTest
-      kwargs:
-        M: quarter
-        aggregate_coeff: max
-
 # -----------------------------------------------------------------------------
 # DGP & Solver Setups
 # Both DGPs use sbm=True. The solver is ASE (same for both).

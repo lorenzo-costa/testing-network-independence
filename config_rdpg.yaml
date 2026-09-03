@@ -48,11 +48,6 @@ methods:
       kwargs:
         M: sqrt
 
-    - name: MultivariateACTest
-      kwargs:
-        M: sqrt
-        aggregate_coeff: max
-
 # -----------------------------------------------------------------------------
 # DGP & Solver Setups (H1: rho > 0)
 # Each entry pairs a data-generating process (network type + copula) with a solver.

@@ -38,7 +38,6 @@ def test_config_resolver_forwards_adaptive_m_option():
             "kwargs": {
                 "adaptive_m": True,
                 "M": 99,
-                "aggregate_coeff": "max",
                 "use_permutation_coeff": True,
             },
         }
@@ -48,7 +47,6 @@ def test_config_resolver_forwards_adaptive_m_option():
     assert resolved.keywords == {
         "adaptive_m": True,
         "M": 99,
-        "aggregate_coeff": "max",
         "use_permutation_coeff": True,
     }
 
@@ -269,9 +267,7 @@ def test_adaptive_m_grid_is_rounded_deduplicated_and_capped():
     np.testing.assert_array_equal(MultivariateACTest._adaptive_m_grid(2), [1])
 
 
-def test_adaptive_s_statistic_preserves_options_and_ignores_m_aggregation(
-    monkeypatch,
-):
+def test_adaptive_s_statistic_preserves_options(monkeypatch):
     calls = []
 
     def recording_ac(**kwargs):
@@ -282,7 +278,6 @@ def test_adaptive_s_statistic_preserves_options_and_ignores_m_aggregation(
     method = MultivariateACTest(
         use_true_latent=True,
         M=99,
-        aggregate_coeff="max",
         use_permutation_coeff=True,
         use_right_neighbor=True,
         adaptive_m=True,
@@ -298,7 +293,6 @@ def test_adaptive_s_statistic_preserves_options_and_ignores_m_aggregation(
     assert calls[0]["Y"] is y
     for call in calls:
         assert call["M"] == 2
-        assert call["aggregate"] is None
         assert call["X"] is method.X
         assert call["permutation"] is True
         assert call["right_neighbor"] is True
@@ -331,7 +325,6 @@ def test_adaptive_test_uses_sample_standardization_and_corrected_pvalue(
     method = MultivariateACTest(
         use_true_latent=True,
         M=99,
-        aggregate_coeff="max",
         adaptive_m=True,
         npermutations=2,
         rng=np.random.default_rng(31),

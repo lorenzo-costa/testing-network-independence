@@ -288,7 +288,6 @@ def parse_config_string(value: Any) -> dict[str, Any]:
 
         method_arguments = {
             "NN_number": "M",
-            "aggregate": "aggregate_coeff",
             "approximation": "approximation",
             "permutation_type": "permutation_type",
             "adaptive_m": "adaptive_m",
@@ -472,7 +471,6 @@ def _add_config_columns(results: pd.DataFrame) -> pd.DataFrame:
         "use_true_x": ("use_true_latent_x", None),
         "use_true_z": ("use_true_latent_z", None),
         "latent_sim": ("latent_sim", _clean_string),
-        "aggregate": ("aggregate", None),
         "copula": ("copula_model", None),
         "dgp": ("dgp_name", None),
         "marginal_y": ("marginal_y", _clean_string),
