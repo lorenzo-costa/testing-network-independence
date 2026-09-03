@@ -5,26 +5,28 @@ from ..test_functions.ac_coefficient import ac_coefficient
 
 
 class _ACMixin:
-    def _ac_statistic(self, Z, Y):
+    def _ac_statistic(self, Z, Y, rng=None):
+        rng = self.rng if rng is None else rng
         return ac_coefficient(
             Y=Y,
             Z=Z,
             X=self.X if not self._ignore_X else None,
             M=self.M,
-            rng=self.rng,
+            rng=rng,
             permutation=self.use_permutation_coeff,
             right_neighbor=self.use_right_neighbor,
             block_size=self.block_size,
         )
 
-    def _adaptive_s_statistic(self, Z, Y, M):
+    def _adaptive_s_statistic(self, Z, Y, M, rng=None):
         """Return the coefficient xi_M(Y, Z) for one M."""
+        rng = self.rng if rng is None else rng
         return ac_coefficient(
             Y=Y,
             Z=Z,
             X=self.X if not self._ignore_X else None,
             M=M,
-            rng=self.rng,
+            rng=rng,
             permutation=self.use_permutation_coeff,
             right_neighbor=self.use_right_neighbor,
             block_size=self.block_size,
@@ -91,6 +93,9 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
         use_right_neighbor=False,
         adaptive_m=False,
         block_size=2048,
+        n_jobs=1,
+        batch_size=32,
+        verbose=False,
         _ignore_X=False, # temp for testing
         **kwargs,
     ):
@@ -111,14 +116,27 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
             rng=rng,
             stratify_permutations=not _ignore_X,
             one_sided=True,
+            n_jobs=n_jobs,
+            batch_size=batch_size,
+            verbose=verbose,
         )
 
     def fit(self, data, **kwargs):
         self._process_input(data)
         if self.adaptive_m:
-            self._fit_adaptive_permutation()
-        else:
-            self._fit_permutation()
+            if self.npermutations < 1:
+                raise ValueError(
+                    "Adaptive M selection requires at least one permutation to "
+                    "compute sample standard deviations."
+                )
+            self.adaptive_m_values = self._adaptive_m_grid(self.Y.shape[0])
+        self._fit_permutation()
+
+        if self.adaptive_m:
+            self.adaptive_s_statistics = self.statistic_matrix
+            self.adaptive_m_means = self.statistic_means
+            self.adaptive_m_stds = self.statistic_standard_deviations
+            self.adaptive_z_statistics = self.standardized_statistics
 
     @classmethod
     def _adaptive_m_grid(cls, n):
@@ -129,63 +147,19 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
         )
         return np.asarray(list(dict.fromkeys(capped)), dtype=int)
 
-    def _adaptive_statistics(self, Z, Y):
+    def _adaptive_statistics(self, Z, Y, rng=None):
         return np.asarray(
-            [self._adaptive_s_statistic(Z, Y, M) for M in self.adaptive_m_values],
+            [
+                self._adaptive_s_statistic(Z, Y, M, rng=rng)
+                for M in self.adaptive_m_values
+            ],
             dtype=float,
         )
 
-    def _fit_adaptive_permutation(self):
-        if self.npermutations < 1:
-            raise ValueError(
-                "Adaptive M selection requires at least one permutation to "
-                "compute sample standard deviations."
-            )
-
-        self.adaptive_m_values = self._adaptive_m_grid(self.Y.shape[0])
-        statistic_rows = [self._adaptive_statistics(self.Zhat, self.Y)]
-        self.permutation_indices = []
-
-        for _ in range(self.npermutations):
-            perm = self._draw_permutation()
-            self.permutation_indices.append(perm.copy())
-
-            if self.permutation_type == "covariate":
-                Z_stat, Y_stat = self.Zhat, self.Y[perm, :]
-            elif self.permutation_type == "latent":
-                Z_stat, Y_stat = self.Zhat[perm, :], self.Y
-            else:
-                if self.A is None:
-                    raise ValueError("A is required for observed permutations.")
-                A_perm = self.A[perm][:, perm]
-                Z_stat = self.solver(A_perm, k=self.k, rng=self.rng)[0]
-                Y_stat = self.Y
-
-            statistic_rows.append(self._adaptive_statistics(Z_stat, Y_stat))
-
-        self.adaptive_s_statistics = np.vstack(statistic_rows)
-        self.adaptive_m_means = self.adaptive_s_statistics.mean(axis=0)
-        self.adaptive_m_stds = self.adaptive_s_statistics.std(axis=0, ddof=1)
-
-        zero_std = self.adaptive_m_stds == 0
-        if np.any(zero_std):
-            zero_m = self.adaptive_m_values[zero_std].tolist()
-            raise ValueError(
-                f"Adaptive M standard deviation is zero for M={zero_m}."
-            )
-
-        self.adaptive_z_statistics = (
-            self.adaptive_s_statistics - self.adaptive_m_means
-        ) / self.adaptive_m_stds
-        adaptive_statistics = self.adaptive_z_statistics.max(axis=1)
-
-        self.test_stat_estimate = float(adaptive_statistics[0])
-        self.permutation_distribution = adaptive_statistics[1:].tolist()
-        exceedances = np.count_nonzero(
-            adaptive_statistics[1:] >= self.test_stat_estimate
-        )
-        self.pvalue = float((1 + exceedances) / (self.npermutations + 1))
-        self.reject_null = bool(self.pvalue < self.alpha)
+    def _evaluate_test_statistic(self, Z, Y, rng):
+        if self.adaptive_m:
+            return self._adaptive_statistics(Z, Y, rng=rng)
+        return self._ac_statistic(Z, Y, rng=rng)
 
     def get_name(self):
         if self.adaptive_m:

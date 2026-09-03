@@ -42,3 +42,14 @@ def test_canonical_correlation_test_runs_permutations_by_itself():
 def test_canonical_correlation_test_requires_solver():
     with pytest.raises(ValueError, match="Solver must be provided"):
         CanonicalCorrelationTest()
+
+
+def test_canonical_correlation_forwards_parallel_options():
+    method = CanonicalCorrelationTest(
+        use_true_latent=True,
+        n_jobs=2,
+        batch_size=3,
+        verbose=True,
+    )
+
+    assert (method.n_jobs, method.batch_size, method.verbose) == (2, 3, True)

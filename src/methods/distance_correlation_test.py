@@ -45,6 +45,9 @@ class DistanceCorrelationTest(BasePermutationTest):
         solver=None,
         use_true_latent=False,
         permutation_type="covariate",
+        n_jobs=1,
+        batch_size=32,
+        verbose=False,
         **kwargs,
     ):
         if test_method not in {"dcorr", "mgc"}:
@@ -60,6 +63,9 @@ class DistanceCorrelationTest(BasePermutationTest):
             test_function=test_function,
             use_true_latent=use_true_latent,
             permutation_type=permutation_type,
+            n_jobs=n_jobs,
+            batch_size=batch_size,
+            verbose=verbose,
         )
 
     def compute_distance_matrix(self, values):

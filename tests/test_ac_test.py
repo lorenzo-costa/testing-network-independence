@@ -311,7 +311,7 @@ def test_adaptive_test_uses_sample_standardization_and_corrected_pvalue(
     values = iter(s_statistics.ravel())
     seen_y = []
 
-    def fixed_s_statistic(self, Z, Y, M):
+    def fixed_s_statistic(self, Z, Y, M, rng=None):
         seen_y.append(Y.copy())
         return next(values)
 
@@ -360,7 +360,7 @@ def test_adaptive_test_uses_sample_standardization_and_corrected_pvalue(
 def test_adaptive_test_passes_multivariate_y_to_each_m_statistic(monkeypatch):
     seen_shapes = []
 
-    def shape_based_s_statistic(self, Z, Y, M):
+    def shape_based_s_statistic(self, Z, Y, M, rng=None):
         seen_shapes.append(Y.shape)
         row_weights = np.arange(1, Y.shape[0] + 1)
         return float(M + row_weights @ Y[:, 0])
@@ -388,7 +388,7 @@ def test_adaptive_test_raises_when_an_m_specific_std_is_zero(monkeypatch):
     monkeypatch.setattr(
         MultivariateACTest,
         "_adaptive_s_statistic",
-        lambda self, Z, Y, M: 1.0,
+        lambda self, Z, Y, M, rng=None: 1.0,
     )
     data = {
         "Y": np.arange(10, dtype=float).reshape(-1, 1),
@@ -402,3 +402,32 @@ def test_adaptive_test_raises_when_an_m_specific_std_is_zero(monkeypatch):
 
     with pytest.raises(ValueError, match="standard deviation is zero"):
         method.fit(data)
+
+
+def test_parallel_adaptive_ac_matches_serial():
+    data = latent_data()
+    methods = []
+    for n_jobs in (1, 3):
+        method = MultivariateACTest(
+            use_true_latent=True,
+            adaptive_m=True,
+            npermutations=5,
+            rng=np.random.default_rng(45),
+            n_jobs=n_jobs,
+            batch_size=2,
+        )
+        method.fit(data)
+        methods.append(method)
+
+    serial, parallel = methods
+    for serial_perm, parallel_perm in zip(
+        serial.permutation_indices, parallel.permutation_indices
+    ):
+        np.testing.assert_array_equal(serial_perm, parallel_perm)
+    np.testing.assert_allclose(
+        serial.adaptive_s_statistics, parallel.adaptive_s_statistics
+    )
+    np.testing.assert_allclose(
+        serial.permutation_distribution, parallel.permutation_distribution
+    )
+    assert serial.pvalue == parallel.pvalue

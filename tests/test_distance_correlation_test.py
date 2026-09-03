@@ -59,3 +59,14 @@ def test_distance_correlation_rejects_unknown_method():
             use_true_latent=True,
             npermutations=1,
         )
+
+
+def test_distance_correlation_forwards_parallel_options():
+    method = DistanceCorrelationTest(
+        use_true_latent=True,
+        n_jobs=2,
+        batch_size=3,
+        verbose=True,
+    )
+
+    assert (method.n_jobs, method.batch_size, method.verbose) == (2, 3, True)

@@ -102,3 +102,14 @@ def test_rv_test_rejects_unknown_approximation():
 
     with pytest.raises(ValueError, match="Invalid approximation method"):
         method.fit(latent_data())
+
+
+def test_rv_test_forwards_parallel_options():
+    method = RVTest(
+        use_true_latent=True,
+        n_jobs=2,
+        batch_size=3,
+        verbose=True,
+    )
+
+    assert (method.n_jobs, method.batch_size, method.verbose) == (2, 3, True)
