@@ -21,7 +21,7 @@ def test_canonical_correlation_test_runs_permutations_by_itself():
     rng = np.random.default_rng(20)
     data = {
         "Y": rng.normal(size=(14, 2)),
-        "Z": rng.normal(size=(14, 2)),
+        "X": [rng.normal(size=(14, 2)), rng.normal(size=(14, 2))],
     }
     method = CanonicalCorrelationTest(
         solver=dummy_solver,
@@ -33,7 +33,7 @@ def test_canonical_correlation_test_runs_permutations_by_itself():
     method.fit(data)
     result = method.get_estimated()
 
-    assert method.get_name() == "CCA_PermutationTest_covariate"
+    assert method.get_name() == "CCA_PermutationTest_latent"
     assert len(method.permutation_distribution) == 3
     assert 0.0 <= result["test_stat"] <= 1.0
     assert 0.0 <= result["p-value"] <= 1.0

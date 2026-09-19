@@ -3,15 +3,23 @@ import os
 import numpy as np
 import pytest
 
-from src.methods._base_class import BaseEstimationMethod, BaseMethod, BasePermutationTest
+from src.methods._base_class import (
+    BaseEstimationMethod,
+    BaseMethod,
+    BasePermutationTest,
+)
 
 
 class RecordingSolver:
     def __init__(self):
         self.inputs = []
+        self.dimensions = []
+        self.rngs = []
 
     def __call__(self, matrix, k, rng=None):
         self.inputs.append(np.asarray(matrix).copy())
+        self.dimensions.append(k)
+        self.rngs.append(rng)
         return np.asarray(matrix)[:, :k].copy(), np.ones(k)
 
 
@@ -26,6 +34,20 @@ def process_id_statistic(z, y):
 def stochastic_solver(matrix, k, rng=None):
     values = np.asarray(matrix, dtype=float)[:, :k]
     return values + rng.normal(size=values.shape), np.ones(k)
+
+
+def network_data(n=8, p=2):
+    rng = np.random.default_rng(123)
+    matrices = [rng.normal(size=(n, n)) for _ in range(p + 1)]
+    matrices = [matrix + matrix.T for matrix in matrices]
+    return {"A_Y": matrices[0], "A_X": matrices[1:]}
+
+
+def latent_data(n=6):
+    return {
+        "Y": np.arange(n, dtype=float).reshape(n, 1),
+        "X": [np.arange(n * 2, dtype=float).reshape(n, 2), np.ones((n, 2))],
+    }
 
 
 def test_result_structure_contains_one_latent_and_observed_y():
@@ -57,15 +79,11 @@ def test_result_structure_contains_one_latent_and_observed_y():
 def test_input_processing_accepts_and_validates_conditioning_x():
     method = BaseEstimationMethod(use_true_latent=True)
     z = np.arange(8.0).reshape(4, 2)
-    method._process_input(
-        {"Z": z, "Y": np.arange(4.0), "X": np.array([0, 0, 1, 1])}
-    )
+    method._process_input({"Z": z, "Y": np.arange(4.0), "X": np.array([0, 0, 1, 1])})
     assert method.X.shape == (4, 1)
 
     with pytest.raises(ValueError, match="X must be a 2D array with n rows"):
-        method._process_input(
-            {"Z": z, "Y": np.arange(4.0), "X": np.ones((3, 1))}
-        )
+        method._process_input({"Z": z, "Y": np.arange(4.0), "X": np.ones((3, 1))})
 
 
 def test_true_latent_does_not_require_or_call_solver():
@@ -85,42 +103,71 @@ def test_estimated_latent_uses_only_a():
     np.testing.assert_array_equal(solver.inputs[0], a)
 
 
-@pytest.mark.parametrize("permutation_type", ["covariate", "latent"])
-def test_latent_permutations_do_not_refit(permutation_type):
+def test_latent_permutations_fit_every_network_once_and_keep_x_fixed():
     solver = RecordingSolver()
+    calls = []
+
+    def statistic(y, x):
+        calls.append((y.copy(), x.copy()))
+        return float(y[:, 0] @ x[:, -1])
+
     method = BasePermutationTest(
         solver=solver,
-        k=2,
+        d_y=3,
+        d_x=2,
         npermutations=4,
-        permutation_type=permutation_type,
-        test_function=lambda z, y: float(np.sum(z * y)),
+        permutation_type="latent",
+        test_function=statistic,
         rng=np.random.default_rng(4),
     )
-    method._process_input({"A": np.eye(5), "Y": np.ones((5, 2))})
-    method._fit_permutation()
-    assert len(solver.inputs) == 1
+    data = network_data(n=5, p=3)
+    method.fit(data)
+    assert len(solver.inputs) == 4
+    assert solver.dimensions == [3, 2, 2, 2]
+    assert all(rng is method.rng for rng in solver.rngs)
+    expected_x = np.concatenate([a[:, :2] for a in data["A_X"]], axis=1)
+    np.testing.assert_array_equal(calls[0][0], data["A_Y"][:, :3])
+    for _, x in calls:
+        np.testing.assert_array_equal(x, expected_x)
+    for permutation, (y, _) in zip(method.permutation_indices, calls[1:]):
+        np.testing.assert_array_equal(y, method.Yhat[permutation])
 
 
-def test_observed_permutation_relabels_a_and_refits():
+def test_adjacency_permutation_relabels_both_y_axes_and_refits_only_y():
     solver = RecordingSolver()
+    calls = []
+
+    def statistic(y, x):
+        calls.append((y.copy(), x.copy()))
+        return float(y[:, 0] @ x[:, -1])
+
     method = BasePermutationTest(
         solver=solver,
-        k=1,
+        d_y=2,
+        d_x=1,
         npermutations=3,
-        permutation_type="observed",
-        test_function=lambda z, y: float(z[:, 0] @ y[:, 0]),
+        permutation_type="adjacency",
+        test_function=statistic,
         rng=np.random.default_rng(5),
     )
-    method._process_input({"A": np.arange(25.0).reshape(5, 5), "Y": np.ones((5, 1))})
-    method._fit_permutation()
-    assert len(solver.inputs) == 4
+    data = network_data(n=5, p=2)
+    method.fit(data)
+    assert len(solver.inputs) == 3 + method.npermutations
+    assert solver.dimensions == [2, 1, 1, 2, 2, 2]
+    for permutation, matrix, (y, x) in zip(
+        method.permutation_indices, solver.inputs[3:], calls[1:]
+    ):
+        expected = data["A_Y"][permutation][:, permutation]
+        np.testing.assert_array_equal(matrix, expected)
+        np.testing.assert_array_equal(y, expected[:, :2])
+        np.testing.assert_array_equal(x, method.Xhat)
 
 
-def test_observed_permutation_rejects_true_latent_mode():
+def test_adjacency_permutation_rejects_true_latent_mode():
     with pytest.raises(ValueError, match="requires use_true_latent=False"):
         BasePermutationTest(
             use_true_latent=True,
-            permutation_type="observed",
+            permutation_type="adjacency",
             test_function=lambda z, y: 0.0,
         )
 
@@ -174,18 +221,12 @@ def test_vector_permutation_finalizer_standardizes_and_takes_maximum():
     expected_stds = statistics.std(axis=0, ddof=1)
     expected_standardized = (statistics - expected_means) / expected_stds
     expected_maxima = expected_standardized.max(axis=1)
-    expected_exceedances = np.count_nonzero(
-        expected_maxima[1:] >= expected_maxima[0]
-    )
+    expected_exceedances = np.count_nonzero(expected_maxima[1:] >= expected_maxima[0])
 
     np.testing.assert_allclose(method.statistic_matrix, statistics)
     np.testing.assert_allclose(method.statistic_means, expected_means)
-    np.testing.assert_allclose(
-        method.statistic_standard_deviations, expected_stds
-    )
-    np.testing.assert_allclose(
-        method.standardized_statistics, expected_standardized
-    )
+    np.testing.assert_allclose(method.statistic_standard_deviations, expected_stds)
+    np.testing.assert_allclose(method.standardized_statistics, expected_standardized)
     assert method.test_stat_estimate == pytest.approx(expected_maxima[0])
     assert method.permutation_distribution == pytest.approx(expected_maxima[1:])
     assert method.pvalue == pytest.approx((1 + expected_exceedances) / 3)
@@ -223,10 +264,7 @@ def test_all_cpu_n_jobs_resolves_cpu_count(monkeypatch):
 
 
 def test_parallel_permutations_match_serial_permutations():
-    data = {
-        "Z": np.arange(16.0).reshape(8, 2),
-        "Y": np.arange(8.0).reshape(8, 1),
-    }
+    data = latent_data(n=8)
     methods = []
     for n_jobs, batch_size in ((1, 32), (3, 32), (3, 1)):
         method = BasePermutationTest(
@@ -251,24 +289,20 @@ def test_parallel_permutations_match_serial_permutations():
             serial.permutation_distribution,
             parallel.permutation_distribution,
         )
-        assert serial.test_stat_estimate == pytest.approx(
-            parallel.test_stat_estimate
-        )
+        assert serial.test_stat_estimate == pytest.approx(parallel.test_stat_estimate)
         assert serial.pvalue == parallel.pvalue
 
 
-def test_observed_parallel_permutations_use_reproducible_child_rngs():
-    data = {
-        "A": np.arange(36.0).reshape(6, 6),
-        "Y": np.arange(6.0).reshape(6, 1),
-    }
+def test_adjacency_parallel_permutations_use_reproducible_child_rngs():
+    data = network_data(n=6, p=3)
     methods = []
     for n_jobs in (1, 3):
         method = BasePermutationTest(
             solver=stochastic_solver,
-            k=1,
+            d_y=2,
+            d_x=1,
             npermutations=6,
-            permutation_type="observed",
+            permutation_type="adjacency",
             test_function=dot_product_statistic,
             rng=np.random.default_rng(43),
             n_jobs=n_jobs,
@@ -279,9 +313,7 @@ def test_observed_parallel_permutations_use_reproducible_child_rngs():
         methods.append(method)
 
     serial, parallel = methods
-    np.testing.assert_allclose(
-        serial.permuted_statistics, parallel.permuted_statistics
-    )
+    np.testing.assert_allclose(serial.permuted_statistics, parallel.permuted_statistics)
     np.testing.assert_allclose(
         serial.permutation_distribution, parallel.permutation_distribution
     )
@@ -297,17 +329,10 @@ def test_parallel_permutations_execute_in_worker_processes():
         rng=np.random.default_rng(44),
         n_jobs=3,
     )
-    method._process_input(
-        {
-            "Z": np.arange(12.0).reshape(6, 2),
-            "Y": np.arange(6.0).reshape(6, 1),
-        }
-    )
+    method._process_input(latent_data())
     method._fit_permutation()
 
-    assert all(
-        process_id != main_process for process_id in method.permuted_statistics
-    )
+    assert all(process_id != main_process for process_id in method.permuted_statistics)
 
 
 def test_parallel_permutations_compute_pool_chunk_size():
@@ -319,12 +344,7 @@ def test_parallel_permutations_compute_pool_chunk_size():
         n_jobs=2,
         batch_size=2,
     )
-    method._process_input(
-        {
-            "Z": np.arange(12.0).reshape(6, 2),
-            "Y": np.arange(6.0).reshape(6, 1),
-        }
-    )
+    method._process_input(latent_data())
     method._fit_permutation()
 
     assert method.permutation_chunk_size == 4
@@ -345,12 +365,7 @@ def test_parallel_permutations_reject_nested_daemon_process(monkeypatch):
         rng=np.random.default_rng(49),
         n_jobs=2,
     )
-    method._process_input(
-        {
-            "Z": np.arange(12.0).reshape(6, 2),
-            "Y": np.arange(6.0).reshape(6, 1),
-        }
-    )
+    method._process_input(latent_data())
 
     with pytest.raises(RuntimeError, match="parallel simulation worker"):
         method._fit_permutation()
@@ -367,12 +382,7 @@ def test_verbose_permutations_show_tqdm_progress(capsys, n_jobs):
         batch_size=2,
         verbose=True,
     )
-    method._process_input(
-        {
-            "Z": np.arange(12.0).reshape(6, 2),
-            "Y": np.arange(6.0).reshape(6, 1),
-        }
-    )
+    method._process_input(latent_data())
     method._fit_permutation()
 
     captured = capsys.readouterr()
@@ -389,13 +399,148 @@ def test_nonverbose_permutations_hide_tqdm_progress(capsys):
         n_jobs=2,
         verbose=False,
     )
-    method._process_input(
-        {
-            "Z": np.arange(12.0).reshape(6, 2),
-            "Y": np.arange(6.0).reshape(6, 1),
-        }
-    )
+    method._process_input(latent_data())
     method._fit_permutation()
 
     captured = capsys.readouterr()
     assert "Permutations" not in captured.err
+    assert captured.out == ""
+
+
+def test_ordered_network_input_and_result_matrices_preserve_block_order():
+    solver = RecordingSolver()
+    data = network_data(n=7, p=3)
+    matrices = [data["A_Y"], *data["A_X"]]
+    method = BasePermutationTest(
+        d_y=3,
+        d_x=2,
+        solver=solver,
+        test_function=dot_product_statistic,
+        npermutations=2,
+        rng=np.random.default_rng(50),
+    )
+    method.fit(matrices)
+
+    assert method.Yhat.shape == (7, 3)
+    assert method.Xhat.shape == (7, 6)
+    assert method.p == 3
+    assert solver.dimensions == [3, 2, 2, 2]
+    for actual, expected in zip(solver.inputs, matrices):
+        np.testing.assert_array_equal(actual, expected)
+    for k, matrix in enumerate(matrices[1:]):
+        np.testing.assert_array_equal(
+            method.Xhat[:, 2 * k : 2 * (k + 1)], matrix[:, :2]
+        )
+        np.testing.assert_array_equal(method.Xhat_blocks[k], matrix[:, :2])
+    result = method.get_estimated()
+    assert result["estimated_latent"]["Y"] is method.Yhat
+    assert result["estimated_latent"]["X"] is method.Xhat
+    assert result["true_latent"] == {"Y": None, "X": None}
+
+
+def test_true_multiple_latents_bypass_solver_without_mutating_inputs():
+    data = latent_data()
+    solver = RecordingSolver()
+    method = BasePermutationTest(
+        use_true_latent=True,
+        solver=solver,
+        test_function=dot_product_statistic,
+        npermutations=2,
+    )
+    method.fit(data)
+    assert solver.inputs == []
+    assert (method.d_y, method.d_x) == (1, 2)
+    result = method.get_estimated()
+    np.testing.assert_array_equal(method.Yhat, data["Y"])
+    np.testing.assert_array_equal(method.Xhat, np.concatenate(data["X"], axis=1))
+    np.testing.assert_array_equal(result["true_latent"]["X"], method.Xhat)
+    method.Yhat[:] = -99
+    method.Xhat_blocks[0][:] = -99
+    np.testing.assert_array_equal(data["Y"], latent_data()["Y"])
+    np.testing.assert_array_equal(data["X"][0], latent_data()["X"][0])
+
+
+def test_supplied_truth_only_infers_dimensions_and_does_not_replace_estimates():
+    data = network_data(n=6, p=2)
+    data.update(Y=np.zeros((6, 3)), X=[np.zeros((6, 2)) for _ in range(2)])
+    solver = RecordingSolver()
+    method = BasePermutationTest(solver=solver, test_function=dot_product_statistic)
+    method._process_input(data)
+    assert solver.dimensions == [3, 2, 2]
+    np.testing.assert_array_equal(method.Yhat, data["A_Y"][:, :3])
+    np.testing.assert_array_equal(method.Xhat[:, 2:], data["A_X"][1][:, :2])
+
+
+@pytest.mark.parametrize("name", ["d_y", "d_x"])
+@pytest.mark.parametrize("value", [0, -1, True, np.bool_(True), 1.5, "2"])
+def test_embedding_dimensions_are_positive_integers(name, value):
+    with pytest.raises(ValueError, match=name):
+        BasePermutationTest(
+            use_true_latent=True, test_function=dot_product_statistic, **{name: value}
+        )
+
+
+@pytest.mark.parametrize("permutation_type", ["covariate", "observed", "invalid"])
+def test_only_latent_and_adjacency_modes_are_accepted(permutation_type):
+    with pytest.raises(ValueError, match="Must be 'latent' or 'adjacency'"):
+        BasePermutationTest(
+            solver=RecordingSolver(),
+            test_function=dot_product_statistic,
+            permutation_type=permutation_type,
+        )
+
+
+@pytest.mark.parametrize(
+    "data,message",
+    [
+        ([], "at least two"),
+        ([np.eye(3)], "at least two"),
+        (np.eye(3), "dictionary"),
+        ({"A_Y": np.eye(3)}, "supplied together"),
+        ({"A_X": [np.eye(3)]}, "supplied together"),
+        ({"A_Y": np.ones((3, 2)), "A_X": [np.eye(3)]}, "square"),
+        ({"A_Y": np.eye(3), "A_X": []}, "nonempty list"),
+        ({"A_Y": np.eye(3), "A_X": np.eye(3)}, "nonempty list"),
+        ({"A_Y": np.eye(3), "A_X": [np.eye(4)]}, "matching A_Y"),
+        ({"A_Y": np.eye(3), "A_X": [np.full((3, 3), np.nan)]}, "finite"),
+        (
+            {"A_Y": np.eye(3), "A_X": [np.eye(3)], "Y": np.ones((4, 1))},
+            "Y must have n rows",
+        ),
+        (
+            {"A_Y": np.eye(3), "A_X": [np.eye(3)], "X": [np.ones((3, 1))] * 2},
+            "p latent blocks",
+        ),
+    ],
+)
+def test_invalid_network_data_fails_before_fitting(data, message):
+    solver = RecordingSolver()
+    method = BasePermutationTest(
+        d_y=1, d_x=1, solver=solver, test_function=dot_product_statistic
+    )
+    with pytest.raises(ValueError, match=message):
+        method._process_input(data)
+    assert solver.inputs == []
+
+
+def test_missing_dimensions_fail_before_any_solver_calls():
+    solver = RecordingSolver()
+    method = BasePermutationTest(solver=solver, test_function=dot_product_statistic)
+    with pytest.raises(ValueError, match="Specify d_y and d_x"):
+        method._process_input(network_data())
+    assert solver.inputs == []
+
+
+@pytest.mark.parametrize(
+    "bad_output",
+    [np.ones((5, 1)), np.ones((6, 2)), np.ones(6), np.full((6, 1), np.inf)],
+)
+def test_solver_output_shape_and_finiteness_are_validated(bad_output):
+    method = BasePermutationTest(
+        d_y=1,
+        d_x=1,
+        solver=lambda *args, **kwargs: (bad_output, None),
+        test_function=dot_product_statistic,
+    )
+    with pytest.raises(ValueError, match="Yhat"):
+        method._process_input(network_data(n=6))

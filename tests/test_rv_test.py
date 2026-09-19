@@ -20,6 +20,11 @@ def latent_data(seed=70):
     }
 
 
+def multiple_latent_data():
+    data = latent_data()
+    return {"Y": data["Y"], "X": [data["Z"], data["Z"][:, ::-1]]}
+
+
 def test_module_imports_rv_methods():
     module = importlib.import_module("src.methods.rv_test")
 
@@ -52,10 +57,10 @@ def test_rv_permutation_test_runs_by_itself():
         rng=np.random.default_rng(10),
     )
 
-    method.fit(latent_data())
+    method.fit(multiple_latent_data())
     result = method.get_estimated()
 
-    assert method.get_name() == "RV_PermutationTest_covariate"
+    assert method.get_name() == "RV_PermutationTest_latent"
     assert len(method.permutation_distribution) == 4
     assert np.isfinite(result["test_stat"])
     assert 0.0 <= result["p-value"] <= 1.0
@@ -101,7 +106,7 @@ def test_rv_test_rejects_unknown_approximation():
     )
 
     with pytest.raises(ValueError, match="Invalid approximation method"):
-        method.fit(latent_data())
+        method.fit(multiple_latent_data())
 
 
 def test_rv_test_forwards_parallel_options():

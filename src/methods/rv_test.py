@@ -1,6 +1,6 @@
 import numpy as np
 from ._base_class import BasePermutationTest, BaseEstimationMethod
-from ..test_functions.rv_cca_coefficients import rv_coefficient, rv_coefficient_adjusted
+from ..test_functions.rv_cca_coefficients import rv_coefficient
 from ..helper_functions.imhof import imhof
 
 import sys
@@ -38,7 +38,7 @@ class EstimateRV(BaseEstimationMethod):
 
 
 class RVTest(BasePermutationTest):
-    """Test independence between a network latent representation and observed Y.
+    """Test Y network latents against concatenated X network latents.
 
     Parameters
     ----------
@@ -50,13 +50,13 @@ class RVTest(BasePermutationTest):
         Significance level for the test.
     solver : callable
         Function to estimate latent positions from the adjacency matrix.
-    k : int
-        Number of dimensions for the latent space.
+    d_y, d_x : int
+        Embedding dimensions of Y and each X network.
     test_function : callable
         Function to compute the test statistic.
     permutation_type : str
-        ``covariate`` permutes Y, ``latent`` permutes the tested Z, and
-        ``observed`` relabels A and refits Z for each permutation.
+        ``latent`` permutes estimated Y rows; ``adjacency`` relabels A_Y and
+        refits Y for each permutation. All X embeddings stay fixed.
     rng : np.random.Generator
         Random number generator for reproducibility.
     n_jobs : int
@@ -70,21 +70,23 @@ class RVTest(BasePermutationTest):
     def __init__(
         self,
         approximation="permutation",
-        k=None,
+        d_y=None,
+        d_x=None,
         npermutations=100,
         alpha=0.05,
         rng=None,
         solver=None,
         use_true_latent=False,
         test_function=rv_coefficient,
-        permutation_type="covariate",
+        permutation_type="latent",
         n_jobs=1,
         batch_size=32,
         verbose=False,
         **kwargs,
     ):
         super().__init__(
-            k=k,
+            d_y=d_y,
+            d_x=d_x,
             npermutations=npermutations,
             alpha=alpha,
             rng=rng,
@@ -119,21 +121,21 @@ class RVTest(BasePermutationTest):
         return
 
     def _fit_asymptotic(self):
-        Zhat = self.Zhat.copy()
-        Y = self.Y.copy()
-        Zhat = Zhat - Zhat.mean(axis=0)
+        X = self.Xhat.copy()
+        Y = self.Yhat.copy()
+        X = X - X.mean(axis=0)
         Y = Y - Y.mean(axis=0)
-        n, _ = Zhat.shape
+        n, _ = X.shape
 
-        rv = self.test_function(Zhat, Y)
+        rv = self.test_function(Y, X)
         self.test_stat_estimate = rv
 
-        GX = Y @ Y.T 
-        GZ = Zhat @ Zhat.T  
-        Omega_gram = (GX * GZ) / n  
+        GY = Y @ Y.T
+        GX = X @ X.T
+        Omega_gram = (GY * GX) / n
 
-        hat_lambda = np.linalg.eigvalsh(Omega_gram)  
-        hat_lambda = np.sort(hat_lambda)[::-1]  
+        hat_lambda = np.linalg.eigvalsh(Omega_gram)
+        hat_lambda = np.sort(hat_lambda)[::-1]
         hat_lambda = hat_lambda[hat_lambda > 1e-10 * hat_lambda[0]]
 
         den = np.sqrt(np.sum(hat_lambda**2))

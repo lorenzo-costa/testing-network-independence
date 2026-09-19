@@ -15,7 +15,7 @@ def latent_data(seed=40):
     rng = np.random.default_rng(seed)
     return {
         "Y": rng.normal(size=(14, 2)),
-        "Z": rng.normal(size=(14, 2)),
+        "X": [rng.normal(size=(14, 2)), rng.normal(size=(14, 2))],
     }
 
 
@@ -45,7 +45,7 @@ def test_distance_correlation_runs_mgc_by_itself():
     method.fit(latent_data())
     result = method.get_estimated()
 
-    assert method.get_name() == "DistanceCorrelation_covariate"
+    assert method.get_name() == "DistanceCorrelation_latent"
     assert np.isfinite(result["test_stat"])
     assert 0.0 <= result["p-value"] <= 1.0
     assert isinstance(result["reject_null"], bool)

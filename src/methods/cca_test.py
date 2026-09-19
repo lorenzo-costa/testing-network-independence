@@ -1,5 +1,4 @@
-import numpy as np
-from ._base_class import BasePermutationTest, BaseEstimationMethod
+from ._base_class import BasePermutationTest
 from ..test_functions.rv_cca_coefficients import first_cca_component
 
 
@@ -20,8 +19,8 @@ class CanonicalCorrelationTest(BasePermutationTest):
     ----------
     rho : float
         Correlation between latent positions (zero under independence i.e. H0 is true)
-    k : int
-        Dimensionality of the latent space.
+    d_y, d_x : int
+        Embedding dimensions of Y and each X network.
     npermutations : int
         Number of permutations for significance testing.
     alpha : float
@@ -43,15 +42,17 @@ class CanonicalCorrelationTest(BasePermutationTest):
         rng=None,
         solver=None,
         use_true_latent=False,
-        permutation_type="covariate",
-        k=None,
+        permutation_type="latent",
+        d_y=None,
+        d_x=None,
         n_jobs=1,
         batch_size=32,
         verbose=False,
         **kwargs,
     ):
         super().__init__(
-            k=k,
+            d_y=d_y,
+            d_x=d_x,
             npermutations=npermutations,
             alpha=alpha,
             permutation_type=permutation_type,
@@ -71,8 +72,8 @@ class CanonicalCorrelationTest(BasePermutationTest):
         Parameters
         ----------
         data : dict
-            A dictionary containing observed ``Y`` and either true ``Z`` or
-            adjacency matrix ``A``.
+            A dictionary containing ``A_Y`` and a list ``A_X`` of networks,
+            optionally including true latent ``Y`` and a list ``X``.
         """
 
         self._process_input(data)

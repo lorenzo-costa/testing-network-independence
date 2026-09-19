@@ -75,13 +75,17 @@ class BaseEstimationMethod(BaseMethod):
 
         if self.use_true_latent:
             if Z is None:
-                raise ValueError("True Z must be provided when use_true_latent is True.")
+                raise ValueError(
+                    "True Z must be provided when use_true_latent is True."
+                )
             Zhat = np.asarray(Z).copy()
         elif "estimated_Z" in data:
             Zhat = np.asarray(data["estimated_Z"])
         else:
             if A is None:
-                raise ValueError("A must be provided to estimate Z when use_true_latent is False.")
+                raise ValueError(
+                    "A must be provided to estimate Z when use_true_latent is False."
+                )
             if self.solver is None:
                 raise ValueError("Solver must be provided to estimate Z.")
             if self.k is None:
@@ -113,41 +117,75 @@ class BaseEstimationMethod(BaseMethod):
         self.Zhat = Zhat
 
 
-class BasePermutationTest(BaseEstimationMethod):
-    """Permutation test for independence between network latent Z and observed Y."""
+class BasePermutationTest(BaseMethod):
+    """Test network Y against the concatenated latent positions of p X networks.
+
+    Parameters
+    ----------
+    d_y, d_x : int, optional
+        Embedding dimension of Y and of each X network. When omitted, infer
+        them from true latent arrays in the input dictionary, if available.
+    solver : callable, optional
+        Called for Y first, then each X network in order, as
+        ``solver(adjacency, k=dimension, rng=rng)``. Its first return value
+        must have shape ``(n, dimension)``.
+    test_function : callable
+        Receives ``(Yhat, Xhat)`` with shapes ``(n, d_y)`` and ``(n, p*d_x)``.
+        May return a scalar or a one-dimensional vector of statistics.
+    use_true_latent : bool, default=False
+        Use supplied Y and X latent positions instead of fitting a solver.
+    permutation_type : {"latent", "adjacency"}, default="latent"
+        Permute estimated Y rows or permute Y's adjacency matrix and refit its
+        embedding. All X embeddings stay fixed in either mode.
+    npermutations : int, default=100
+        Number of random permutations. P-values use the finite-sample correction.
+    alpha : float, default=0.05
+        Rejection threshold.
+    one_sided : bool, default=False
+        Use an upper-tail comparison for scalar statistics; otherwise compare
+        absolute values. Vector statistics always use standardized maxima.
+    n_jobs : int, default=1
+        Number of worker processes; -1 selects all available CPUs.
+    batch_size : int, default=32
+        Target number of task batches per worker.
+    verbose : bool, default=False
+        Display permutation progress.
+    rng : numpy.random.Generator, optional
+        Source of randomness for embeddings and permutations.
+    """
 
     def __init__(
         self,
-        k=None,
+        d_y=None,
+        d_x=None,
         npermutations=100,
         alpha=0.05,
         rng=None,
         solver=None,
         use_true_latent=False,
         test_function=None,
-        permutation_type="covariate",
-        stratify_permutations=False,
+        permutation_type="latent",
         one_sided=False,
         n_jobs=1,
         batch_size=32,
         verbose=False,
-        **kwargs,
     ):
-        super().__init__(
-            rng=rng,
-            solver=solver,
-            k=k,
-            use_true_latent=use_true_latent,
-        )
+        self.rng = rng if rng is not None else np.random.default_rng()
+        self.solver = solver
+        self.use_true_latent = use_true_latent
+        self.d_y = self._embedding_dimension(d_y, "d_y")
+        self.d_x = self._embedding_dimension(d_x, "d_x")
+        if not use_true_latent and solver is None:
+            raise ValueError("Solver must be provided when use_true_latent is False")
         if test_function is None:
             raise ValueError("Test function must be provided")
-        if permutation_type not in {"covariate", "latent", "observed"}:
+        if permutation_type not in {"latent", "adjacency"}:
             raise ValueError(
-                "Invalid permutation_type. Must be 'covariate', 'latent', or 'observed'."
+                "Invalid permutation_type. Must be 'latent' or 'adjacency'."
             )
-        if permutation_type == "observed" and use_true_latent:
+        if permutation_type == "adjacency" and use_true_latent:
             raise ValueError(
-                "permutation_type='observed' requires use_true_latent=False."
+                "permutation_type='adjacency' requires use_true_latent=False."
             )
         if (
             isinstance(n_jobs, bool)
@@ -165,41 +203,183 @@ class BasePermutationTest(BaseEstimationMethod):
         self.alpha = alpha
         self.test_function = test_function
         self.permutation_type = permutation_type
-        self.stratify_permutations = bool(stratify_permutations)
         self.one_sided = bool(one_sided)
         self.n_jobs = int(n_jobs)
         self.batch_size = int(batch_size)
         self.verbose = bool(verbose)
 
-    def _draw_permutation(self):
-        """Draw a global permutation or one restricted within rows of ``X``."""
-        n = self.Y.shape[0]
-        if not self.stratify_permutations or self.X is None:
-            return self.rng.permutation(n)
+    @staticmethod
+    def _embedding_dimension(value, name):
+        if value is not None and (
+            isinstance(value, (bool, np.bool_))
+            or not isinstance(value, (int, np.integer))
+            or value < 1
+        ):
+            raise ValueError(f"{name} must be a positive integer.")
+        return None if value is None else int(value)
 
-        _, strata = np.unique(self.X, axis=0, return_inverse=True)
-        permutation = np.arange(n)
-        for stratum in np.unique(strata):
-            indices = np.flatnonzero(strata == stratum)
-            permutation[indices] = self.rng.permutation(indices)
-        return permutation
+    @staticmethod
+    def _matrix(values, name):
+        """Validate a finite, nonempty matrix without changing caller data."""
+        try:
+            if np.iscomplexobj(values):
+                raise ValueError
+            matrix = np.asarray(values, dtype=float)
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"{name} must be a finite real 2D array.") from error
+        if matrix.ndim != 2 or 0 in matrix.shape or not np.isfinite(matrix).all():
+            raise ValueError(f"{name} must be a finite, nonempty 2D array.")
+        return matrix
+
+    @classmethod
+    def _matrix_list(cls, values, name):
+        if not isinstance(values, (list, tuple)) or not values:
+            raise ValueError(f"{name} must be a nonempty list of matrices.")
+        return [cls._matrix(value, f"{name}[{i}]") for i, value in enumerate(values)]
+
+    def _estimate_latent(self, adjacency, dimension, name, rng):
+        estimated = self._matrix(
+            self.solver(adjacency.copy(), k=dimension, rng=rng)[0], name
+        )
+        expected_shape = (adjacency.shape[0], dimension)
+        if estimated.shape != expected_shape:
+            raise ValueError(
+                f"Solver output {name} must have shape {expected_shape}; got {estimated.shape}."
+            )
+        return estimated.copy()
+
+    def _process_input(self, data):
+        """Estimate Y and each X block from a DGP dictionary or ordered networks."""
+        if isinstance(data, (list, tuple)):
+            if len(data) < 2:
+                raise ValueError(
+                    "Provide at least two networks, ordered as [A_Y, A_X1, ...]."
+                )
+            data = {"A_Y": data[0], "A_X": list(data[1:])}
+        if not isinstance(data, dict):
+            raise ValueError(
+                "Expected a dictionary with A_Y/A_X or an ordered list of networks."
+            )
+
+        true_y = self._matrix(data["Y"], "Y") if data.get("Y") is not None else None
+        true_x = (
+            self._matrix_list(data["X"], "X") if data.get("X") is not None else None
+        )
+        if true_x is not None and any(x.shape != true_x[0].shape for x in true_x):
+            raise ValueError("All X latent blocks must have the same shape (n, d_x).")
+
+        a_y, a_x = None, None
+        if data.get("A_Y") is not None or data.get("A_X") is not None:
+            if data.get("A_Y") is None or data.get("A_X") is None:
+                raise ValueError("A_Y and A_X must be supplied together.")
+            a_y = self._matrix(data["A_Y"], "A_Y")
+            a_x = self._matrix_list(data["A_X"], "A_X")
+            n = a_y.shape[0]
+            if a_y.shape != (n, n):
+                raise ValueError("A_Y must be square with shape (n, n).")
+            if any(a.shape != (n, n) for a in a_x):
+                raise ValueError(
+                    "All A_X networks must have shape (n, n), matching A_Y."
+                )
+            p = len(a_x)
+        elif self.use_true_latent and true_y is not None and true_x is not None:
+            n, p = true_y.shape[0], len(true_x)
+        else:
+            raise ValueError(
+                "Supply A_Y and A_X, or Y and X when use_true_latent=True."
+            )
+
+        if true_y is not None and true_y.shape[0] != n:
+            raise ValueError("Y must have n rows, matching the networks.")
+        if true_x is not None and (len(true_x) != p or true_x[0].shape[0] != n):
+            raise ValueError("X must contain p latent blocks with n rows each.")
+
+        d_y = (
+            self.d_y
+            if self.d_y is not None
+            else (true_y.shape[1] if true_y is not None else None)
+        )
+        d_x = (
+            self.d_x
+            if self.d_x is not None
+            else (true_x[0].shape[1] if true_x is not None else None)
+        )
+        if self.use_true_latent:
+            if true_y is None or true_x is None:
+                raise ValueError(
+                    "Y and X must both be provided when use_true_latent=True."
+                )
+            if true_y.shape[1] != d_y or true_x[0].shape[1] != d_x:
+                raise ValueError(
+                    "True latent shapes must match d_y and d_x when use_true_latent=True."
+                )
+            yhat = true_y.copy()
+            xhat_blocks = [x.copy() for x in true_x]
+        else:
+            if d_y is None or d_x is None:
+                raise ValueError(
+                    "Specify d_y and d_x when true latent dimensions are unavailable."
+                )
+            yhat = self._estimate_latent(a_y, d_y, "Yhat", self.rng)
+            xhat_blocks = [
+                self._estimate_latent(a, d_x, f"Xhat[{i}]", self.rng)
+                for i, a in enumerate(a_x)
+            ]
+
+        self.n, self.p = n, p
+        self.d_y, self.d_x = d_y, d_x
+        self.A_Y, self.A_X = a_y, a_x
+        self.Y, self.X = true_y, true_x
+        self.Yhat = yhat
+        self.Xhat_blocks = xhat_blocks
+        self.Xhat = np.concatenate(xhat_blocks, axis=1)
+
+    def fit(self, data):
+        """Estimate the network latents and run the permutation test.
+
+        Parameters
+        ----------
+        data : dict or sequence of arrays
+            A DGP dictionary with A_Y of shape (n, n) and a list A_X of p
+            networks of shape (n, n), or [A_Y, A_X1, ..., A_Xp]. Optional Y
+            and X contain true latent positions with shapes (n, d_y) and a
+            list of p arrays of shape (n, d_x). They are used directly only
+            when use_true_latent=True.
+        """
+        self._process_input(data)
+        self._fit_permutation()
+
+    def get_estimated(self):
+        """Return both latent matrices used in the test, truth, and test results."""
+        return {
+            "estimated_latent": {"Y": self.Yhat, "X": self.Xhat},
+            "true_latent": {
+                "Y": self.Y,
+                "X": None if self.X is None else np.concatenate(self.X, axis=1),
+            },
+            "p-value": self.pvalue,
+            "reject_null": self.reject_null,
+            "test_stat": self.test_stat_estimate,
+        }
+
+    def _draw_permutation(self):
+        """Draw a node permutation for Y, keeping every X network fixed."""
+        return self.rng.permutation(self.n)
 
     def _construct_permuted_data(self, permutation, rng):
-        """Construct the latent positions and covariates for one permutation."""
-        if self.permutation_type == "covariate":
-            return self.Zhat, self.Y[permutation, :]
+        """Return permuted Y and the unchanged, concatenated X embeddings."""
         if self.permutation_type == "latent":
-            return self.Zhat[permutation, :], self.Y
+            return self.Yhat[permutation, :], self.Xhat
 
-        if self.A is None:
-            raise ValueError("A is required for observed permutations.")
-        A_perm = self.A[permutation][:, permutation]
-        Zhat_perm = self.solver(A_perm, k=self.k, rng=rng)[0]
-        return Zhat_perm, self.Y
+        if self.A_Y is None:
+            raise ValueError("A_Y is required for adjacency permutations.")
+        a_y_perm = self.A_Y[permutation][:, permutation]
+        yhat_perm = self._estimate_latent(a_y_perm, self.d_y, "Yhat", rng)
+        return yhat_perm, self.Xhat
 
-    def _evaluate_test_statistic(self, Z, Y, rng):
+    def _evaluate_test_statistic(self, Y, X, rng):
         """Evaluate a statistic, with a hook for RNG-aware subclasses."""
-        return self.test_function(Z, Y)
+        return self.test_function(Y, X)
 
     @staticmethod
     def _as_statistic_array(statistic):
@@ -214,9 +394,9 @@ class BasePermutationTest(BaseEstimationMethod):
     def _evaluate_permutation(self, task):
         """Evaluate one permutation task without mutating result state."""
         permutation_number, permutation, rng, expected_shape = task
-        Z_stat, Y_stat = self._construct_permuted_data(permutation, rng)
+        Y_stat, X_stat = self._construct_permuted_data(permutation, rng)
         statistic = self._as_statistic_array(
-            self._evaluate_test_statistic(Z_stat, Y_stat, rng)
+            self._evaluate_test_statistic(Y_stat, X_stat, rng)
         )
         if statistic.shape != expected_shape:
             raise ValueError(
@@ -248,7 +428,7 @@ class BasePermutationTest(BaseEstimationMethod):
     def _compute_permutation_statistics(self):
         """Evaluate the observed and permuted scalar or vector statistics."""
         observed = self._as_statistic_array(
-            self._evaluate_test_statistic(self.Zhat, self.Y, self.rng)
+            self._evaluate_test_statistic(self.Yhat, self.Xhat, self.rng)
         )
         self.permutation_indices = [
             self._draw_permutation() for _ in range(self.npermutations)
@@ -261,9 +441,7 @@ class BasePermutationTest(BaseEstimationMethod):
             )
         )
 
-        worker_count = min(
-            self._effective_n_jobs(), max(1, self.npermutations)
-        )
+        worker_count = min(self._effective_n_jobs(), max(1, self.npermutations))
         chunk_size = max(
             1,
             self.npermutations // (worker_count * self.batch_size),
@@ -290,9 +468,7 @@ class BasePermutationTest(BaseEstimationMethod):
                     tasks,
                     chunksize=chunk_size,
                 )
-                permuted_statistics = self._collect_permutation_statistics(
-                    statistics
-                )
+                permuted_statistics = self._collect_permutation_statistics(statistics)
 
         if observed.ndim == 0:
             permuted = np.asarray(permuted_statistics, dtype=float)
@@ -312,9 +488,7 @@ class BasePermutationTest(BaseEstimationMethod):
 
         if observed.ndim == 0:
             if permuted.ndim != 1:
-                raise ValueError(
-                    "Permuted scalar statistics must be one-dimensional."
-                )
+                raise ValueError("Permuted scalar statistics must be one-dimensional.")
             test_statistic = float(observed)
             null = permuted
         else:
@@ -332,9 +506,8 @@ class BasePermutationTest(BaseEstimationMethod):
             statistic_matrix = np.vstack((observed, permuted))
             means = statistic_matrix.mean(axis=0)
             standard_deviations = statistic_matrix.std(axis=0, ddof=1)
-            invalid_standard_deviation = (
-                ~np.isfinite(standard_deviations)
-                | (standard_deviations == 0)
+            invalid_standard_deviation = ~np.isfinite(standard_deviations) | (
+                standard_deviations == 0
             )
             if np.any(invalid_standard_deviation):
                 indices = np.flatnonzero(invalid_standard_deviation).tolist()
@@ -343,9 +516,7 @@ class BasePermutationTest(BaseEstimationMethod):
                     f"non-finite for component indices {indices}."
                 )
 
-            standardized = (
-                statistic_matrix - means
-            ) / standard_deviations
+            standardized = (statistic_matrix - means) / standard_deviations
             max_statistics = standardized.max(axis=1)
 
             self.statistic_matrix = statistic_matrix
@@ -359,9 +530,7 @@ class BasePermutationTest(BaseEstimationMethod):
         if observed.ndim == 1 or self.one_sided:
             exceedances = np.count_nonzero(null >= test_statistic)
         else:
-            exceedances = np.count_nonzero(
-                np.abs(null) >= np.abs(test_statistic)
-            )
+            exceedances = np.count_nonzero(np.abs(null) >= np.abs(test_statistic))
 
         self.test_stat_estimate = test_statistic
         self.permutation_distribution = null.tolist()

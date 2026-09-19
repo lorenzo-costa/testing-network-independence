@@ -8,8 +8,10 @@ def test_package_exports_latent_sampler():
         "LatentSampler",
         "ConditionalIndependenceCopulaSampler",
         "PostNonLinearNoiseSampler",
+        "MultipleNetworksSampler",
     ]
     assert package.LatentSampler.__name__ == "LatentSampler"
+    assert package.MultipleNetworksSampler.__name__ == "MultipleNetworksSampler"
     assert (
         package.ConditionalIndependenceCopulaSampler.__name__
         == "ConditionalIndependenceCopulaSampler"

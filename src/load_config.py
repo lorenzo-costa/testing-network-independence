@@ -53,7 +53,6 @@ SOLVER_REGISTRY = {
 METHOD_REGISTRY = {
     "RVtest": RVTest,
     "DiffusionCorrelation": DistanceCorrelationTest,
-    "MultivariateACTest": MultivariateACTest,
     "CanonicalCorrelation": CanonicalCorrelationTest,
     "MRQAP": MRQAP,
 }

@@ -196,11 +196,40 @@ All solvers share the signature `solver(A, k, rng, **kwargs) → (Xhat, eigenval
 
 ### Methods (`methods.py`)
 
-All methods inherit from `BaseMethod` and expose `fit(data)`, `get_estimated()`, and `get_name()`. The `data` dict can contain either raw adjacency matrices (`A`, `B`) or pre-computed embeddings (`estimated_X`, `estimated_Z`).
+Methods expose `fit(data)` and `get_estimated()`. The multiple-network permutation
+base, `RVTest`, `CanonicalCorrelationTest`, and `DistanceCorrelationTest` accept
+the new DGP dictionary (`A_Y` plus a list `A_X`) or an ordered list
+`[A_Y, A_X1, ..., A_Xp]`. They estimate Y using `d_y` dimensions and each X
+network using `d_x` dimensions, then call the statistic as
+`test_function(Yhat, Xhat)`, where `Xhat = concatenate(Xhat_blocks, axis=1)` has
+shape `(n, p * d_x)`.
+
+`permutation_type="latent"` (the default) fits all networks once and permutes
+rows of `Yhat`. `permutation_type="adjacency"` permutes both axes of `A_Y` and
+re-estimates Y for every permutation. The X embeddings stay fixed in both modes.
+True latent Y and X can be supplied with `use_true_latent=True` in latent mode;
+otherwise they are used only as reference values and to infer omitted dimensions.
+`get_estimated()["estimated_latent"]` contains `{"Y": Yhat, "X": Xhat}`;
+the `"true_latent"` entry contains the corresponding true matrices, if available.
+
+```python
+from src.methods import RVTest
+from src.solvers.weighted_network import ASE
+
+method = RVTest(
+    solver=ASE, d_y=2, d_x=3,
+    permutation_type="latent", npermutations=999,
+    n_jobs=2, verbose=True,
+)
+method.fit(data)  # output of GaussianNetwork or BernoulliNetwork
+```
+
+Configuration loading, pipeline metrics, and the separate estimation-only
+methods still use their earlier interfaces and require separate migration.
 
 | Class | Key parameters | Notes |
 |-------|---------------|-------|
-| `RVtest` | `approximation` (`'permutation'` / `'asymptotic'`), `permutation_type` (`'latent'` / `'observed'`), `npermutations`, `solver` | The asymptotic branch uses the Imhof method (`imhof.py`) to compute the p-value |
+| `RVTest` | `approximation` (`'permutation'` / `'asymptotic'`), `permutation_type` (`'latent'` / `'adjacency'`), `d_y`, `d_x`, `npermutations`, `solver` | The asymptotic branch uses the Imhof method (`imhof.py`) to compute the p-value |
 | `ObservedCVM` | `test_function` | CvM statistic on adjacency matrices; no embedding step needed |
 | `LLKRatioTest` | — | Likelihood-ratio test |
 | `QAP` | — | Quadratic Assignment Procedure |

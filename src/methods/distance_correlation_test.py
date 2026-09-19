@@ -37,14 +37,15 @@ def _mgc_statistic(Z, Y):
 class DistanceCorrelationTest(BasePermutationTest):
     def __init__(
         self,
-        k=None,
+        d_y=None,
+        d_x=None,
         test_method="mgc",
         npermutations=100,
         alpha=0.05,
         rng=None,
         solver=None,
         use_true_latent=False,
-        permutation_type="covariate",
+        permutation_type="latent",
         n_jobs=1,
         batch_size=32,
         verbose=False,
@@ -53,9 +54,12 @@ class DistanceCorrelationTest(BasePermutationTest):
         if test_method not in {"dcorr", "mgc"}:
             raise ValueError("test_method must be 'dcorr' or 'mgc'.")
         self.test_method = test_method
-        test_function = _mgc_statistic if test_method == "mgc" else _distance_correlation
+        test_function = (
+            _mgc_statistic if test_method == "mgc" else _distance_correlation
+        )
         super().__init__(
-            k=k,
+            d_y=d_y,
+            d_x=d_x,
             npermutations=npermutations,
             alpha=alpha,
             rng=rng,

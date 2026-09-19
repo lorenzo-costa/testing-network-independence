@@ -1,147 +1,228 @@
 import numpy as np
 from scipy.special import expit
 
-from .latent_samplers import LatentSampler
+from .latent_samplers import MultipleNetworksSampler
+from .latent_samplers.multiple_networks import _finite_scalar
 
 
-class GaussianNetwork(LatentSampler):
-    """Weighted single-network DGP with observed node covariates."""
+class GaussianNetwork:
+    """Generate p + 1 symmetric Gaussian networks with linearly related latents.
+
+    Parameters
+    ----------
+    n : int
+        Positive number of nodes shared by all networks.
+    p : int
+        Positive number of X networks, in addition to the Y network.
+    d_x, d_y : int
+        Positive latent dimensions of each X network and the Y network.
+    B : array-like of shape (d_y, p * d_x), optional
+        Fixed coefficients in ``Y = concatenate(X, axis=1) @ B.T + epsilon``.
+        If absent, coefficients are sampled on every call to ``generate``.
+    x_mean : float or array-like of shape (p * d_x,), default=0
+        Mean of concatenated X positions, ordered by network.
+    x_variance : float or array-like of shape (p * d_x, p * d_x), default=1
+        Scalar variance times identity or full positive-semidefinite covariance.
+    eps_variance : float or array-like of shape (d_y, d_y), default=1
+        Scalar variance or full covariance of zero-mean latent errors.
+    b_mean, b_variance : float, default=0, 1
+        Mean and nonnegative variance of independent coefficient entries.
+    x_distribution, eps_distribution : str, default="multivariate_gaussian"
+        Registered distributions for X positions and latent errors.
+    b_distribution : str, default="gaussian"
+        Registered distribution for coefficient entries.
+    edge_var : float, default=1
+        Finite, nonnegative edge-error variance conditional on latent positions.
+    rng : numpy.random.Generator, optional
+        One random stream shared by latent sampling and all network edge draws.
+    """
 
     def __init__(
         self,
         n,
-        k,
-        ky=1,
+        p,
+        d_x,
+        d_y,
+        *,
+        B=None,
+        x_mean=0,
+        x_variance=1,
+        eps_variance=1,
+        b_mean=0,
+        b_variance=1,
+        x_distribution="multivariate_gaussian",
+        eps_distribution="multivariate_gaussian",
+        b_distribution="gaussian",
         edge_var=1,
-        symmetric=True,
-        self_loops=False,
-        sparsity_exponent=0,
         rng=None,
-        Y=None,
-        Z=None,
-        X=None,
-        **kwargs,
     ):
-        rng = rng if rng is not None else np.random.default_rng()
-        super().__init__(n=n, k=k, ky=ky, rng=rng, **kwargs)
-        self.edge_var = edge_var
-        self.symmetric = symmetric
-        self.self_loops = self_loops
-        self.sparsity_exponent = sparsity_exponent
-        self.Y = Y
-        self.Z = Z
-        self.X = X
+        self.edge_var = _finite_scalar(edge_var, "edge_var", nonnegative=True)
+        self.latent_sampler = MultipleNetworksSampler(
+            n=n,
+            p=p,
+            d_x=d_x,
+            d_y=d_y,
+            B=B,
+            x_mean=x_mean,
+            x_variance=x_variance,
+            eps_variance=eps_variance,
+            b_mean=b_mean,
+            b_variance=b_variance,
+            x_distribution=x_distribution,
+            eps_distribution=eps_distribution,
+            b_distribution=b_distribution,
+            rng=rng,
+        )
+        self.rng = self.latent_sampler.rng
+        self.n = self.latent_sampler.n
+        self.p = self.latent_sampler.p
+        self.d_x = self.latent_sampler.d_x
+        self.d_y = self.latent_sampler.d_y
 
     def __repr__(self):
         return (
-            self.get_name()
-            + f"(n={self.n}, k={self.k}, ky={self.ky}, edge_var={self.edge_var}, "
-            f"symmetric={self.symmetric}, self_loops={self.self_loops}, "
-            f"sparsity_exponent={self.sparsity_exponent})"
+            f"{self.get_name()}(n={self.n}, p={self.p}, d_x={self.d_x}, "
+            f"d_y={self.d_y}, edge_var={self.edge_var})"
         )
 
     def get_name(self):
-        return "GaussianNetwork_" + self.sampler_name
+        """Return the name of the multiple-network Gaussian model."""
+        return "GaussianNetwork_multiple_networks"
 
-    def _get_latent_and_covariate(self):
-        if (self.Z is None) != (self.Y is None):
-            raise ValueError("Z and Y must either both be supplied or both be sampled.")
-        if self.Z is not None:
-            Z, Y, X = self.Z, self.Y, self.X
-        else:
-            Z, Y, X = self._sample_latent()
-        Z = np.asarray(Z)
-        Y = np.asarray(Y)
-        if Y.ndim == 1:
-            Y = Y.reshape(-1, 1)
-        if Z.shape != (self.n, self.k):
-            raise ValueError(f"Z must have shape ({self.n}, {self.k}); got {Z.shape}.")
-        if Y.shape != (self.n, self.ky):
-            raise ValueError(f"Y must have shape ({self.n}, {self.ky}); got {Y.shape}.")
-        if X is not None:
-            X = np.asarray(X)
-            if X.ndim == 1:
-                X = X.reshape(-1, 1)
-            if X.shape != (self.n, 1):
-                raise ValueError(f"X must have shape ({self.n}, 1); got {X.shape}.")
-        self.X = X
-        return Z, Y, X
+    def _sample_adjacency(self, latent):
+        """Sample one Gaussian edge per upper-triangle entry and mirror it."""
+        expected_A = latent @ latent.T
+        sampled = self.rng.normal(loc=expected_A, scale=np.sqrt(self.edge_var))
+        upper = np.triu(sampled, k=1)
+        return upper + upper.T
 
     def generate(self):
-        Z, Y, X = self._get_latent_and_covariate()
-        expected_A = Z @ Z.T
-        if self.sparsity_exponent > 0:
-            expected_A *= self.n ** (-self.sparsity_exponent)
+        """Sample latent positions and their symmetric, zero-diagonal networks.
 
-        A = self.rng.normal(loc=expected_A, scale=np.sqrt(self.edge_var))
-        if not self.self_loops:
-            A[np.diag_indices_from(A)] = 0
-        if self.symmetric:
-            A = (A + A.T) / 2
-        return {"A": A, "Z": Z, "Y": Y, "X": X}
+        Returns
+        -------
+        dict
+            Exactly ``A_Y`` of shape ``(n, n)``, ``A_X`` as a list of ``p``
+            arrays of shape ``(n, n)``, ``Y`` of shape ``(n, d_y)``, ``X`` as
+            a list of ``p`` arrays of shape ``(n, d_x)``, and ``B`` of shape
+            ``(d_y, p * d_x)``. X networks preserve the latent block order.
+        """
+        latent = self.latent_sampler.sample_latent()
+        return {
+            "A_Y": self._sample_adjacency(latent["Y"]),
+            "A_X": [self._sample_adjacency(x) for x in latent["X"]],
+            "Y": latent["Y"],
+            "X": latent["X"],
+            "B": latent["B"],
+        }
 
 
 class BernoulliNetwork(GaussianNetwork):
-    """Single-network Bernoulli DGP with observed node covariates."""
+    """Generate p + 1 symmetric Bernoulli networks with linearly related latents.
+
+    Parameters
+    ----------
+    n : int
+        Positive number of nodes shared by all networks.
+    p : int
+        Positive number of X networks, in addition to the Y network.
+    d_x, d_y : int
+        Positive latent dimensions of each X network and the Y network.
+    B : array-like of shape (d_y, p * d_x), optional
+        Fixed coefficients in ``Y = concatenate(X, axis=1) @ B.T + epsilon``.
+        If absent, coefficients are sampled on each call to ``generate``.
+    x_mean : float or array-like of shape (p * d_x,), default=0
+        Mean of concatenated X positions, ordered by network.
+    x_variance : float or array-like of shape (p * d_x, p * d_x), default=1
+        Scalar variance times identity or full positive-semidefinite covariance.
+    eps_variance : float or array-like of shape (d_y, d_y), default=1
+        Scalar variance or full covariance of zero-mean latent errors.
+    b_mean, b_variance : float, default=0, 1
+        Mean and nonnegative variance of independent coefficient entries.
+    x_distribution, eps_distribution : str, default="multivariate_gaussian"
+        Registered distributions for X positions and latent errors.
+    b_distribution : str, default="gaussian"
+        Registered distribution for coefficient entries.
+    rdpg : bool, default=False
+        If False, edge probabilities are ``expit(L @ L.T)`` for each latent
+        matrix L. If True, probabilities are ``L @ L.T`` directly: every
+        off-diagonal inner product must already lie in [0, 1]. Values are
+        neither clipped nor rescaled. Latent positions themselves are unchanged.
+    rng : numpy.random.Generator, optional
+        One random stream shared by latent sampling and all network edge draws.
+
+    Notes
+    -----
+    The inherited ``generate`` method returns exactly ``A_Y``, ``A_X``, ``Y``,
+    ``X``, and ``B``, with the same dimensions as :class:`GaussianNetwork`.
+    All adjacency matrices are symmetric and have zero diagonals.
+    """
 
     def __init__(
         self,
         n,
-        k,
-        ky=1,
-        rng=None,
-        symmetric=True,
-        self_loops=False,
+        p,
+        d_x,
+        d_y,
+        *,
+        B=None,
+        x_mean=0,
+        x_variance=1,
+        eps_variance=1,
+        b_mean=0,
+        b_variance=1,
+        x_distribution="multivariate_gaussian",
+        eps_distribution="multivariate_gaussian",
+        b_distribution="gaussian",
         rdpg=False,
-        sparsity_exponent=0,
-        Y=None,
-        Z=None,
-        X=None,
-        **kwargs,
+        rng=None,
     ):
+        if not isinstance(rdpg, (bool, np.bool_)):
+            raise ValueError("rdpg must be a boolean.")
+        self.rdpg = bool(rdpg)
         super().__init__(
             n=n,
-            k=k,
-            ky=ky,
+            p=p,
+            d_x=d_x,
+            d_y=d_y,
+            B=B,
+            x_mean=x_mean,
+            x_variance=x_variance,
+            eps_variance=eps_variance,
+            b_mean=b_mean,
+            b_variance=b_variance,
+            x_distribution=x_distribution,
+            eps_distribution=eps_distribution,
+            b_distribution=b_distribution,
             rng=rng,
-            symmetric=symmetric,
-            self_loops=self_loops,
-            sparsity_exponent=sparsity_exponent,
-            Y=Y,
-            Z=Z,
-            X=X,
-            **kwargs,
         )
-        self.rdpg = rdpg
 
     def get_name(self):
-        return "BernoulliNetwork_" + self.sampler_name
+        """Return the name of the multiple-network Bernoulli model."""
+        return "BernoulliNetwork_multiple_networks"
 
     def __repr__(self):
         return (
-            self.get_name()
-            + f"(n={self.n}, k={self.k}, ky={self.ky}, rdpg={self.rdpg}, "
-            f"symmetric={self.symmetric}, self_loops={self.self_loops}, "
-            f"sparsity_exponent={self.sparsity_exponent})"
+            f"{self.get_name()}(n={self.n}, p={self.p}, d_x={self.d_x}, "
+            f"d_y={self.d_y}, rdpg={self.rdpg})"
         )
 
-    def generate(self):
-        Z, Y, X = self._get_latent_and_covariate()
-        expected_A = Z @ Z.T
-        if self.sparsity_exponent > 0:
-            expected_A *= np.log(self.n) ** (-self.sparsity_exponent)
+    def _sample_adjacency(self, latent):
+        """Sample Bernoulli edges from inner products and mirror the upper half."""
+        probabilities = latent @ latent.T
         if not self.rdpg:
-            expected_A = expit(expected_A)
-        expected_A = np.clip(expected_A, 0, 1)
-
-        if self.symmetric:
-            triangle = self.rng.binomial(1, expected_A)
-            triangle = np.tril(triangle, k=0 if self.self_loops else -1)
-            A = triangle + triangle.T
-            if self.self_loops:
-                A[np.diag_indices_from(A)] //= 2
-        else:
-            A = self.rng.binomial(1, expected_A)
-            if not self.self_loops:
-                A[np.diag_indices_from(A)] = 0
-        return {"A": A, "Z": Z, "Y": Y, "X": X}
+            probabilities = expit(probabilities)
+        # Self-loops are absent, so squared latent norms need not be probabilities.
+        np.fill_diagonal(probabilities, 0)
+        if (
+            not np.isfinite(probabilities).all()
+            or np.any(probabilities < 0)
+            or np.any(probabilities > 1)
+        ):
+            raise ValueError(
+                "Edge probabilities must be finite and in [0, 1]. With rdpg=True, "
+                "off-diagonal latent inner products must already lie in [0, 1]."
+            )
+        sampled = self.rng.binomial(1, probabilities)
+        upper = np.triu(sampled, k=1)
+        return upper + upper.T
