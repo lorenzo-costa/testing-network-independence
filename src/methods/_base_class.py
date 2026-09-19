@@ -15,7 +15,7 @@ def _initialize_permutation_worker(method):
 
 
 def _run_permutation_worker(task):
-    """Evaluate one permutation in a process-pool worker."""
+    """Evaluate one indexed permutation in a process-pool worker."""
     return _PERMUTATION_WORKER_METHOD._evaluate_permutation(task)
 
 
@@ -213,7 +213,7 @@ class BasePermutationTest(BaseEstimationMethod):
 
     def _evaluate_permutation(self, task):
         """Evaluate one permutation task without mutating result state."""
-        permutation, rng, expected_shape = task
+        permutation_number, permutation, rng, expected_shape = task
         Z_stat, Y_stat = self._construct_permuted_data(permutation, rng)
         statistic = self._as_statistic_array(
             self._evaluate_test_statistic(Z_stat, Y_stat, rng)
@@ -222,7 +222,7 @@ class BasePermutationTest(BaseEstimationMethod):
             raise ValueError(
                 "Observed and permuted test statistics must have the same shape."
             )
-        return statistic
+        return permutation_number, statistic
 
     def _effective_n_jobs(self):
         """Resolve ``-1`` to all available CPUs."""
@@ -230,17 +230,20 @@ class BasePermutationTest(BaseEstimationMethod):
             return os.cpu_count() or 1
         return self.n_jobs
 
-    def _collect_permutation_statistics(self, statistics):
-        """Collect statistics in permutation order and optionally show progress."""
-        return list(
-            tqdm(
-                statistics,
-                total=self.npermutations,
-                desc="Permutations",
-                unit="permutation",
-                disable=not self.verbose,
-            )
-        )
+    def _collect_permutation_statistics(self, indexed_statistics):
+        """Collect unordered results in permutation order and report progress."""
+        ordered_statistics = [None] * self.npermutations
+        with tqdm(
+            total=self.npermutations,
+            desc="Permutations",
+            unit="permutation",
+            disable=not self.verbose,
+        ) as progress:
+            for permutation_number, statistic in indexed_statistics:
+                ordered_statistics[permutation_number] = statistic
+                progress.update(1)
+
+        return ordered_statistics
 
     def _compute_permutation_statistics(self):
         """Evaluate the observed and permuted scalar or vector statistics."""
@@ -252,8 +255,10 @@ class BasePermutationTest(BaseEstimationMethod):
         ]
         task_rngs = self.rng.spawn(self.npermutations)
         tasks = (
-            (permutation, rng, observed.shape)
-            for permutation, rng in zip(self.permutation_indices, task_rngs)
+            (permutation_number, permutation, rng, observed.shape)
+            for permutation_number, (permutation, rng) in enumerate(
+                zip(self.permutation_indices, task_rngs)
+            )
         )
 
         worker_count = min(
@@ -280,7 +285,7 @@ class BasePermutationTest(BaseEstimationMethod):
                 initializer=_initialize_permutation_worker,
                 initargs=(self,),
             ) as pool:
-                statistics = pool.imap(
+                statistics = pool.imap_unordered(
                     _run_permutation_worker,
                     tasks,
                     chunksize=chunk_size,
@@ -312,12 +317,6 @@ class BasePermutationTest(BaseEstimationMethod):
                 )
             test_statistic = float(observed)
             null = permuted
-            if self.one_sided:
-                self.pvalue = float(np.mean(null >= test_statistic))
-            else:
-                self.pvalue = float(
-                    np.mean(np.abs(null) >= np.abs(test_statistic))
-                )
         else:
             if permuted.ndim != 2 or permuted.shape[1:] != observed.shape:
                 raise ValueError(
@@ -356,11 +355,17 @@ class BasePermutationTest(BaseEstimationMethod):
 
             test_statistic = float(max_statistics[0])
             null = max_statistics[1:]
+
+        if observed.ndim == 1 or self.one_sided:
             exceedances = np.count_nonzero(null >= test_statistic)
-            self.pvalue = float((1 + exceedances) / (null.size + 1))
+        else:
+            exceedances = np.count_nonzero(
+                np.abs(null) >= np.abs(test_statistic)
+            )
 
         self.test_stat_estimate = test_statistic
         self.permutation_distribution = null.tolist()
+        self.pvalue = float((1 + exceedances) / (null.size + 1))
         self.reject_null = bool(self.pvalue < self.alpha)
 
     def _fit_permutation(self):

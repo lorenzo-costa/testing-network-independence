@@ -125,7 +125,7 @@ def test_observed_permutation_rejects_true_latent_mode():
         )
 
 
-def test_scalar_permutation_finalizer_preserves_existing_pvalue():
+def test_scalar_permutation_finalizer_uses_finite_permutation_correction():
     method = BasePermutationTest(
         use_true_latent=True,
         test_function=lambda z, y: 0.0,
@@ -137,8 +137,22 @@ def test_scalar_permutation_finalizer_preserves_existing_pvalue():
 
     assert method.test_stat_estimate == 3.0
     assert method.permutation_distribution == [1.0, 2.0]
-    assert method.pvalue == 0.0
+    assert method.pvalue == pytest.approx(1 / 3)
     assert method.reject_null is True
+
+
+def test_unordered_permutation_results_are_restored_to_task_order():
+    method = BasePermutationTest(
+        use_true_latent=True,
+        npermutations=3,
+        test_function=lambda z, y: 0.0,
+    )
+
+    collected = method._collect_permutation_statistics(
+        [(2, 30.0), (0, 10.0), (1, 20.0)]
+    )
+
+    assert collected == [10.0, 20.0, 30.0]
 
 
 def test_vector_permutation_finalizer_standardizes_and_takes_maximum():

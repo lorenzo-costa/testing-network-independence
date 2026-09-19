@@ -215,7 +215,22 @@ process-pool chunk size targets `batch_size` work batches per worker, with a
 default of 32. Set `verbose=True` to display permutation progress. Avoid
 enabling permutation-level and simulation-level process parallelism at the
 same time. Custom test functions and solvers must be picklable when
-permutation-level parallelism is enabled.
+permutation-level parallelism is enabled. Parallel workers return completed
+permutations as soon as they finish; results are restored to their original
+permutation order before p-values are calculated. Permutation p-values use the
+finite-sample correction `(1 + exceedances) / (npermutations + 1)`.
+
+Multivariate AC orthant counts use the exact recursive sorted-block algorithm
+from [Huang, Li and Wang, Section 5](https://arxiv.org/abs/2512.07443v2).
+It supports arbitrary response dimensions, using a single-threaded, cached
+Numba kernel for the 2D base case. For fixed dimension `d`, counting `q`
+thresholds against `n` observations has bound `O(N * log(N)**d)`, where
+`N = max(n, q)`; a coefficient with `M` neighbors has `q = n * M`.
+Initial calls may incur compilation overhead. Small subproblems and inputs
+requiring legacy NumPy comparison semantics use direct comparisons.
+The pre-optimization helper module is preserved in
+`src/test_functions/_ac_helpers_old.py`; `tests/test_orthant_counts.py` checks
+exact counts, coefficients, permutation-test results, and RNG states against it.
 
 ### Metrics (`metrics.py`)
 

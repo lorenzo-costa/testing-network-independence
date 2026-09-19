@@ -1,10 +1,5 @@
-import operator
-
 import numpy as np
 from scipy.spatial import cKDTree
-
-from ._ac_helpers_old import _orthant_counts as _direct_orthant_counts
-from ._orthant_ranks import _dominance_counts
 
 def _orthant_counts(
     sample: np.ndarray,
@@ -13,11 +8,7 @@ def _orthant_counts(
     relation: str,
     block_size: int,
 ) -> np.ndarray:
-    """Count coordinatewise ranks exactly using recursive sorted blocks.
-
-    ``block_size`` bounds direct-comparison leaf batches. Non-finite,
-    non-real, or mixed-dtype inputs retain the original NumPy comparisons.
-    """
+    """Count sample rows lying below or above each coordinatewise threshold."""
     if block_size < 1:
         raise ValueError("block_size must be positive.")
 
@@ -25,25 +16,16 @@ def _orthant_counts(
     if sample.ndim != 2 or thresholds.shape[-1] != sample.shape[1]:
         raise ValueError("Incompatible sample and threshold shapes.")
 
+    compare = np.less_equal if relation == "le" else np.greater_equal
     flat = thresholds.reshape(-1, sample.shape[1])
-    # Match range(..., block_size)'s integer requirement in the old routine.
-    block_size = operator.index(block_size)
-    if (
-        sample.dtype.kind not in "biuf"
-        or flat.dtype.kind not in "biuf"
-        # Mixed integer/float searches can promote differently from NumPy's
-        # elementwise comparisons (notably int64/uint64 near their limits).
-        or sample.dtype != flat.dtype
-        or not np.isfinite(sample).all()
-        or not np.isfinite(flat).all()
-    ):
-        return _direct_orthant_counts(
-            sample, thresholds, relation=relation, block_size=block_size
-        )
+    counts = np.empty(len(flat), dtype=np.int64)
 
-    counts = _dominance_counts(
-        sample, flat, lower=relation == "le", block_size=block_size
-    )
+    for start in range(0, len(flat), block_size):
+        stop = min(start + block_size, len(flat))
+        counts[start:stop] = np.sum(
+            np.all(compare(sample[:, None, :], flat[None, start:stop, :]), axis=-1),
+            axis=0,
+        )
     return counts.reshape(thresholds.shape[:-1])
 
 # neighbour maps
