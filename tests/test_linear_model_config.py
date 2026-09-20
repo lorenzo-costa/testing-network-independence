@@ -21,12 +21,12 @@ def test_linear_model_config_builds_requested_factorial_sweep():
     design = build_factorial_design(config)
 
     assert config["experiment_type"] == "linear_model"
-    assert config["simulation"]["n"] == [200]
-    assert config["simulation"]["p"] == [5]
+    assert config["simulation"]["n"] == [50, 100, 200]
+    assert config["simulation"]["p"] == [5, 10, 25]
     assert config["simulation"]["d_x"] == [5]
     assert config["simulation"]["d_y"] == [5]
     assert config["simulation"]["snr"] == [0, 0.1, 0.25, 0.5, 1]
-    assert len(design) == 2 * 3 * 5
+    assert len(design) == 2 * 3 * 3 * 3 * 5
 
     assert {row["setup"][0].args[0] for row in design} == {
         GaussianNetwork,

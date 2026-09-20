@@ -224,9 +224,10 @@ python -m src.run_simulation_script --config linear_model_config.yaml
 
 Edit the `n`, `p`, `d_x`, `d_y`, and `snr` lists in
 `linear_model_config.yaml` to define the factorial sweep. The supplied config
-runs Gaussian and logistic-Bernoulli networks with RV, CCA, and MGC. It also
-configures simulation-level multiprocessing, one BLAS thread per worker, and
-latent permutations within each method.
+runs `n` in `(50, 100, 200)`, `p` in `(5, 10, 25)`, and SNR in
+`(0, 0.1, 0.25, 0.5, 1)` for Gaussian and logistic-Bernoulli networks with RV,
+CCA, and MGC. It also configures simulation-level multiprocessing, one BLAS
+thread per worker, and latent permutations within each method.
 
 ### Solvers (`src/solvers/`)
 

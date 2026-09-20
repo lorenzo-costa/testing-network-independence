@@ -4,12 +4,12 @@
 experiment_type: linear_model
 
 simulation:
-  nsim: 50
+  nsim: 2
   seed: 2
 
   # User-controlled network and latent dimensions.
-  n: [200]
-  p: [5]
+  n: [50, 100, 200]
+  p: [5, 10, 25]
   d_x: [5]
   d_y: [5]
 
