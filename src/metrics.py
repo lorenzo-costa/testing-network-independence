@@ -1,380 +1,373 @@
-from scipy.linalg import norm
-from .test_functions.rv_cca_coefficients import rv_coefficient, rv_coefficient_adjusted
+"""Testing outcomes and latent-recovery metrics for single or multiple networks."""
+
 import numpy as np
+from scipy.linalg import norm
+
+from .test_functions.rv_cca_coefficients import rv_coefficient, rv_coefficient_adjusted
+
+
+def _x_blocks(latents, name):
+    """Read explicit block boundaries; never guess them from a concatenation."""
+    blocks = latents.get("X_blocks")
+    if blocks is None and isinstance(latents.get("X"), (list, tuple)):
+        blocks = latents["X"]
+    if blocks is not None and (not isinstance(blocks, (list, tuple)) or not blocks):
+        raise ValueError(f"{name}.X_blocks must be a nonempty list of matrices.")
+    return blocks
+
+
+def _concatenate_blocks(blocks):
+    if blocks is None or any(block is None for block in blocks):
+        return None
+    return np.concatenate(blocks, axis=1)
+
+
+def _latent_pairs(results):
+    """Return Y, each X block, and concatenated X for named network results.
+
+    Named results contain Y, concatenated X, and X_blocks; an X list is also
+    accepted. Dictionaries without block metadata permit only Y/global errors.
+    Legacy unnamed matrices/sequences retain their original scalar/list form.
+    """
+    estimated = results.get("estimated_latent")
+    truth = results.get("true_latent")
+    if isinstance(estimated, dict) or isinstance(truth, dict):
+        if estimated is not None and not isinstance(estimated, dict):
+            raise ValueError("Estimated and true latents must use the same format.")
+        if truth is not None and not isinstance(truth, dict):
+            raise ValueError("Estimated and true latents must use the same format.")
+        estimated = {} if estimated is None else estimated
+        truth = {} if truth is None else truth
+        est_blocks = _x_blocks(estimated, "estimated_latent")
+        true_blocks = _x_blocks(truth, "true_latent")
+        if est_blocks is not None and true_blocks is not None:
+            if len(est_blocks) != len(true_blocks):
+                raise ValueError(
+                    "Estimated and true X must have the same number of blocks."
+                )
+        count = (
+            len(est_blocks)
+            if est_blocks is not None
+            else (len(true_blocks) if true_blocks is not None else 0)
+        )
+        pairs = [("Y", estimated.get("Y"), truth.get("Y"))]
+        pairs.extend(
+            (
+                f"X_{i + 1}",
+                None if est_blocks is None else est_blocks[i],
+                None if true_blocks is None else true_blocks[i],
+            )
+            for i in range(count)
+        )
+        est_global = (
+            _concatenate_blocks(est_blocks)
+            if est_blocks is not None
+            else estimated.get("X")
+        )
+        true_global = (
+            _concatenate_blocks(true_blocks)
+            if true_blocks is not None
+            else truth.get("X")
+        )
+        pairs.append(("X_global", est_global, true_global))
+        return "named", pairs
+
+    if isinstance(estimated, (list, tuple)) or isinstance(truth, (list, tuple)):
+        reference = estimated if isinstance(estimated, (list, tuple)) else truth
+        estimated = [None] * len(reference) if estimated is None else estimated
+        truth = [None] * len(reference) if truth is None else truth
+        if not isinstance(estimated, (list, tuple)) or not isinstance(
+            truth, (list, tuple)
+        ):
+            raise ValueError("Estimated and true latent sequences must match.")
+        if not estimated or len(estimated) != len(truth):
+            raise ValueError(
+                "Latent sequences must be nonempty and have matching lengths."
+            )
+        return "sequence", [
+            (str(i), est, true) for i, (est, true) in enumerate(zip(estimated, truth))
+        ]
+    return "single", [("z", estimated, truth)]
+
+
+def _optional_boolean(value, name):
+    if value is None or (isinstance(value, (float, np.floating)) and np.isnan(value)):
+        return None
+    if not isinstance(value, (bool, np.bool_)):
+        raise ValueError(f"{name} must be a boolean or missing.")
+    return bool(value)
+
+
+def _testing_outcome(results, is_null, expected_null, expected_rejection):
+    null = _optional_boolean(is_null, "is_null")
+    rejection = _optional_boolean(results.get("reject_null"), "reject_null")
+    if null is None or rejection is None:
+        return np.nan
+    return null == expected_null and rejection == expected_rejection
 
 
 class BaseMetric:
-    def __init__(self):
-        pass
-
-    def __call__(self):
+    def __call__(self, results, is_null=None):
         raise NotImplementedError("Subclasses should implement this!")
 
     def get_name(self):
         raise NotImplementedError("Subclasses should implement this!")
 
 
-class ReturnMetric(BaseMetric):
-    def __init__(self, only_return=None):
-        super().__init__()
-        self.only_return = only_return
-        
+class _LatentPairMetric(BaseMetric):
+    """Apply a measure to each pair, returning NaN for missing/nonfinite data.
+
+    Multiple-network results return a dict keyed by Y, X_1, ..., X_global.
+    Legacy single matrices and unnamed sequences retain scalar/list outputs.
+    """
+
+    _single_as_list = False
+
     def __call__(self, results, is_null=None):
-        estimated = results["estimated_latent"]
-        truth = results["true_latent"]
-        test_stat = results.get("test_stat", None)
-        p_value = results.get("p-value", None)
-        only_return = self.only_return
-        
-        if only_return is not None:
-            if only_return == "estimated":
-                return estimated
-            elif only_return == "truth":
-                return truth
-            elif only_return == "Y":
-                return results.get("observed_Y")
-            elif only_return == "X":
-                return results.get("conditioning_X")
-            elif only_return == "test_stat":
-                return test_stat
-            elif only_return == "p-value":
-                return p_value
-            elif only_return == "is_null":
-                return is_null
-            else:
-                raise ValueError(f"Invalid value for 'only_return': {only_return}")
-        return {
+        kind, pairs = _latent_pairs(results)
+        values = {
+            name: self._evaluate_pair(estimated, truth)
+            for name, estimated, truth in pairs
+        }
+        if kind == "named":
+            return values
+        if kind == "sequence" or self._single_as_list:
+            return list(values.values())
+        return next(iter(values.values()))
+
+    def _evaluate_pair(self, estimated, truth):
+        if estimated is None or truth is None:
+            return np.nan
+        estimated = np.asarray(estimated, dtype=float)
+        truth = np.asarray(truth, dtype=float)
+        if estimated.ndim != 2 or truth.ndim != 2:
+            raise ValueError("Latent positions must be 2D matrices.")
+        if estimated.shape[0] != truth.shape[0]:
+            raise ValueError(
+                "Estimated and true latents must have matching row counts."
+            )
+        if (
+            estimated.size == 0
+            or truth.size == 0
+            or not np.isfinite(estimated).all()
+            or not np.isfinite(truth).all()
+        ):
+            return np.nan
+        return self._compute_pair(estimated, truth)
+
+
+class ReturnMetric(BaseMetric):
+    """Return raw results; Y/X select true Y and concatenated true X.
+
+    Estimated values (including individual X_blocks) are available through
+    only_return="estimated". Legacy observed_Y/conditioning_X remain supported.
+    Unlike numeric error metrics, missing raw arrays are returned as None.
+    """
+
+    def __init__(self, only_return=None):
+        self.only_return = only_return
+
+    def __call__(self, results, is_null=None):
+        estimated = results.get("estimated_latent")
+        truth = results.get("true_latent")
+        if isinstance(estimated, dict) or isinstance(truth, dict):
+            true_values = {} if truth is None else truth
+            y = true_values.get("Y")
+            blocks = _x_blocks(true_values, "true_latent")
+            x = (
+                _concatenate_blocks(blocks)
+                if blocks is not None
+                else true_values.get("X")
+            )
+        else:
+            y = results.get("observed_Y")
+            x = results.get("conditioning_X")
+        values = {
             "estimated": estimated,
             "truth": truth,
-            "Y": results.get("observed_Y"),
-            "X": results.get("conditioning_X"),
-            "test_stat": test_stat,
-            "p-value": p_value,
+            "Y": y,
+            "X": x,
+            "test_stat": results.get("test_stat"),
+            "p-value": results.get("p-value"),
             "is_null": is_null,
         }
+        if self.only_return is None:
+            return values
+        if self.only_return not in values:
+            raise ValueError(f"Invalid value for 'only_return': {self.only_return}")
+        return values[self.only_return]
 
     def get_name(self):
         return "ReturnMetric"
 
 
-class RVCoefficient(BaseMetric):
-    def __call__(self, results, is_null=None):
-        estimated = results["estimated_latent"]
-        truth = results["true_latent"]
+class RVCoefficient(_LatentPairMetric):
+    """RV similarity between each estimate/truth pair (not an error distance)."""
+
+    def _compute_pair(self, estimated, truth):
         return rv_coefficient(estimated, truth)
 
     def get_name(self):
         return "RV Coefficient"
 
 
-class AdjustedRVCoefficient(BaseMetric):
-    def __call__(self, results, is_null=None):
-        estimated = results["estimated_latent"]
-        truth = results["true_latent"]
+class AdjustedRVCoefficient(_LatentPairMetric):
+    def _compute_pair(self, estimated, truth):
         return rv_coefficient_adjusted(estimated, truth)
 
     def get_name(self):
         return "Adjusted RV Coefficient"
 
 
-class MSE(BaseMetric):
-    def __call__(self, results, is_null=None):
-        estimated = results["estimated_latent"]
-        truth = results["true_latent"]
+class MSE(_LatentPairMetric):
+    """Raw coordinate MSE for each pair, without rotation alignment."""
+
+    def _compute_pair(self, estimated, truth):
+        if estimated.shape != truth.shape:
+            raise ValueError("MSE requires matching estimated and true dimensions.")
         return ((truth - estimated) ** 2).mean()
 
     def get_name(self):
         return "Mean Squared Error"
 
 
-class RelativeFrobeniusNorm(BaseMetric):
-    """Relative Frobenius Norm, computed as ||Xhat - X||_F / ||X||_F
-
-    Parameters
-    ----------
-    gram_matrix : bool
-        Whether to compute the Gram matrix of the latent positions.
-    results : dict
-        The results dictionary containing 'estimated_latent' and 'true_latent' keys.
-        If 'estimated_latent' is a list, relative frobenus norm will be applied to all
-        elements of the list
-
-    Output
-    ------
-    A float representing the relative Frobenius norm if 'estimated_latent' is a single array
-    A list of floats representing the relative Frobenius norm for each element if 'estimated_latent' is a list
-    """
+class RelativeFrobeniusNorm(_LatentPairMetric):
+    """Relative Frobenius error, optionally comparing rotation-invariant Grams."""
 
     def __init__(self, gram_matrix=False):
-        super().__init__()
-        # when feeding the estimate latent positions we compute the gram matrix to
-        # get rid of orthogonal invariance
         self.gram_matrix = gram_matrix
 
-    def __call__(self, results, is_null=None):
-        estimated = results["estimated_latent"]
-        truth = results["true_latent"]
-
-        # handles the case where more than one network's latent pos are returned
-        if isinstance(estimated, tuple):
-            out = []
-            for i in range(len(estimated)):
-                if (
-                    not np.isfinite(estimated[i]).all()
-                    or not np.isfinite(truth[i]).all()
-                ):
-                    out.append(np.nan)
-                else:
-                    if self.gram_matrix:
-                        # Compute the Gram matrix for both estimated and truth
-                        est = estimated[i] @ estimated[i].T
-                        true = truth[i] @ truth[i].T
-                    else:
-                        est = estimated[i]
-                        true = truth[i]
-
-                    num = norm(est - true, "fro")
-                    den = norm(true, "fro")
-                    out.append(num / den if den != 0 else 0)
-            # returns a list
-            return out
-
-        # single output computation
-        if not np.isfinite(estimated).all() or not np.isfinite(truth).all():
-            return np.nan
-
+    def _compute_pair(self, estimated, truth):
         if self.gram_matrix:
-            # Compute the Gram matrix for both estimated and truth
             estimated = estimated @ estimated.T
             truth = truth @ truth.T
-
+        elif estimated.shape != truth.shape:
+            raise ValueError("Coordinate Frobenius error requires matching dimensions.")
         num = norm(estimated - truth, "fro")
         den = norm(truth, "fro")
+        # Preserve the existing convention for a zero-norm truth.
         return num / den if den != 0 else 0
 
     def get_name(self):
         return "RelativeFrobeniusNorm"
 
 
-import numpy as np
+class RobustRelativeProcrustesDistance(_LatentPairMetric):
+    """Median-centered, rotation-aligned L1 relative error for each latent pair.
 
-
-class RobustRelativeProcrustesDistance:
-    """
-    Robust Relative Procrustes Distance for heavy-tailed (Cauchy) data.
-
-    1. Robust to outliers via Median-centering and L1-scaling.
-    2. Rotation invariant via SVD-based alignment (Kabsch).
-    3. Handles differing feature dimensions (columns) via zero-padding.
-    4. Scale invariant (Relative) to handle large matrix entries.
+    Different feature dimensions are zero-padded. The original rotation-only
+    alignment and single-matrix list return convention are preserved.
     """
 
-    def __call__(self, results, is_null=None):
-        estimated = results["estimated_latent"]
-        truth = results["true_latent"]
+    _single_as_list = True
 
-        # Handle single matrix vs tuple of matrices
-        if not isinstance(estimated, (tuple, list)):
-            estimated = (estimated,)
-            truth = (truth,)
-
-        out = []
-        for i in range(len(estimated)):
-            est = estimated[i]
-            true = truth[i]
-
-            if not np.isfinite(est).all() or not np.isfinite(true).all():
-                out.append(np.nan)
-                continue
-
-            n_true, d_true = true.shape
-            n_est, d_est = est.shape
-
-            # Procrustes requires 1-to-1 observation mapping (rows must match)
-            if n_true != n_est:
-                raise ValueError(
-                    f"Row counts must match for Procrustes. Got {n_true} and {n_est}."
-                )
-
-            # --- 0. Dimensional Padding ---
-            # Pad the smaller matrix with zeros so the feature columns match
-            max_d = max(d_true, d_est)
-
-            if d_true < max_d:
-                true_padded = np.pad(
-                    true, ((0, 0), (0, max_d - d_true)), mode="constant"
-                )
-            else:
-                true_padded = true
-
-            if d_est < max_d:
-                est_padded = np.pad(est, ((0, 0), (0, max_d - d_est)), mode="constant")
-            else:
-                est_padded = est
-
-            # --- 1. Robust Centering ---
-            true_c = true_padded - np.median(true_padded, axis=0)
-            est_c = est_padded - np.median(est_padded, axis=0)
-
-            # --- 2. Alignment (Kabsch Algorithm) ---
-            # Compute cross-covariance matrix
-            H = est_c.T @ true_c
-
-            # SVD works cleanly now because H is a square matrix (max_d x max_d)
-            U, _, Vt = np.linalg.svd(H)
+    def _compute_pair(self, estimated, truth):
+        d_true, d_est = truth.shape[1], estimated.shape[1]
+        max_d = max(d_true, d_est)
+        true_padded = np.pad(truth, ((0, 0), (0, max_d - d_true)))
+        est_padded = np.pad(estimated, ((0, 0), (0, max_d - d_est)))
+        true_c = true_padded - np.median(true_padded, axis=0)
+        est_c = est_padded - np.median(est_padded, axis=0)
+        U, _, Vt = np.linalg.svd(est_c.T @ true_c)
+        R_opt = U @ Vt
+        if np.linalg.det(R_opt) < 0:
+            Vt[-1, :] *= -1
             R_opt = U @ Vt
-
-            # Optional but recommended: Ensure we have a rotation, not a reflection
-            if np.linalg.det(R_opt) < 0:
-                Vt[-1, :] *= -1
-                R_opt = U @ Vt
-
-            est_aligned = est_c @ R_opt
-
-            # --- 3. Robust Relative Distance ---
-            # Shapes are now guaranteed to match for subtraction
-            abs_error = np.sum(np.abs(true_c - est_aligned))
-            abs_truth = np.sum(np.abs(true_c))
-
-            rel_dist = abs_error / abs_truth if abs_truth > 0 else abs_error
-
-            out.append(rel_dist)
-
-        return out
+        est_aligned = est_c @ R_opt
+        abs_error = np.sum(np.abs(true_c - est_aligned))
+        abs_truth = np.sum(np.abs(true_c))
+        return abs_error / abs_truth if abs_truth > 0 else abs_error
 
     def get_name(self):
         return "RobustRelativeProcrustes"
 
 
 class Rejection(BaseMetric):
-    """Rejection of Null Hypothesis, one if rejected.
-
-    Takes as input a results dictionary containing 'reject_null' key.
-    """
-
-    def __call__(self, results):
-        reject_null = results["reject_null"]
-        if reject_null == True:
-            return True
-        return False
+    def __call__(self, results, is_null=None):
+        rejection = _optional_boolean(results.get("reject_null"), "reject_null")
+        return np.nan if rejection is None else rejection
 
     def get_name(self):
         return "Rejection"
 
 
 class FalseRejection(BaseMetric):
-    """False Rejection (Type I Error / False Positive)
-
-    Takes as input a results dictionary containing 'reject_null' and 'true_null' keys.
-    """
+    """Type I error indicator; NaN if the null label or decision is missing."""
 
     def __call__(self, results, is_null=None):
-        reject_null = results["reject_null"]
-        # if null is True, but we reject it.
-        if (is_null is True) and (reject_null is True):
-            return True
-        return False
+        return _testing_outcome(results, is_null, True, True)
 
     def get_name(self):
         return "FalseRejection"
 
 
 class FalseAcceptance(BaseMetric):
-    """False Acceptance (Type II Error / False Negative)
-
-    Takes as input a results dictionary containing 'reject_null' and 'true_null' keys.
-    """
+    """Type II error indicator; NaN if the null label or decision is missing."""
 
     def __call__(self, results, is_null=None):
-        reject_null = results["reject_null"]
-        # Null is False (H0), but we do not reject it (i.e accept it)
-        if (is_null is False) and (reject_null is False):
-            return True
-        return False
+        return _testing_outcome(results, is_null, False, False)
 
     def get_name(self):
         return "FalseAcceptance"
 
 
 class TrueRejection(BaseMetric):
-    """True Rejection (reject H0 when it is False)
-
-    Takes as input a results dictionary with keywords 'reject_null' and 'null'.
-    """
-
     def __call__(self, results, is_null=None):
-        reject_null = results["reject_null"]
-        # Null is False (H1) and we reject it
-        if (is_null is False) and (reject_null is True):
-            return True
-        return False
+        return _testing_outcome(results, is_null, False, True)
 
     def get_name(self):
         return "TrueRejection"
 
 
 class TrueAcceptance(BaseMetric):
-    """True Acceptance (accept H0 when it is True)
-
-    Takes as input a results dictionary with keywords 'reject_null' and 'null'.
-    """
-
     def __call__(self, results, is_null=None):
-        reject_null = results["reject_null"]
-        # Null is True (H0) and we accept it
-        if (is_null is True) and (reject_null is False):
-            return True
-        return False
+        return _testing_outcome(results, is_null, True, False)
 
     def get_name(self):
         return "TrueAcceptance"
 
 
 class ComputeAll(BaseMetric):
-    """Single class to compute testing and latent position errors
+    """Testing outcomes plus Frobenius/Procrustes recovery errors.
 
-    Parameters
-    ----------
-    gram_matrix : bool
-        Whether to compute the Gram matrix for latent position metrics.
-    results : dict
-        Takes as input a dictionary containing keywords 'reject_null', 'null', 'true_latent' and 'estimated_latent'
+    Named latent results produce flat fields with suffixes Y, X_1, ...,
+    X_global. Global errors compare concatenated matrices directly.
+    Missing truth or null labels produce NaN for the affected metrics.
+    Single-network results retain the legacy *_z fields.
     """
 
     def __init__(self, gram_matrix=True):
-        super().__init__()
         self.gram_matrix = gram_matrix
 
     def __call__(self, results, is_null=None):
-        out = {}
-        reject_null = results.get("reject_null", None)
-        estimated_latent = results.get("estimated_latent", None)
-
-        if reject_null is not None:
-            # compute test metrics
-            test_metrics = {
-                "Rejection": Rejection()(results),
-                "FalseRejection": FalseRejection()(results, is_null=is_null),
-                "FalseAcceptance": FalseAcceptance()(results, is_null=is_null),
-                "TrueRejection": TrueRejection()(results, is_null=is_null),
-                "TrueAcceptance": TrueAcceptance()(results, is_null=is_null),
-            }
-            out.update(test_metrics)
-
-        if estimated_latent is not None and results.get("true_latent") is not None:
-            est = RelativeFrobeniusNorm(gram_matrix=self.gram_matrix)(results)
-            latent_metrics = {
-                "RelativeFrobeniusNorm_z": est,
-            }
-
-            est_procrustes = RobustRelativeProcrustesDistance()(results)
-            latent_metrics.update(
-                {
-                    "ProcrustesDistance_z": est_procrustes[0],
-                }
+        out = {
+            metric.get_name(): metric(results, is_null=is_null)
+            for metric in (
+                Rejection(),
+                FalseRejection(),
+                FalseAcceptance(),
+                TrueRejection(),
+                TrueAcceptance(),
             )
-            out.update(latent_metrics)
-
+        }
+        if (
+            results.get("estimated_latent") is not None
+            or results.get("true_latent") is not None
+        ):
+            for prefix, metric in (
+                ("RelativeFrobeniusNorm", RelativeFrobeniusNorm(self.gram_matrix)),
+                ("ProcrustesDistance", RobustRelativeProcrustesDistance()),
+            ):
+                values = metric(results)
+                if isinstance(values, dict):
+                    out.update(
+                        {f"{prefix}_{name}": value for name, value in values.items()}
+                    )
+                else:
+                    # Preserve the earlier estimation-only result contract.
+                    out[f"{prefix}_z"] = (
+                        values[0] if prefix == "ProcrustesDistance" else values
+                    )
         return out
 
     def get_name(self):
