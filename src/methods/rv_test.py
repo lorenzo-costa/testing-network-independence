@@ -1,6 +1,11 @@
 import numpy as np
 from ._base_class import BasePermutationTest, BaseEstimationMethod
-from ..test_functions.rv_cca_coefficients import rv_coefficient
+from ..test_functions.rv_cca_coefficients import (
+    _rv_coefficient_from_x_cache,
+    _rv_squared_gram_norm,
+    _rv_x_cache,
+    rv_coefficient,
+)
 from ..helper_functions.imhof import imhof
 
 import sys
@@ -115,6 +120,7 @@ class RVTest(BasePermutationTest):
         self._process_input(data)
 
         if self.approximation == "permutation":
+            self._initialize_rv_cache()
             self._fit_permutation()
         elif self.approximation == "asymptotic":
             self._fit_asymptotic()
@@ -126,6 +132,29 @@ class RVTest(BasePermutationTest):
         self.reject_null = bool(self.pvalue < self.alpha)
 
         return
+
+    def _initialize_rv_cache(self):
+        """Cache invariant RV terms when using the built-in coefficient."""
+        self._rv_cache_enabled = self.test_function is rv_coefficient
+        if not self._rv_cache_enabled:
+            return
+
+        self._rv_centered_x, self._rv_x_squared_gram_norm = _rv_x_cache(self.Xhat)
+        self._rv_y_squared_gram_norm = None
+        if self.permutation_type == "latent":
+            centered_y = self.Yhat - self.Yhat.mean(axis=0, keepdims=True)
+            self._rv_y_squared_gram_norm = _rv_squared_gram_norm(centered_y)
+
+    def _evaluate_test_statistic(self, Y, X, rng):
+        """Evaluate RV using cached terms, or preserve a custom statistic."""
+        if getattr(self, "_rv_cache_enabled", False):
+            return _rv_coefficient_from_x_cache(
+                Y,
+                self._rv_centered_x,
+                self._rv_x_squared_gram_norm,
+                self._rv_y_squared_gram_norm,
+            )
+        return super()._evaluate_test_statistic(Y, X, rng)
 
     def _fit_asymptotic(self):
         X = self.Xhat.copy()

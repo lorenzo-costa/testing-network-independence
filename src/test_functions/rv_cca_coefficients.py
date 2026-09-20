@@ -38,6 +38,37 @@ def rv_coefficient(A, B):
     return num / den if den != 0 else 0.0
 
 
+def _rv_squared_gram_norm(values: np.ndarray) -> float:
+    """Return the squared Frobenius norm of ``values.T @ values``."""
+    gram = values.T @ values
+    flattened = gram.ravel()
+    return float(flattened.dot(flattened))
+
+
+def _rv_x_cache(Xhat: np.ndarray) -> tuple[np.ndarray, float]:
+    """Precompute the centered X matrix and its RV denominator contribution."""
+    centered_x = Xhat - Xhat.mean(axis=0, keepdims=True)
+    return centered_x, _rv_squared_gram_norm(centered_x)
+
+
+def _rv_coefficient_from_x_cache(
+    Yhat: np.ndarray,
+    centered_x: np.ndarray,
+    x_squared_gram_norm: float,
+    y_squared_gram_norm: float | None = None,
+) -> float:
+    """Compute RV while reusing the fixed X-side permutation quantities."""
+    centered_y = Yhat - Yhat.mean(axis=0, keepdims=True)
+    cross_product = centered_y.T @ centered_x
+    flattened_cross_product = cross_product.ravel()
+    numerator = flattened_cross_product.dot(flattened_cross_product)
+
+    if y_squared_gram_norm is None:
+        y_squared_gram_norm = _rv_squared_gram_norm(centered_y)
+    denominator = np.sqrt(y_squared_gram_norm * x_squared_gram_norm)
+    return float(numerator / denominator) if denominator != 0 else 0.0
+
+
 def rv_coefficient_adjusted(A, B):
     """Adjusted RV coefficient (Mordant & Segers 2022)."""
     A = A.copy()
