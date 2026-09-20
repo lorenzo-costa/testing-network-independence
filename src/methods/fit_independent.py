@@ -2,25 +2,37 @@ from ._base_class import BaseEstimationMethod
 
 
 class FitIndependent(BaseEstimationMethod):
-    """Estimate the latent positions of the single observed network."""
+    """Estimate latent positions for Y and every X network."""
 
-    def __init__(self, k=None, rng=None, solver=None, use_true_latent=False, **kwargs):
+    def __init__(
+        self,
+        d_y=None,
+        d_x=None,
+        rng=None,
+        solver=None,
+        use_true_latent=False,
+        **kwargs,
+    ):
         super().__init__(
-            k=k, rng=rng, solver=solver, use_true_latent=use_true_latent
+            d_y=d_y,
+            d_x=d_x,
+            rng=rng,
+            solver=solver,
+            use_true_latent=use_true_latent,
         )
 
     def fit(self, data, **kwargs):
-        """Estimate latent positions from ``A`` while retaining observed ``Y``.
+        """Estimate latent positions from ``A_Y`` and each network in ``A_X``.
 
         Parameters
         ----------
-        data : dict
-            A dictionary containing ``A``, observed ``Y``, and optionally true ``Z``.
+        data : dict or sequence of arrays
+            Multiple-network data accepted by :class:`BaseEstimationMethod`.
         """
 
         self._process_input(data)
 
-        # For consisetncy with test methods
+        # For consistency with test methods.
         self.pvalue = None
         self.reject_null = None
         self.test_stat_estimate = None

@@ -12,17 +12,12 @@ def dummy_solver(matrix, k, rng=None):
     return values[:, :k].copy(), np.ones(k)
 
 
-def latent_data(seed=70):
+def multiple_latent_data(seed=70):
     rng = np.random.default_rng(seed)
     return {
         "Y": rng.normal(size=(14, 2)),
-        "Z": rng.normal(size=(14, 2)),
+        "X": [rng.normal(size=(14, 2)), rng.normal(size=(14, 2))],
     }
-
-
-def multiple_latent_data():
-    data = latent_data()
-    return {"Y": data["Y"], "X": [data["Z"], data["Z"][:, ::-1]]}
 
 
 def test_module_imports_rv_methods():
@@ -39,10 +34,16 @@ def test_estimate_rv_runs_with_true_latent_positions():
         rng=np.random.default_rng(9),
     )
 
-    method.fit(latent_data())
+    data = multiple_latent_data()
+    method.fit(data)
     result = method.get_estimated()
 
     assert method.get_name() == "EstimateRV"
+    assert result["test_stat"] == pytest.approx(
+        method.test_function(data["Y"], np.concatenate(data["X"], axis=1))
+    )
+    assert result["estimated_latent"]["Y"].shape == (14, 2)
+    assert result["estimated_latent"]["X"].shape == (14, 4)
     assert np.isfinite(result["test_stat"])
     assert result["p-value"] is None
     assert result["reject_null"] is None

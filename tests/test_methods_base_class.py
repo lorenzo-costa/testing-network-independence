@@ -76,31 +76,37 @@ def test_result_structure_contains_one_latent_and_observed_y():
     assert result["conditioning_X"] is method.X
 
 
-def test_input_processing_accepts_and_validates_conditioning_x():
-    method = BaseEstimationMethod(use_true_latent=True)
-    z = np.arange(8.0).reshape(4, 2)
-    method._process_input({"Z": z, "Y": np.arange(4.0), "X": np.array([0, 0, 1, 1])})
-    assert method.X.shape == (4, 1)
-
-    with pytest.raises(ValueError, match="X must be a 2D array with n rows"):
-        method._process_input({"Z": z, "Y": np.arange(4.0), "X": np.ones((3, 1))})
-
-
-def test_true_latent_does_not_require_or_call_solver():
-    method = BaseEstimationMethod(use_true_latent=True)
-    z = np.arange(8.0).reshape(4, 2)
-    method._process_input({"Z": z, "Y": np.arange(4.0)})
-    np.testing.assert_array_equal(method.Zhat, z)
-    assert method.Y.shape == (4, 1)
-
-
-def test_estimated_latent_uses_only_a():
+def test_estimation_base_embeds_y_and_every_x_network():
     solver = RecordingSolver()
-    a = np.arange(16.0).reshape(4, 4)
-    method = BaseEstimationMethod(solver=solver, k=2)
-    method._process_input({"A": a, "Y": np.ones((4, 1))})
-    assert len(solver.inputs) == 1
-    np.testing.assert_array_equal(solver.inputs[0], a)
+    data = network_data(n=6, p=3)
+    method = BaseEstimationMethod(solver=solver, d_y=2, d_x=1)
+    method._process_input(data)
+
+    assert solver.dimensions == [2, 1, 1, 1]
+    assert method.Yhat.shape == (6, 2)
+    assert method.Xhat.shape == (6, 3)
+    assert len(method.Xhat_blocks) == 3
+    np.testing.assert_array_equal(
+        method.Xhat, np.concatenate(method.Xhat_blocks, axis=1)
+    )
+
+
+def test_estimation_base_true_latents_bypass_solver():
+    solver = RecordingSolver()
+    data = latent_data(n=6)
+    method = BaseEstimationMethod(use_true_latent=True, solver=solver)
+    method._process_input(data)
+
+    assert solver.inputs == []
+    np.testing.assert_array_equal(method.Yhat, data["Y"])
+    np.testing.assert_array_equal(method.Xhat, np.concatenate(data["X"], axis=1))
+    assert (method.d_y, method.d_x) == (1, 2)
+
+
+def test_estimation_base_rejects_legacy_single_network_input():
+    method = BaseEstimationMethod(use_true_latent=True)
+    with pytest.raises(ValueError, match="Y and X"):
+        method._process_input({"Z": np.ones((4, 2)), "Y": np.ones((4, 1))})
 
 
 def test_latent_permutations_fit_every_network_once_and_keep_x_fixed():

@@ -10,26 +10,33 @@ sys.path.append(os.path.abspath(os.path.join(os.getcwd(), "..")))
 
 
 class EstimateRV(BaseEstimationMethod):
-    """Return the RV coefficient between network latent positions and observed Y."""
+    """Return the RV coefficient between Y and concatenated X network latents."""
 
     def __init__(
         self,
         rng=None,
         solver=None,
-        k=None,
+        d_y=None,
+        d_x=None,
         use_true_latent=False,
         test_function=rv_coefficient,
         **kwargs,
     ):
-        super().__init__(k=k, rng=rng, solver=solver, use_true_latent=use_true_latent)
+        super().__init__(
+            d_y=d_y,
+            d_x=d_x,
+            rng=rng,
+            solver=solver,
+            use_true_latent=use_true_latent,
+        )
 
         self.test_function = test_function
 
     def fit(self, data, **kwargs):
-        """Estimate the RV coefficient between tested Z and observed Y."""
+        """Estimate the RV coefficient between Yhat and concatenated Xhat."""
 
         self._process_input(data)
-        self.test_stat_estimate = self.test_function(self.Zhat, self.Y)
+        self.test_stat_estimate = self.test_function(self.Yhat, self.Xhat)
         self.pvalue = None
         self.reject_null = None
 

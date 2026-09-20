@@ -259,8 +259,7 @@ method = RVTest(
 method.fit(data)  # output of GaussianNetwork or BernoulliNetwork
 ```
 
-Configuration loading, simulation argument routing, and the separate estimation-only
-methods still use their earlier interfaces and require separate migration.
+Estimation-only methods use the same multiple-network input and output structure.
 
 | Class | Key parameters | Notes |
 |-------|---------------|-------|
@@ -270,7 +269,7 @@ methods still use their earlier interfaces and require separate migration.
 | `QAP` | — | Quadratic Assignment Procedure |
 | `DiffusionCorrelation` | — | Diffusion-map based correlation |
 | `CanonicalCorrelationTest` | `permutation_type`, `solver` | Permutation test via canonical correlations of estimated latent positions |
-| `FitIndependent` | `solver`, `k` | Not a test; fits the solver independently to each network and stores embeddings |
+| `FitIndependent` | `solver`, `d_y`, `d_x` | Not a test; fits Y and every X network independently, stores individual X blocks, and concatenates them |
 
 Permutation-based methods accept `n_jobs`, `batch_size`, and `verbose`.
 The default `n_jobs=1` evaluates permutations serially, positive values use
