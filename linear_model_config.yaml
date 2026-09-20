@@ -16,7 +16,7 @@ simulation:
   # snr=0 uses B=0 (the null); positive SNRs sample and rescale B.
   snr: [0, 0.1, 0.25, 0.5, 1]
   alpha: [0.05]
-  edge_var: [1]
+  edge_var: [2]
 
   # Parallelize independent simulation scenarios. Each worker uses one BLAS thread.
   parallel: true
