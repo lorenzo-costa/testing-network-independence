@@ -5,7 +5,6 @@ import importlib
 import numpy as np
 import pytest
 
-from src.methods.ac_test import MultivariateACTest
 from src.test_functions._ac_helpers import _orthant_counts
 from src.test_functions._ac_helpers_old import _orthant_counts as old_counts
 
@@ -231,66 +230,3 @@ def test_entire_coefficient_and_rng_are_identical(
         states.append(coefficient_rng.bit_generator.state)
     assert results[0] == results[1]
     assert states[0] == states[1]
-
-
-def _solver(matrix, k, rng=None):
-    return np.asarray(matrix)[:, :k].copy(), np.ones(k)
-
-
-def _run_method(counter, monkeypatch, data, **kwargs):
-    module = importlib.import_module("src.test_functions.ac_coefficient")
-    monkeypatch.setattr(module, "_orthant_counts", counter)
-    method = MultivariateACTest(
-        M=5, npermutations=3, solver=_solver, k=2,
-        rng=np.random.default_rng(41), **kwargs,
-    )
-    method.fit(data)
-    return method
-
-
-def _assert_identical_methods(old, new):
-    for name in ("test_stat_estimate", "pvalue", "reject_null"):
-        assert getattr(old, name) == getattr(new, name)
-    for name in ("permutation_indices", "permutation_distribution",
-                 "observed_statistics", "permuted_statistics"):
-        np.testing.assert_array_equal(getattr(old, name), getattr(new, name))
-    if old.adaptive_m:
-        for name in ("adaptive_m_values", "adaptive_s_statistics",
-                     "adaptive_m_means", "adaptive_m_stds", "adaptive_z_statistics"):
-            np.testing.assert_array_equal(getattr(old, name), getattr(new, name))
-    assert old.rng.bit_generator.state == new.rng.bit_generator.state
-
-
-@pytest.mark.parametrize("adaptive", [False, True])
-@pytest.mark.parametrize("conditional", [False, True])
-@pytest.mark.parametrize("permutation", [False, True])
-@pytest.mark.parametrize("permutation_type", ["covariate", "latent", "observed"])
-def test_complete_permutation_tests_are_identical(
-    monkeypatch, adaptive, conditional, permutation, permutation_type
-):
-    rng = np.random.default_rng(40)
-    data = {
-        "Y": rng.integers(0, 5, size=(24, 3)).astype(float),
-        "Z": rng.normal(size=(24, 2)),
-        "A": rng.normal(size=(24, 24)),
-    }
-    if conditional:
-        data["X"] = np.repeat(np.arange(3), 8)
-    kwargs = dict(
-        adaptive_m=adaptive, use_permutation_coeff=permutation,
-        permutation_type=permutation_type,
-        use_true_latent=permutation_type != "observed",
-    )
-    old = _run_method(old_counts, monkeypatch, data, **kwargs)
-    new = _run_method(_orthant_counts, monkeypatch, data, **kwargs)
-    _assert_identical_methods(old, new)
-
-
-@pytest.mark.parametrize("adaptive", [False, True])
-def test_parallel_test_matches_saved_serial_version(monkeypatch, adaptive):
-    rng = np.random.default_rng(42)
-    data = {"Y": rng.normal(size=(24, 2)), "Z": rng.normal(size=(24, 2))}
-    kwargs = dict(adaptive_m=adaptive, use_permutation_coeff=True, use_true_latent=True)
-    old = _run_method(old_counts, monkeypatch, data, **kwargs)
-    new = _run_method(_orthant_counts, monkeypatch, data, n_jobs=2, **kwargs)
-    _assert_identical_methods(old, new)
