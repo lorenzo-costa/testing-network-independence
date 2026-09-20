@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.special import expit, logit
+from scipy.special import logit
 
 # ---------------------------------------------------------------------------
 # Optional backends
@@ -15,7 +15,6 @@ try:
     import jax
     import jax.numpy as jnp
     from jax import jit
-    from functools import partial as _partial
 
     _HAS_JAX = True
 except ImportError:
@@ -64,7 +63,7 @@ def project_beta(beta):
 
 
 def _pgd_loop_numpy(
-    A, Z, alpha, beta_val, eta_Z, eta_alpha, eta_beta, num_iters, X, has_X
+    A, Z, alpha, beta_val, eta_Z, eta_alpha, eta_beta, num_iters, X, has_X, tol
 ):
     """
     NumPy inner loop with fused BLAS matmul (opt-4).
@@ -133,13 +132,25 @@ if _HAS_NUMBA:
 
     @nb.njit(cache=True, fastmath=True)
     def _pgd_loop_numba(
-        A, Z, alpha, beta_val, eta_Z, eta_alpha, eta_beta, num_iters, X, has_X
+        A,
+        Z,
+        alpha,
+        beta_val,
+        eta_Z,
+        eta_alpha,
+        eta_beta,
+        num_iters,
+        X,
+        has_X,
+        tol,
     ):
         n, k = Z.shape
         Theta = np.empty((n, n))
         ones = np.ones(n)
+        Z_previous = np.empty_like(Z)
 
         for _ in range(num_iters):
+            Z_previous[:] = Z
             Theta[:] = Z @ Z.T
             if has_X:
                 for i in range(n):
@@ -175,6 +186,18 @@ if _HAS_NUMBA:
                 m = col_mean[j]
                 for i in range(n):
                     Z[i, j] -= m
+
+            if tol > 0.0:
+                change_squared = 0.0
+                previous_squared = 0.0
+                for i in range(n):
+                    for j in range(k):
+                        difference = Z[i, j] - Z_previous[i, j]
+                        change_squared += difference * difference
+                        previous_squared += Z_previous[i, j] * Z_previous[i, j]
+                delta = np.sqrt(change_squared) / (np.sqrt(previous_squared) + 1e-12)
+                if delta <= tol:
+                    break
 
         return Z, alpha, beta_val
 
@@ -269,7 +292,7 @@ if _HAS_JAX:
     _pgd_loop_jax_X = _make_pgd_loop_jax(has_X=True)
 
     def _pgd_loop_jax(
-        A, Z, alpha, beta_val, eta_Z, eta_alpha, eta_beta, num_iters, X, has_X, tol=1e-6
+        A, Z, alpha, beta_val, eta_Z, eta_alpha, eta_beta, num_iters, X, has_X, tol
     ):
         """Thin wrapper: numpy → JAX → numpy.
 
@@ -327,6 +350,7 @@ def pgd_fit(
     M_init=1e-2,
     return_history=False,
     backend="auto",
+    tol=1e-6,
 ):
     """
     Projected Gradient Descent for latent space network model.
@@ -350,6 +374,9 @@ def pgd_fit(
     return_history : return (Z, alpha, beta, history) if True
     backend   : 'auto' | 'numpy' | 'numba' | 'jax'
                 'auto' picks jax > numba > numpy (in that order of preference).
+    tol       : nonnegative float
+                Relative change threshold for early stopping in the Numba and
+                JAX backends. Set to zero to run exactly ``num_iters`` steps.
 
     Returns
     -------
@@ -357,6 +384,11 @@ def pgd_fit(
     """
     if rng is None:
         rng = np.random.default_rng()
+    if isinstance(tol, (bool, np.bool_)) or not np.isscalar(tol):
+        raise ValueError("tol must be a nonnegative finite scalar.")
+    tol = float(tol)
+    if not np.isfinite(tol) or tol < 0:
+        raise ValueError("tol must be a nonnegative finite scalar.")
 
     n = A.shape[0]
     if X is None:
@@ -401,14 +433,41 @@ def pgd_fit(
     # --- run ---
     if return_history:
         for _ in range(num_iters):
+            previous_Z = Z.copy()
             Z, alpha, beta = loop_fn(
-                A, Z, alpha, beta, eta_Z, eta_alpha, eta_beta, 1, X, has_X
+                A,
+                Z,
+                alpha,
+                beta,
+                eta_Z,
+                eta_alpha,
+                eta_beta,
+                1,
+                X,
+                has_X,
+                0.0,
             )
             history.append((Z.copy(), alpha.copy(), beta))
+            if backend in {"numba", "jax"} and tol > 0:
+                delta = np.linalg.norm(Z - previous_Z) / (
+                    np.linalg.norm(previous_Z) + 1e-12
+                )
+                if delta <= tol:
+                    break
         return Z, alpha, beta, history
 
     Z, alpha, beta = loop_fn(
-        A, Z, alpha, beta, eta_Z, eta_alpha, eta_beta, num_iters, X, has_X
+        A,
+        Z,
+        alpha,
+        beta,
+        eta_Z,
+        eta_alpha,
+        eta_beta,
+        num_iters,
+        X,
+        has_X,
+        tol if backend in {"numba", "jax"} else 0.0,
     )
     return Z, alpha, beta
 
@@ -430,9 +489,10 @@ def pgd_fit_wrapper(
     M_init=4,
     return_history=False,
     backend="auto",
+    tol=1e-6,
 ):
     """Wrapper for pgd_fit returning Z + alpha[:, None]."""
-    
+
     if return_history:
         Z, alpha, beta, history = pgd_fit(
             A,
@@ -451,6 +511,7 @@ def pgd_fit_wrapper(
             M_init=M_init,
             return_history=True,
             backend=backend,
+            tol=tol,
         )
         return Z + alpha[:, None], beta, history
 
@@ -471,6 +532,7 @@ def pgd_fit_wrapper(
         M_init=M_init,
         return_history=False,
         backend=backend,
+        tol=tol,
     )
     return Z + alpha[:, None], beta
 

@@ -1,11 +1,21 @@
 import numpy as np
 from tqdm import tqdm
 from multiprocessing import Pool, cpu_count
+from threadpoolctl import threadpool_limits
 
 # TODO:
 # - this could be sped up by having dpg run once and then feed data to each arg combination
 # (it has a specific name i don't remember not)
 # - add intermediate save
+
+
+_worker_blas_limiter = None
+
+
+def _initialize_parallel_worker(blas_threads):
+    """Keep native BLAS calls within a simulation worker from oversubscribing."""
+    global _worker_blas_limiter
+    _worker_blas_limiter = threadpool_limits(limits=blas_threads, user_api="blas")
 
 
 def run_scenario(metrics, args, seed, method_params=None):
@@ -75,6 +85,7 @@ def run_simulation_parallel(
     rng=None,
     n_jobs=None,
     batch_size=32,
+    blas_threads=1,
 ):
     if rng is None:
         rng = np.random.default_rng()
@@ -84,6 +95,10 @@ def run_simulation_parallel(
 
     if n_jobs is None:
         n_jobs = cpu_count()
+    if isinstance(blas_threads, bool) or not isinstance(blas_threads, int):
+        raise ValueError("blas_threads must be a positive integer.")
+    if blas_threads < 1:
+        raise ValueError("blas_threads must be a positive integer.")
 
     # Create all scenario arguments upfront (flattened structure)
     all_scenarios = [
@@ -106,7 +121,11 @@ def run_simulation_parallel(
     # chunk_size = max(1, total_scenarios // (n_jobs * 32))
 
     results = []
-    with Pool(processes=n_jobs) as pool:
+    with Pool(
+        processes=n_jobs,
+        initializer=_initialize_parallel_worker,
+        initargs=(blas_threads,),
+    ) as pool:
         with tqdm(total=total_scenarios, desc="Running scenarios") as pbar:
             # Use imap_unordered for better performance (order doesn't matter)
             for result in pool.imap_unordered(
@@ -127,6 +146,7 @@ def run_simulation(
     rng=None,
     n_jobs=None,
     batch_size=32,
+    blas_threads=1,
 ):
     """Run a simulation study.
 
@@ -150,6 +170,9 @@ def run_simulation(
        Dictionary containing ``A``, optional ``Z``, and observed ``Y``.
     batch_size : int, optional
         Number of scenarios to process in each batch when parallelizing, by default 32
+    blas_threads : int, optional
+        Maximum BLAS threads in each parallel simulation worker, by default 1.
+        Ignored when ``parallel=False``.
 
     Returns
     -------
@@ -165,6 +188,7 @@ def run_simulation(
             rng=rng,
             n_jobs=n_jobs,
             batch_size=batch_size,
+            blas_threads=blas_threads,
         )
 
     if rng is None:

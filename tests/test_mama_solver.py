@@ -3,6 +3,7 @@ import importlib
 import numpy as np
 import pytest
 
+import src.solvers.MaMa_uuuuu as mama
 from src.solvers.MaMa_uuuuu import (
     compute_theta,
     pgd_fit,
@@ -112,3 +113,63 @@ def test_projected_gradient_solver_rejects_unknown_backend():
             rng=np.random.default_rng(16),
         )
 
+
+@pytest.mark.skipif(not mama._HAS_NUMBA, reason="Numba is not installed")
+def test_numba_early_stopping_matches_one_iteration_at_large_tolerance():
+    common = dict(
+        A=binary_adjacency(),
+        k=2,
+        init="random",
+        backend="numba",
+        rng=np.random.default_rng(17),
+    )
+    stopped = pgd_fit(num_iters=20, tol=1e100, **common)
+    common["rng"] = np.random.default_rng(17)
+    one_step = pgd_fit(num_iters=1, tol=0, **common)
+
+    for actual, expected in zip(stopped, one_step):
+        np.testing.assert_allclose(actual, expected)
+
+
+@pytest.mark.skipif(not mama._HAS_NUMBA, reason="Numba is not installed")
+def test_zero_tolerance_disables_numba_early_stopping():
+    common = dict(
+        A=binary_adjacency(),
+        k=2,
+        init="random",
+        backend="numba",
+    )
+    one_step = pgd_fit(num_iters=1, tol=0, rng=np.random.default_rng(18), **common)[0]
+    all_steps = pgd_fit(num_iters=3, tol=0, rng=np.random.default_rng(18), **common)[0]
+
+    assert not np.allclose(all_steps, one_step)
+
+
+@pytest.mark.skipif(not mama._HAS_NUMBA, reason="Numba is not installed")
+def test_numba_early_stopping_shortens_returned_history():
+    _, _, _, history = pgd_fit(
+        binary_adjacency(),
+        k=2,
+        num_iters=20,
+        init="random",
+        backend="numba",
+        tol=1e100,
+        return_history=True,
+        rng=np.random.default_rng(19),
+    )
+
+    assert len(history) == 2
+
+
+@pytest.mark.parametrize("tol", [-1, np.inf, np.nan, True, [1e-6]])
+def test_projected_gradient_solver_rejects_invalid_tolerance(tol):
+    with pytest.raises(ValueError, match="tol"):
+        pgd_fit(
+            binary_adjacency(),
+            k=2,
+            num_iters=1,
+            init="random",
+            backend="numpy",
+            tol=tol,
+            rng=np.random.default_rng(20),
+        )
