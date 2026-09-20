@@ -4,7 +4,7 @@
 experiment_type: linear_model
 
 simulation:
-  nsim: 2
+  nsim: 200
   seed: 2
 
   # User-controlled network and latent dimensions.
@@ -25,7 +25,7 @@ simulation:
   blas_threads: 1
 
 methods:
-  npermutations: [200]
+  npermutations: [400]
   use_true_latent: [false]
   list:
     - name: RVTest
