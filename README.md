@@ -222,6 +222,18 @@ The same experiment can be run from the YAML-driven simulation runner:
 python -m src.run_simulation_script --config linear_model_config.yaml
 ```
 
+On a Slurm cluster, submit the three-shard job array with:
+
+```bash
+sbatch run_sim_shard.sbat linear_model_config.yaml
+```
+
+Each of the three array jobs requests one node with 32 CPUs. The shard runner
+constructs the same deterministic global task and seed list in every job, then
+executes a disjoint strided third of it. Each shard writes a separate CSV whose
+name contains the Slurm array job ID and zero-based shard index; concatenate
+those three CSV files to obtain the complete result table.
+
 Edit the `n`, `p`, `d_x`, `d_y`, and `snr` lists in
 `linear_model_config.yaml` to define the factorial sweep. The supplied config
 runs `n` in `(50, 100, 200)`, `p` in `(5, 10, 25)`, and SNR in

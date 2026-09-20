@@ -77,6 +77,44 @@ def run_scenario_wrapper(args):
     return run_scenario(metrics, args, seed=seed, method_params=method_params)
 
 
+def _validate_shard(shard_index, num_shards):
+    """Validate and return a zero-based shard index and positive shard count."""
+    if isinstance(num_shards, bool) or not isinstance(num_shards, int):
+        raise ValueError("num_shards must be a positive integer.")
+    if num_shards < 1:
+        raise ValueError("num_shards must be a positive integer.")
+    if isinstance(shard_index, bool) or not isinstance(shard_index, int):
+        raise ValueError("shard_index must be an integer.")
+    if not 0 <= shard_index < num_shards:
+        raise ValueError("shard_index must satisfy 0 <= shard_index < num_shards.")
+    return shard_index, num_shards
+
+
+def _build_seeded_scenarios(
+    nsim,
+    factorial_design,
+    metrics,
+    method_params,
+    rng,
+    *,
+    shard_index=0,
+    num_shards=1,
+    shuffle=False,
+):
+    """Build the global task list, then select one deterministic shard."""
+    shard_index, num_shards = _validate_shard(shard_index, num_shards)
+    all_scenarios = [
+        (args, metrics, method_params) for _ in range(nsim) for args in factorial_design
+    ]
+    child_seeds = rng.spawn(len(all_scenarios))
+    seeded_scenarios = [
+        (*scenario, seed) for scenario, seed in zip(all_scenarios, child_seeds)
+    ]
+    if shuffle:
+        rng.shuffle(seeded_scenarios)
+    return seeded_scenarios[shard_index::num_shards], len(seeded_scenarios)
+
+
 def run_simulation_parallel(
     nsim,
     factorial_design,
@@ -86,6 +124,8 @@ def run_simulation_parallel(
     n_jobs=None,
     batch_size=32,
     blas_threads=1,
+    shard_index=0,
+    num_shards=1,
 ):
     if rng is None:
         rng = np.random.default_rng()
@@ -100,21 +140,20 @@ def run_simulation_parallel(
     if blas_threads < 1:
         raise ValueError("blas_threads must be a positive integer.")
 
-    # Create all scenario arguments upfront (flattened structure)
-    all_scenarios = [
-        (args, metrics, method_params) for i in range(nsim) for args in factorial_design
-    ]
-
-    total_scenarios = len(all_scenarios)
-
-    child_seeds = rng.spawn(total_scenarios)
-
-    all_scenarios_seed = [
-        (*scenario, seed) for scenario, seed in zip(all_scenarios, child_seeds)
-    ]
-
-    # Shuffle scenarios for better parallelisation
-    rng.shuffle(all_scenarios_seed)
+    # Every shard constructs the same shuffled global task/seed list before
+    # selecting a disjoint strided slice. This makes separately launched Slurm
+    # jobs reproducible and prevents duplicated simulations.
+    all_scenarios_seed, global_total = _build_seeded_scenarios(
+        nsim,
+        factorial_design,
+        metrics,
+        method_params,
+        rng,
+        shard_index=shard_index,
+        num_shards=num_shards,
+        shuffle=True,
+    )
+    total_scenarios = len(all_scenarios_seed)
 
     # Better chunk size: balance between overhead and load distribution
     chunk_size = max(1, total_scenarios // (n_jobs * batch_size))
@@ -126,7 +165,12 @@ def run_simulation_parallel(
         initializer=_initialize_parallel_worker,
         initargs=(blas_threads,),
     ) as pool:
-        with tqdm(total=total_scenarios, desc="Running scenarios") as pbar:
+        description = (
+            "Running scenarios"
+            if num_shards == 1
+            else f"Running shard {shard_index + 1}/{num_shards}"
+        )
+        with tqdm(total=total_scenarios, desc=description) as pbar:
             # Use imap_unordered for better performance (order doesn't matter)
             for result in pool.imap_unordered(
                 run_scenario_wrapper, all_scenarios_seed, chunksize=chunk_size
@@ -134,6 +178,11 @@ def run_simulation_parallel(
                 results.append(result)
                 pbar.update(1)
 
+    if num_shards > 1:
+        print(
+            f"Shard {shard_index + 1}/{num_shards} completed "
+            f"{total_scenarios} of {global_total} scenarios."
+        )
     return results
 
 
@@ -147,6 +196,8 @@ def run_simulation(
     n_jobs=None,
     batch_size=32,
     blas_threads=1,
+    shard_index=0,
+    num_shards=1,
 ):
     """Run a simulation study.
 
@@ -173,6 +224,10 @@ def run_simulation(
     blas_threads : int, optional
         Maximum BLAS threads in each parallel simulation worker, by default 1.
         Ignored when ``parallel=False``.
+    shard_index : int, optional
+        Zero-based shard to execute, by default 0.
+    num_shards : int, optional
+        Number of disjoint shards in the global simulation task list, by default 1.
 
     Returns
     -------
@@ -189,26 +244,32 @@ def run_simulation(
             n_jobs=n_jobs,
             batch_size=batch_size,
             blas_threads=blas_threads,
+            shard_index=shard_index,
+            num_shards=num_shards,
         )
 
     if rng is None:
         rng = np.random.default_rng()
 
+    scenarios, _ = _build_seeded_scenarios(
+        nsim,
+        factorial_design,
+        metrics,
+        method_params,
+        rng,
+        shard_index=shard_index,
+        num_shards=num_shards,
+        shuffle=num_shards > 1,
+    )
     results = []
-
-    # for i in range(nsim):
-    #     print(f"Simulation {i + 1} of {nsim}")
-    #     for args in tqdm(factorial_design, desc="Running scenarios"):
-    #         scenario_out = run_scenario(metrics, args, method_params=method_params)
-    #         results.append(scenario_out)
-
-    for i in range(nsim):
-        sim_seeds = rng.spawn(len(factorial_design))
-
-        for args, seed in zip(tqdm(factorial_design), sim_seeds):
-            scenario_out = run_scenario(
-                metrics, args, method_params=method_params, seed=seed
+    for args, scenario_metrics, scenario_method_params, seed in tqdm(scenarios):
+        results.append(
+            run_scenario(
+                scenario_metrics,
+                args,
+                method_params=scenario_method_params,
+                seed=seed,
             )
-            results.append(scenario_out)
+        )
 
     return results

@@ -1,0 +1,61 @@
+#!/bin/bash
+
+#SBATCH --job-name=sim_shard
+#SBATCH --output=/dev/null
+#SBATCH --error=/dev/null
+#SBATCH --array=0-2
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=32
+#SBATCH --exclusive
+#SBATCH --mem=10G
+#SBATCH --time=8:00:00
+
+#SBATCH --account=stats_dept1
+#SBATCH --partition=standard
+
+#SBATCH --mail-type=BEGIN,END,FAIL
+#SBATCH --mail-user=lrcosta@umich.edu
+
+set -euo pipefail
+
+CONFIG_FILE=${1:-}
+if [ -z "$CONFIG_FILE" ]; then
+    echo "Error: No configuration file provided."
+    echo "Usage: sbatch run_sim_shard.sbat config_xxxx.yaml"
+    exit 1
+fi
+
+CONFIG_NAME=$(basename "$CONFIG_FILE")
+CONFIG_NAME="${CONFIG_NAME%.*}"
+CONFIG_ID="${CONFIG_NAME#config_}"
+ARRAY_JOB_ID=${SLURM_ARRAY_JOB_ID:-$SLURM_JOB_ID}
+SHARD_INDEX=${SLURM_ARRAY_TASK_ID:-0}
+NUM_SHARDS=${SLURM_ARRAY_TASK_COUNT:-1}
+
+mkdir -p results logs
+
+exec >"logs/sim_${CONFIG_ID}_${ARRAY_JOB_ID}_shard-${SHARD_INDEX}.out" \
+     2>"logs/sim_${CONFIG_ID}_${ARRAY_JOB_ID}_shard-${SHARD_INDEX}.err"
+
+echo "Array job ID: $ARRAY_JOB_ID"
+echo "Shard: $SHARD_INDEX of $NUM_SHARDS"
+echo "Node: ${SLURMD_NODENAME:-unknown}"
+echo "CPUs: $SLURM_CPUS_PER_TASK"
+echo "Config: $CONFIG_FILE"
+echo "Start time: $(date)"
+
+module load python
+source .venv/bin/activate
+
+export OMP_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+
+python -m src.run_sim_script_shard \
+    --config "$CONFIG_FILE" \
+    --shard-index "$SHARD_INDEX" \
+    --num-shards "$NUM_SHARDS" \
+    --n-jobs "$SLURM_CPUS_PER_TASK"
+
+echo "End time: $(date)"
