@@ -1,11 +1,7 @@
-"""
-run_simulation_script.py  —  Main copula study
-Uses: config.yaml
-"""
+"""Run configured simulation studies, including multiple-network linear models."""
 
 from src.load_config import (
     load_config,
-    build_factorial_design,
     flatten_args_columns,
     build_factorial_design_multi,
 )
@@ -16,9 +12,11 @@ import pandas as pd
 from datetime import datetime
 import argparse
 
-if __name__ == "__main__":
+
+def main(argv=None):
+    """Run the configured factorial design and return the saved CSV path."""
     parser = argparse.ArgumentParser(
-        description="Run the main simulation script for the copula study."
+        description="Run one or more YAML-configured simulation studies."
     )
     parser.add_argument(
         "--config",
@@ -27,7 +25,7 @@ if __name__ == "__main__":
         default=["config.yaml"],
         help="One or more YAML config files (one per experiment type).",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     cfgs = [load_config(p) for p in args.config]
     factorial = build_factorial_design_multi(cfgs)
@@ -42,7 +40,10 @@ if __name__ == "__main__":
         metrics=cfgs[0]["metrics"],
         factorial_design=factorial,
         rng=cfgs[0]["rng"],
-        parallel=True,
+        parallel=sim.get("parallel", True),
+        n_jobs=None if sim.get("n_jobs") == -1 else sim.get("n_jobs"),
+        batch_size=sim.get("batch_size", 32),
+        blas_threads=sim.get("blas_threads", 1),
     )
 
     out = pd.DataFrame(out)
@@ -75,3 +76,8 @@ if __name__ == "__main__":
     flatten_args_columns(out)
     out.to_csv(file_name, index=False)
     print(f"Saved {len(out)} rows → {file_name}")
+    return file_name
+
+
+if __name__ == "__main__":
+    main()

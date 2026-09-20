@@ -1,0 +1,64 @@
+# Multiple-network latent linear-model experiment.
+# Every list-valued field below is crossed into the factorial design.
+
+experiment_type: linear_model
+
+simulation:
+  nsim: 50
+  seed: 2
+
+  # User-controlled network and latent dimensions.
+  n: [200]
+  p: [5]
+  d_x: [5]
+  d_y: [5]
+
+  # snr=0 uses B=0 (the null); positive SNRs sample and rescale B.
+  snr: [0, 0.1, 0.25, 0.5, 1]
+  alpha: [0.05]
+  edge_var: [1]
+
+  # Parallelize independent simulation scenarios. Each worker uses one BLAS thread.
+  parallel: true
+  n_jobs: -1
+  batch_size: 32
+  blas_threads: 1
+
+methods:
+  npermutations: [200]
+  use_true_latent: [false]
+  list:
+    - name: RVTest
+      kwargs:
+        approximation: permutation
+        permutation_type: latent
+        n_jobs: 1
+
+    - name: CanonicalCorrelationTest
+      kwargs:
+        permutation_type: latent
+        n_jobs: 1
+
+    - name: DistanceCorrelationTest
+      kwargs:
+        test_method: mgc
+        permutation_type: latent
+        n_jobs: 1
+
+setups:
+  - dgp: GaussianNetwork
+    solver: ASE
+
+  - dgp: BernoulliNetwork
+    solver: pgd_fit_wrapper
+    dgp_kwargs:
+      rdpg: false
+    solver_kwargs:
+      backend: numpy
+
+metrics:
+  compute_all: true
+
+output:
+  results_dir: results
+  file_prefix: linear_model_results

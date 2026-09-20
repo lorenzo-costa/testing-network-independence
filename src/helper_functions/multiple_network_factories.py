@@ -3,15 +3,31 @@
 from src.dgp import GaussianNetwork
 
 
-def make_network(network_class, *, n, p, d_x, d_y, B, rng, edge_var=1, snr=None, **_):
-    """Adapt runner arguments for the example's B=0 and B=None scenarios.
+def make_network(
+    network_class,
+    *,
+    n,
+    p,
+    d_x,
+    d_y,
+    B,
+    rng,
+    edge_var=1,
+    snr=None,
+    rdpg=False,
+    network_kwargs=None,
+    **_,
+):
+    """Adapt runner arguments for multiple-network linear-model scenarios.
 
     Keep this factory in a module, rather than defining it in a notebook:
     multiprocessing workers must be able to import it when unpickling tasks.
     """
-    options = (
-        {"edge_var": edge_var} if network_class is GaussianNetwork else {"rdpg": False}
-    )
+    options = dict(network_kwargs or {})
+    if network_class is GaussianNetwork:
+        options.setdefault("edge_var", edge_var)
+    else:
+        options.setdefault("rdpg", rdpg)
     network = network_class(
         n=n, p=p, d_x=d_x, d_y=d_y, B=B, snr=snr, rng=rng, **options
     )

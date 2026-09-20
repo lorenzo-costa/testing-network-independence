@@ -3,7 +3,8 @@ load_config.py
 --------------
 Universal config loader for all simulation experiments.
 
-Supports six experiment types, auto-detected from YAML structure:
+Supports multiple experiment types, auto-detected from YAML structure:
+  - "linear_model"  -> p + 1 networks with Y = X B^T + epsilon
   - "standard"       -> main study + observed CVM sweep (same structure, different values)
   - "lee2019"        -> latent functional-relationship study (Lee et al. 2019)
   - "diff_marginals" -> asymmetric per-network marginal distributions
@@ -28,9 +29,15 @@ from src.dgp import GaussianNetwork, BernoulliNetwork
 # -- Solvers ------------------------------------------------------------------
 from src.solvers.weighted_network import ASE
 from src.solvers.MaMa_uuuuu import pgd_fit_wrapper
+from src.helper_functions.multiple_network_factories import make_network
 
 # -- Test methods -------------------------------------------------------------
-from src.methods import *
+from src.methods import (
+    CanonicalCorrelationTest,
+    DistanceCorrelationTest,
+    MRQAP,
+    RVTest,
+)
 
 # -- Metrics ------------------------------------------------------------------
 from src.metrics import ComputeAll
@@ -52,8 +59,11 @@ SOLVER_REGISTRY = {
 
 METHOD_REGISTRY = {
     "RVtest": RVTest,
+    "RVTest": RVTest,
     "DiffusionCorrelation": DistanceCorrelationTest,
+    "DistanceCorrelationTest": DistanceCorrelationTest,
     "CanonicalCorrelation": CanonicalCorrelationTest,
+    "CanonicalCorrelationTest": CanonicalCorrelationTest,
     "MRQAP": MRQAP,
 }
 
@@ -140,15 +150,38 @@ def _resolve_copula_setup(entry: dict):
     if entry.get("post_nonlinear_noise") is not None:
         dgp_kwargs.pop("copula_params")
     if entry.get("conditional_copula") is not None:
-        dgp_kwargs.update(
-            {key: entry[key] for key in conditional_keys if key in entry}
-        )
+        dgp_kwargs.update({key: entry[key] for key in conditional_keys if key in entry})
     if entry.get("post_nonlinear_noise") is not None:
         dgp_kwargs.update(
             {key: entry[key] for key in post_nonlinear_keys if key in entry}
         )
 
     return (partial(dgp_cls, **dgp_kwargs), solver)
+
+
+def _resolve_linear_model_setup(entry: dict) -> tuple:
+    """Resolve a multiple-network linear-model DGP and its embedding solver."""
+    if not isinstance(entry, dict):
+        raise TypeError("Each linear-model setup must be a mapping")
+    try:
+        dgp_cls = DGP_REGISTRY[entry["dgp"]]
+        solver = SOLVER_REGISTRY[entry["solver"]]
+    except KeyError as error:
+        raise ValueError(
+            "Each linear-model setup must name a registered 'dgp' and 'solver'"
+        ) from error
+
+    dgp_kwargs = entry.get("dgp_kwargs") or {}
+    solver_kwargs = entry.get("solver_kwargs") or {}
+    if not isinstance(dgp_kwargs, dict):
+        raise TypeError("linear-model dgp_kwargs must be a mapping")
+    if not isinstance(solver_kwargs, dict):
+        raise TypeError("linear-model solver_kwargs must be a mapping")
+
+    dgp_factory = partial(make_network, dgp_cls, network_kwargs=dgp_kwargs)
+    if solver_kwargs:
+        solver = partial(solver, **solver_kwargs)
+    return dgp_factory, solver
 
 
 def _resolve_lee2019_setups(setups_cfg: dict) -> list:
@@ -281,12 +314,20 @@ def _resolve_methods_block(methods_cfg: dict) -> dict:
     """Parse the YAML methods block into a normalised dict for product sweeps."""
     return {
         "list": [_resolve_method(m) for m in methods_cfg["list"]],
-        "npermutations": methods_cfg.get("npermutations", [200]),
-        "df": methods_cfg.get("df", [3]),
-        "approximation": methods_cfg.get(
-            "approximation"
-        ),  # None when absent (e.g. multiness)
-        "use_true_latent": methods_cfg.get("use_true_latent"),  # None when absent
+        "npermutations": _as_sweep(
+            methods_cfg.get("npermutations", 200), "methods.npermutations"
+        ),
+        "df": _as_sweep(methods_cfg.get("df", 3), "methods.df"),
+        "approximation": (
+            None
+            if methods_cfg.get("approximation") is None
+            else _as_sweep(methods_cfg["approximation"], "methods.approximation")
+        ),
+        "use_true_latent": (
+            None
+            if methods_cfg.get("use_true_latent") is None
+            else _as_sweep(methods_cfg["use_true_latent"], "methods.use_true_latent")
+        ),
     }
 
 
@@ -297,20 +338,28 @@ def _resolve_noise_options(simulation_cfg: dict) -> dict:
     also be supplied as lists to sweep several values; scalar values are
     normalised to one-element lists for the factorial design.
     """
+
     def _as_list(value):
         return value if isinstance(value, list) else [value]
 
     resolved = {}
     if "noise_scale" in simulation_cfg:
         scales = _as_list(simulation_cfg["noise_scale"])
-        if any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in scales):
-            raise TypeError("simulation.noise_scale must be a number or a list of numbers")
+        if any(
+            isinstance(value, bool) or not isinstance(value, (int, float))
+            for value in scales
+        ):
+            raise TypeError(
+                "simulation.noise_scale must be a number or a list of numbers"
+            )
         resolved["noise_scale"] = scales
 
     if "noise_type" in simulation_cfg:
         types = _as_list(simulation_cfg["noise_type"])
         if any(not isinstance(value, str) for value in types):
-            raise TypeError("simulation.noise_type must be a string or a list of strings")
+            raise TypeError(
+                "simulation.noise_type must be a string or a list of strings"
+            )
         resolved["noise_type"] = types
 
     return resolved
@@ -341,9 +390,51 @@ def _resolve_functionals_block(functionals_cfg):
         kwargs = entry.get("kwargs") or {}
         if not isinstance(kwargs, dict):
             raise TypeError("functional kwargs must be a mapping")
-        resolved.append(
-            {"functional_form": entry["name"], "function_params": kwargs}
+        resolved.append({"functional_form": entry["name"], "function_params": kwargs})
+    return resolved
+
+
+def _resolve_linear_model_simulation(simulation_cfg: dict) -> dict:
+    """Validate and normalize the multiple-network linear-model sweep."""
+    if not isinstance(simulation_cfg, dict):
+        raise TypeError("simulation must be a mapping")
+
+    required = ("nsim", "seed", "n", "p", "d_x", "d_y", "snr")
+    missing = [name for name in required if name not in simulation_cfg]
+    if missing:
+        raise ValueError(
+            "linear_model simulation is missing required fields: " + ", ".join(missing)
         )
+
+    resolved = dict(simulation_cfg)
+    for name in ("n", "p", "d_x", "d_y", "snr", "alpha", "edge_var"):
+        default = 0.05 if name == "alpha" else 1
+        resolved[name] = _as_sweep(
+            simulation_cfg.get(name, default), f"simulation.{name}"
+        )
+
+    for name in ("nsim", "seed"):
+        value = resolved[name]
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise TypeError(f"simulation.{name} must be an integer")
+    if resolved["nsim"] < 1:
+        raise ValueError("simulation.nsim must be positive")
+
+    for name in ("n", "p", "d_x", "d_y"):
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 1
+            for value in resolved[name]
+        ):
+            raise ValueError(f"simulation.{name} must contain positive integer values")
+    if any(
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not np.isfinite(value)
+        or value < 0
+        for value in resolved["snr"]
+    ):
+        raise ValueError("simulation.snr must contain nonnegative finite values")
+
     return resolved
 
 
@@ -364,6 +455,14 @@ def _detect_experiment_type(raw: dict) -> str:
       5. "conditional_copula"   -- a setup selects that sampler
       6. Remaining legacy experiment types
     """
+    declared_type = raw.get("experiment_type")
+    if declared_type is not None:
+        if declared_type != "linear_model":
+            raise ValueError(
+                "Explicit experiment_type currently supports only 'linear_model'."
+            )
+        return declared_type
+
     if "sbm" in raw:
         return "sbm"
 
@@ -413,11 +512,12 @@ def load_config(path: str = "config.yaml") -> dict:
     Returned keys
     -------------
     experiment_type : str
-        One of "standard", "lee2019", "diff_marginals", "sbm", "multiness",
-        "functionals", or "asymptotic".
+        One of "linear_model", "standard", "lee2019", "diff_marginals",
+        "sbm", "multiness", "functionals", or "asymptotic".
     simulation : dict
-        Raw simulation block: nsim, n, k, rho, alpha, edge_var, marginals, seed.
-        multiness also carries: dim_common, dim_individual, shared_latent_type.
+        Normalised simulation block. Linear-model experiments carry nsim, seed,
+        n, p, d_x, d_y, snr, alpha, and edge_var; other experiments use their
+        corresponding legacy fields.
     rng : np.random.Generator
         Seeded RNG ready for use.
     methods : dict
@@ -443,6 +543,8 @@ def load_config(path: str = "config.yaml") -> dict:
 
     exp_type = _detect_experiment_type(raw)
     sim_raw = raw["simulation"]
+    if exp_type == "linear_model":
+        sim_raw = _resolve_linear_model_simulation(sim_raw)
     # Keep the raw YAML shape, but normalise optional functional sweeps so
     # callers receive a consistent descriptor format.
     if "functionals" in sim_raw:
@@ -455,7 +557,9 @@ def load_config(path: str = "config.yaml") -> dict:
     rng = np.random.default_rng(sim_raw["seed"])
 
     # -- Resolve setups -------------------------------------------------------
-    if exp_type == "lee2019":
+    if exp_type == "linear_model":
+        setups = [_resolve_linear_model_setup(entry) for entry in raw["setups"]]
+    elif exp_type == "lee2019":
         setups = _resolve_lee2019_setups(raw["setups"])
     elif exp_type == "sbm":
         setups = _resolve_sbm_setups(raw["setups"])
@@ -543,11 +647,7 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             if marginals is None:
                 # Functional-dependence configs do not require a marginal sweep.
                 # Preserve a stable row schema by carrying an explicit None.
-                if (
-                    exp == "functionals"
-                    and marginals_y is None
-                    and marginals_z is None
-                ):
+                if exp == "functionals" and marginals_y is None and marginals_z is None:
                     marginals = [None]
                 elif marginals_y is None:
                     if marginals_z is None:
@@ -562,9 +662,7 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
 
                     marginals = [
                         {"y": marginal_y, "z": marginal_z}
-                        for marginal_y, marginal_z in iproduct(
-                            marginals_y, marginals_z
-                        )
+                        for marginal_y, marginal_z in iproduct(marginals_y, marginals_z)
                     ]
 
             names.append("marginals")
@@ -600,6 +698,42 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             if functional is not None:
                 row["functional_form"] = functional["functional_form"]
                 row["function_params"] = functional["function_params"]
+        return rows
+
+    # -- Multiple-network latent linear model --------------------------------
+    if exp == "linear_model":
+        names = [
+            "setup",
+            "method",
+            "n",
+            "p",
+            "d_x",
+            "d_y",
+            "snr",
+            "alpha",
+            "edge_var",
+            "npermutations",
+        ]
+        vals = [
+            sets,
+            mth["list"],
+            sim["n"],
+            sim["p"],
+            sim["d_x"],
+            sim["d_y"],
+            sim["snr"],
+            sim["alpha"],
+            sim["edge_var"],
+            mth["npermutations"],
+        ]
+        if mth["use_true_latent"] is not None:
+            names.append("use_true_latent")
+            vals.append(mth["use_true_latent"])
+
+        rows = [dict(zip(names, values)) for values in iproduct(*vals)]
+        for row in rows:
+            row["B"] = 0 if row["snr"] == 0 else None
+            row["hypothesis"] = "H0" if row["snr"] == 0 else "H1"
         return rows
 
     # -- Multiness ------------------------------------------------------------
@@ -831,8 +965,13 @@ def flatten_args_columns(df, extra_cols: dict = None):
     -------
     df : pd.DataFrame  (modified in-place; also returned for chaining)
     """
-    df["n"] = df["args"].apply(lambda x: x["n"])
-    df["k"] = df["args"].apply(lambda x: x["k"])
+    df["n"] = df["args"].apply(lambda x: x.get("n", "NA"))
+    df["k"] = df["args"].apply(lambda x: x.get("k", "NA"))
+    df["p"] = df["args"].apply(lambda x: x.get("p", "NA"))
+    df["d_x"] = df["args"].apply(lambda x: x.get("d_x", "NA"))
+    df["d_y"] = df["args"].apply(lambda x: x.get("d_y", "NA"))
+    df["snr"] = df["args"].apply(lambda x: x.get("snr", "NA"))
+    df["hypothesis"] = df["args"].apply(lambda x: x.get("hypothesis", "NA"))
     df["edge_var"] = df["args"].apply(lambda x: x.get("edge_var", "NA"))
     df["approximation"] = df["args"].apply(lambda x: x.get("approximation", "NA"))
     df["dgp"] = df["args"].apply(lambda x: x.get("dgp_name", "NA"))

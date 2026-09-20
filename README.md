@@ -216,6 +216,18 @@ hypothesis. Pass another sequence via `snr_values` to customize the sweep.
 Restart the notebook kernel before importing updated code. For the sampler and
 DGP constructors, `snr=None` still disables calibration.
 
+The same experiment can be run from the YAML-driven simulation runner:
+
+```bash
+python -m src.run_simulation_script --config linear_model_config.yaml
+```
+
+Edit the `n`, `p`, `d_x`, `d_y`, and `snr` lists in
+`linear_model_config.yaml` to define the factorial sweep. The supplied config
+runs Gaussian and logistic-Bernoulli networks with RV, CCA, and MGC. It also
+configures simulation-level multiprocessing, one BLAS thread per worker, and
+latent permutations within each method.
+
 ### Solvers (`src/solvers/`)
 
 | Solver | File | Description |
