@@ -234,6 +234,20 @@ executes a disjoint strided third of it. Each shard writes a separate CSV whose
 name contains the Slurm array job ID and zero-based shard index; concatenate
 those three CSV files to obtain the complete result table.
 
+After all shards finish, add their filenames to `RESULT_FILES` in
+`results/visualise_linear_model.py`, or pass them directly:
+
+```bash
+python results/visualise_linear_model.py --files \
+  <shard-000.csv> <shard-001.csv> <shard-002.csv>
+```
+
+The processor verifies that the files form one complete, non-duplicated shard
+set before combining them. The visualization writes separate Gaussian and
+Bernoulli power grids, plus one type-I-error figure per network with the values
+of `p` arranged as a single row of facets, under
+`results/linear_model_figures`.
+
 Edit the `n`, `p`, `d_x`, `d_y`, and `snr` lists in
 `linear_model_config.yaml` to define the factorial sweep. The supplied config
 runs `n` in `(50, 100, 200)`, `p` in `(5, 10, 25)`, and SNR in

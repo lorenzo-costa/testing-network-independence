@@ -1,15 +1,18 @@
 """Reusable processing utilities for simulation result dataframes.
 
-The public entry point is :func:`process_results`.  Processing is split into
-small steps so that fields or transformations can be added without changing
-the rest of the pipeline.
+The public entry points are :func:`process_results` for an in-memory dataframe
+and :func:`process_shard_results` for a complete set of Slurm shard CSVs.
+Processing is split into small steps so fields or transformations can be added
+without changing the rest of the pipeline.
 """
 
 from __future__ import annotations
 
 import ast
+from os import PathLike
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -18,6 +21,9 @@ import pandas as pd
 
 NA_VALUE = "NA"
 _NOT_FOUND = object()
+_SHARD_FILENAME = re.compile(
+    r"^(?P<run>.+)_shard-(?P<index>\d+)-of-(?P<count>\d+)\.csv$"
+)
 
 
 METHOD_LABELS = {
@@ -165,12 +171,9 @@ def add_covariance_summary(
     with ``"NA"``.
     """
     result = df.copy()
-    classification_column = (
-        classification_column or f"{covariance_column}_type"
-    )
+    classification_column = classification_column or f"{covariance_column}_type"
     condition_number_column = (
-        condition_number_column
-        or f"{covariance_column}_condition_number"
+        condition_number_column or f"{covariance_column}_condition_number"
     )
 
     if covariance_column not in result:
@@ -181,14 +184,12 @@ def add_covariance_summary(
     available = ~result[covariance_column].map(_is_missing_scalar)
     result[classification_column] = NA_VALUE
     result[condition_number_column] = NA_VALUE
-    result.loc[available, classification_column] = (
-        result.loc[available, covariance_column].map(classify_covariance)
-    )
-    result.loc[available, condition_number_column] = (
-        result.loc[available, covariance_column].map(
-            covariance_condition_number
-        )
-    )
+    result.loc[available, classification_column] = result.loc[
+        available, covariance_column
+    ].map(classify_covariance)
+    result.loc[available, condition_number_column] = result.loc[
+        available, covariance_column
+    ].map(covariance_condition_number)
     return result
 
 
@@ -262,9 +263,7 @@ def parse_config_string(value: Any) -> dict[str, Any]:
     if not isinstance(value, str) or _is_missing_scalar(value):
         return {}
 
-    pairs: dict[str, Any] = dict(
-        re.findall(r"'([^']+)':\s*([^,}]+)", value)
-    )
+    pairs: dict[str, Any] = dict(re.findall(r"'([^']+)':\s*([^,}]+)", value))
     method_match = re.search(
         r"'method':\s*(.*?)(?=,\s*'[^']+':|$|})",
         value,
@@ -291,6 +290,8 @@ def parse_config_string(value: Any) -> dict[str, Any]:
             "approximation": "approximation",
             "permutation_type": "permutation_type",
             "adaptive_m": "adaptive_m",
+            "test_method": "test_method",
+            "method_n_jobs": "n_jobs",
         }
         for output_name, argument_name in method_arguments.items():
             extracted = extract_argument(method_value, argument_name)
@@ -309,6 +310,8 @@ def parse_config_string(value: Any) -> dict[str, Any]:
         "stratum_covariance": "stratum_covariance",
         "copula_model": "copula_model",
         "latent_sim": "latent_sim",
+        "rdpg": "rdpg",
+        "solver_backend": "backend",
     }
     for output_name, argument_name in optional_arguments.items():
         extracted = extract_argument(value, argument_name)
@@ -324,7 +327,9 @@ def parse_config_string(value: Any) -> dict[str, Any]:
         pairs["column_covariance"] = column_covariance_z
         pairs["column_covariance_source"] = "column_covariance_z"
 
-    solver_match = re.search(r"'solver':\s*<function ([^ ]+)", value)
+    solver_match = re.search(
+        r"'solver':\s*(?:functools\.partial\()?<function ([^ ]+)", value
+    )
     if solver_match:
         pairs["solver"] = solver_match.group(1)
 
@@ -404,6 +409,13 @@ def _to_float_or_na(value: Any) -> float | str:
         return NA_VALUE
 
 
+def _parse_argument_value(value: Any) -> Any:
+    """Parse a scalar/list argument while retaining the standard NA marker."""
+    if _is_missing_scalar(value):
+        return NA_VALUE
+    return parse_value(value)
+
+
 def _mapping_value(
     value: Any,
     key: str,
@@ -462,11 +474,25 @@ def _add_config_columns(results: pd.DataFrame) -> pd.DataFrame:
     """Expand selected configuration fields from the parsed ``args`` column."""
     result = results.copy()
     field_specs: dict[str, tuple[str, Callable[[Any], Any] | None]] = {
-        "edge_var": ("edge_var", None),
+        "edge_var": ("edge_var", _to_float_or_na),
         "n": ("n", _to_int_or_na),
         "k": ("k", _to_int_or_na),
+        "p": ("p", _to_int_or_na),
+        "d_x": ("d_x", _to_int_or_na),
+        "d_y": ("d_y", _to_int_or_na),
+        "snr": ("snr", _to_float_or_na),
+        "hypothesis": ("hypothesis", _clean_string),
+        "alpha": ("alpha", _to_float_or_na),
+        "npermutations": ("npermutations", _to_int_or_na),
+        "use_true_latent": ("use_true_latent", _parse_argument_value),
+        "B": ("B", _parse_argument_value),
         "method": ("method", _clean_string),
         "solver": ("solver", _clean_string),
+        "permutation_type": ("permutation_type", _clean_string),
+        "test_method": ("test_method", _clean_string),
+        "method_n_jobs": ("method_n_jobs", _to_int_or_na),
+        "rdpg": ("rdpg", _parse_argument_value),
+        "solver_backend": ("solver_backend", _clean_string),
         "make_sparse": ("make_sparse", None),
         "use_true_x": ("use_true_latent_x", None),
         "use_true_z": ("use_true_latent_z", None),
@@ -512,19 +538,38 @@ def _add_config_columns(results: pd.DataFrame) -> pd.DataFrame:
 def _add_result_columns(results: pd.DataFrame) -> pd.DataFrame:
     """Expand metrics from the parsed ``ComputeAll`` column."""
     result = results.copy()
-    metric_fields = {
+    metric_keys = sorted(
+        {
+            key
+            for value in result["ComputeAll"]
+            if isinstance(value, Mapping)
+            for key in value
+        }
+    )
+    for key in metric_keys:
+        result[key] = result["ComputeAll"].map(
+            lambda value, key=key: _mapping_value(value, key)
+        )
+
+    # Stable columns retained for old result sets and downstream plotting.
+    stable_fields = {
         "RelativeFrobeniusNorm_x": "RelativeFrobeniusNorm_x",
         "RelativeFrobeniusNorm_z": "RelativeFrobeniusNorm_z",
         "ProcrustesDistance_x": "ProcrustesDistance_x",
         "ProcrustesDistance_z": "ProcrustesDistance_z",
         "FalseRejection": "FalseRejection",
-        "Power": "TrueRejection",
+        "FalseAcceptance": "FalseAcceptance",
+        "TrueRejection": "TrueRejection",
+        "TrueAcceptance": "TrueAcceptance",
         "Rejection": "Rejection",
     }
-    for output_column, key in metric_fields.items():
+    for output_column, key in stable_fields.items():
+        if output_column in result:
+            continue
         result[output_column] = result["ComputeAll"].map(
             lambda value, key=key: _mapping_value(value, key)
         )
+    result["Power"] = result["TrueRejection"]
     return result
 
 
@@ -535,9 +580,7 @@ def _add_group_averages(results: pd.DataFrame) -> pd.DataFrame:
         "avg_rel_frob_z": "RelativeFrobeniusNorm_z",
         "avg_proc_dist_z": "ProcrustesDistance_z",
     }
-    missing_group_columns = [
-        column for column in group_columns if column not in result
-    ]
+    missing_group_columns = [column for column in group_columns if column not in result]
     if missing_group_columns:
         for column in missing_group_columns:
             result[column] = NA_VALUE
@@ -571,11 +614,17 @@ def _add_permutation_type(
         result["RelativeFrobeniusNorm_z"],
         errors="coerce",
     )
-    result["permutation_type"] = np.where(
+    inferred = np.where(
         numeric_values.isna(),
         "observed",
         "latent",
     )
+    if "permutation_type" not in result:
+        result["permutation_type"] = inferred
+        return result
+
+    missing = result["permutation_type"].map(_is_missing_scalar)
+    result.loc[missing, "permutation_type"] = inferred[missing]
     return result
 
 
@@ -583,9 +632,7 @@ def _normalize_labels(results: pd.DataFrame) -> pd.DataFrame:
     result = results.copy()
     for column in ("marginal_y", "marginal_z"):
         result[column] = result[column].replace(MARGINAL_LABELS)
-    result["copula"] = result["copula"].replace(
-        {"mixture_uniform": "mixture"}
-    )
+    result["copula"] = result["copula"].replace({"mixture_uniform": "mixture"})
     return result
 
 
@@ -594,9 +641,8 @@ def _append_method_variant(
     variant_column: str,
 ) -> pd.DataFrame:
     result = results.copy()
-    available = (
-        ~result[variant_column].map(_is_missing_scalar)
-        & ~result["method"].map(_is_missing_scalar)
+    available = ~result[variant_column].map(_is_missing_scalar) & ~result["method"].map(
+        _is_missing_scalar
     )
     if available.any():
         variants = result.loc[available, variant_column].map(_clean_string)
@@ -623,8 +669,85 @@ def _fill_missing_values(results: pd.DataFrame) -> pd.DataFrame:
     for column in result.columns:
         missing = result[column].map(_is_missing_scalar)
         if missing.any():
+            if result[column].dtype != object:
+                result[column] = result[column].astype(object)
             result.loc[missing, column] = NA_VALUE
     return result
+
+
+def combine_shard_outputs(
+    results_dir: str | PathLike[str],
+    filenames: Sequence[str | PathLike[str]],
+) -> pd.DataFrame:
+    """Read, validate, and concatenate every CSV shard from one Slurm run.
+
+    Filenames must use the shard runner's ``_shard-III-of-NNN.csv`` suffix.
+    The function rejects mixed runs, duplicate shard indices, and incomplete
+    shard sets so power and type-I-error estimates cannot silently use a
+    partial simulation batch.
+    """
+    if not filenames:
+        raise ValueError("At least one shard filename must be provided.")
+
+    root = Path(results_dir).expanduser().resolve()
+    paths = [Path(filename) for filename in filenames]
+    paths = [path if path.is_absolute() else root / path for path in paths]
+    missing = [path for path in paths if not path.is_file()]
+    if missing:
+        listed = "\n".join(f"  - {path}" for path in missing)
+        raise FileNotFoundError(f"Missing shard result files:\n{listed}")
+
+    metadata = []
+    for path in paths:
+        match = _SHARD_FILENAME.fullmatch(path.name)
+        if match is None:
+            raise ValueError(
+                f"Shard filename does not match '_shard-III-of-NNN.csv': {path.name}"
+            )
+        metadata.append(
+            (
+                match.group("run"),
+                int(match.group("index")),
+                int(match.group("count")),
+                path,
+            )
+        )
+
+    run_ids = {run_id for run_id, _, _, _ in metadata}
+    shard_counts = {count for _, _, count, _ in metadata}
+    if len(run_ids) != 1 or len(shard_counts) != 1:
+        raise ValueError("Shard files must belong to the same simulation run.")
+
+    shard_count = shard_counts.pop()
+    indices = [index for _, index, _, _ in metadata]
+    if len(indices) != len(set(indices)):
+        raise ValueError("Shard filenames contain duplicate shard indices.")
+    expected = set(range(shard_count))
+    actual = set(indices)
+    if actual != expected:
+        missing_indices = sorted(expected - actual)
+        extra_indices = sorted(actual - expected)
+        raise ValueError(
+            "Incomplete shard set: "
+            f"missing={missing_indices}, unexpected={extra_indices}."
+        )
+
+    frames = []
+    for _, shard_index, _, path in sorted(metadata, key=lambda item: item[1]):
+        frame = pd.read_csv(path)
+        frame["source_file"] = path.name
+        frame["shard_index"] = shard_index
+        frame["num_shards"] = shard_count
+        frames.append(frame)
+    return pd.concat(frames, ignore_index=True)
+
+
+def process_shard_results(
+    results_dir: str | PathLike[str],
+    filenames: Sequence[str | PathLike[str]],
+) -> pd.DataFrame:
+    """Combine a complete shard set and run the standard processing pipeline."""
+    return process_results(combine_shard_outputs(results_dir, filenames))
 
 
 def process_results(results_concat: pd.DataFrame) -> pd.DataFrame:
@@ -656,6 +779,7 @@ __all__ = [
     "NA_VALUE",
     "add_covariance_summary",
     "classify_covariance",
+    "combine_shard_outputs",
     "covariance_condition_number",
     "extract_argument",
     "parse_config_string",
@@ -663,4 +787,5 @@ __all__ = [
     "parse_result_string",
     "parse_value",
     "process_results",
+    "process_shard_results",
 ]
