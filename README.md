@@ -206,14 +206,15 @@ linear model, not Gaussian edge noise or Bernoulli edge probabilities.
 data = GaussianNetwork(n=200, p=5, d_x=5, d_y=5, B=None, snr=2.0).generate()
 ```
 
-The notebook-safe example defaults to
-`run_experiment(snr_values=(0, 0.5, 1, 2))`. It uses B=0 for SNR zero and newly
-sampled, calibrated B for each positive setting. With two network models and
-100 repetitions per setting, this gives 800 simulations, without duplicating
-the null cases. The output includes an `snr` column and the printed summary
-groups by network, SNR, and hypothesis. Pass another sequence via `snr_values`
-to customize the sweep. Restart the notebook kernel before importing updated
-code. For the sampler and DGP constructors, `snr=None` still disables calibration.
+The notebook-safe example compares RV, CCA, and MGC at
+`snr_values=(0, 0.1, 0.25, 0.5, 1)`. It uses B=0 for SNR zero and newly sampled,
+calibrated B for each positive setting. With two network models and 50
+repetitions per network/method/SNR combination, this gives 1,500 simulations,
+without duplicating null cases. The output includes `method` and `snr` columns;
+the printed rejection-rate summary groups by network, method, SNR, and
+hypothesis. Pass another sequence via `snr_values` to customize the sweep.
+Restart the notebook kernel before importing updated code. For the sampler and
+DGP constructors, `snr=None` still disables calibration.
 
 ### Solvers (`src/solvers/`)
 

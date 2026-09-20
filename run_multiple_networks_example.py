@@ -1,4 +1,4 @@
-"""Run Gaussian/logistic-Bernoulli simulations across four latent SNR settings."""
+"""Compare RV, CCA, and MGC across network models and latent SNR settings."""
 
 from functools import partial
 from itertools import product
@@ -9,18 +9,29 @@ import pandas as pd
 from src.dgp import BernoulliNetwork, GaussianNetwork
 from src.helper_functions.multiple_network_factories import make_network
 from src.helper_functions.simulation_functions import run_simulation
-from src.methods import RVTest
+from src.methods import (
+    CanonicalCorrelationTest,
+    DistanceCorrelationTest,
+    RVTest,
+)
 from src.metrics import ComputeAll, ReturnMetric
 from src.solvers.MaMa_uuuuu import pgd_fit_wrapper
 from src.solvers.weighted_network import ASE
 
 
 def run_experiment(
-    nsim=50, n=200, npermutations=200, n_jobs=-1, *, snr_values=(0, 0.5, 1, 2)
+    nsim=100,
+    n=200,
+    npermutations=200,
+    n_jobs=-1,
+    *,
+    snr_values=(0, 0.01, 0.05, 0.1),
 ):
-    """Run nsim repetitions per network/SNR pair (800 runs with defaults).
+    """Run repetitions for every network, method, and SNR combination.
 
     SNR zero uses B=0; positive SNR values use newly sampled, calibrated B.
+    With the defaults, 2 networks x 3 methods x 5 SNRs x 50 repetitions
+    produces 1,500 simulation runs.
     """
     snr_values = tuple(snr_values)
     if not snr_values:
@@ -30,13 +41,19 @@ def run_experiment(
         # Explicit NumPy backend avoids starting JAX runtimes in every worker.
         (
             partial(make_network, BernoulliNetwork),
-            partial(pgd_fit_wrapper, backend="numpy"),
+            partial(pgd_fit_wrapper),
         ),
+    ]
+    methods = [
+        (RVTest, "RV"),
+        (CanonicalCorrelationTest, "CCA"),
+        (partial(DistanceCorrelationTest, test_method="mgc"), "MGC"),
     ]
     factorial_design = [
         dict(
             setup=pair,
-            method=RVTest,
+            method=method,
+            method_label=method_label,
             n=n,
             p=5,
             d_x=5,
@@ -52,7 +69,7 @@ def run_experiment(
             npermutations=npermutations,
             n_jobs=1,  # Parallelize simulations, not permutations inside workers.
         )
-        for pair, snr in product(setup, snr_values)
+        for pair, (method, method_label), snr in product(setup, methods, snr_values)
     ]
     out = run_simulation(
         nsim=nsim,
@@ -61,12 +78,13 @@ def run_experiment(
         rng=np.random.default_rng(2),
         parallel=True,
         n_jobs=None if n_jobs == -1 else n_jobs,  # The runner uses None for all CPUs.
-        batch_size=32,
+        batch_size=16,
     )
     return pd.DataFrame(
         [
             {
                 "network": row["args"]["dgp_name"],
+                "method": row["args"]["method_label"],
                 "hypothesis": row["args"]["hypothesis"],
                 "snr": row["args"]["snr"],
                 "p-value": row["ReturnMetric"],
@@ -80,4 +98,6 @@ def run_experiment(
 if __name__ == "__main__":  # Required for multiprocessing on macOS/Windows.
     results = run_experiment()
     results.to_csv("multiple_network_results.csv", index=False)
-    print(results.groupby(["network", "snr", "hypothesis"])["Rejection"].mean())
+    print(
+        results.groupby(["network", "method", "snr", "hypothesis"])["Rejection"].mean()
+    )

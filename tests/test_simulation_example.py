@@ -1,6 +1,7 @@
 """The example's worker factory stays importable outside a script entry point."""
 
 from pathlib import Path
+from functools import partial
 import pickle
 import subprocess
 import sys
@@ -11,6 +12,7 @@ import pytest
 import run_multiple_networks_example as example
 from run_multiple_networks_example import make_network
 from src.dgp import GaussianNetwork, BernoulliNetwork
+from src.methods import CanonicalCorrelationTest, DistanceCorrelationTest, RVTest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,7 +39,7 @@ def test_worker_count_uses_runner_convention_without_nested_pools(
     assert all(row["n_jobs"] == 1 for row in captured["factorial_design"])
 
 
-@pytest.mark.parametrize("snr_values", [(0, 0.5, 1, 2), (0, 2)])
+@pytest.mark.parametrize("snr_values", [(0, 0.1, 0.25, 0.5, 1), (0, 1)])
 def test_example_runs_with_spawn_from_nonimportable_notebook_namespace(snr_values):
     # runpy removes this temporary namespace before the pool starts. A factory
     # defined there cannot be unpickled; an imported factory can.
@@ -49,8 +51,9 @@ mp.set_start_method("spawn", force=True)
 namespace = runpy.run_path("run_multiple_networks_example.py", run_name="notebook_cell")
 assert namespace["make_network"].__module__ == "src.helper_functions.multiple_network_factories"
 results = namespace["run_experiment"](nsim=1, n=12, npermutations=2, n_jobs=2, snr_values={snr_values!r})
-assert len(results) == {2 * len(snr_values)}
-assert len(results.groupby(["network", "snr"])) == {2 * len(snr_values)}
+assert len(results) == {6 * len(snr_values)}
+assert len(results.groupby(["network", "method", "snr"])) == {6 * len(snr_values)}
+assert set(results["method"]) == {{"RV", "CCA", "MGC"}}
 assert set(results["snr"]) == set({snr_values!r})
 assert results.loc[results["snr"] == 0, "hypothesis"].eq("H0").all()
 assert results.loc[results["snr"] > 0, "hypothesis"].eq("H1").all()
@@ -69,8 +72,8 @@ print("Notebook-style spawn smoke test passed")
     assert "Notebook-style spawn smoke test passed" in completed.stdout
 
 
-@pytest.mark.parametrize("snr_values", [(0,), (0.5, 2.0), (0, 0.5, 1, 2)])
-def test_example_has_one_case_per_network_and_snr(monkeypatch, snr_values):
+@pytest.mark.parametrize("snr_values", [(0,), (0.1, 1.0), (0, 0.1, 0.25, 0.5, 1)])
+def test_example_has_one_case_per_network_method_and_snr(monkeypatch, snr_values):
     captured = {}
 
     def capture_simulation(**kwargs):
@@ -79,17 +82,29 @@ def test_example_has_one_case_per_network_and_snr(monkeypatch, snr_values):
 
     monkeypatch.setattr(example, "run_simulation", capture_simulation)
     example.run_experiment(nsim=1, snr_values=snr_values)
-    assert len(captured["factorial_design"]) == 2 * len(snr_values)
+    assert len(captured["factorial_design"]) == 6 * len(snr_values)
     counts = {target: 0 for target in snr_values}
+    expected_methods = {
+        "RV": RVTest,
+        "CCA": CanonicalCorrelationTest,
+        "MGC": DistanceCorrelationTest,
+    }
     for row in captured["factorial_design"]:
         assert row["snr"] in snr_values
         assert row["B"] == (0 if row["snr"] == 0 else None)
         assert row["hypothesis"] == ("H0" if row["snr"] == 0 else "H1")
+        method = row["method"]
+        if row["method_label"] == "MGC":
+            assert isinstance(method, partial)
+            assert method.func is DistanceCorrelationTest
+            assert method.keywords == {"test_method": "mgc"}
+        else:
+            assert method is expected_methods[row["method_label"]]
         counts[row["snr"]] += 1
-    assert all(count == 2 for count in counts.values())
+    assert all(count == 6 for count in counts.values())
 
 
-def test_default_sweep_has_800_runs_and_reports_each_snr(monkeypatch):
+def test_default_sweep_has_1500_runs_and_reports_each_method_and_snr(monkeypatch):
     captured = {}
 
     def capture_simulation(**kwargs):
@@ -105,12 +120,13 @@ def test_default_sweep_has_800_runs_and_reports_each_snr(monkeypatch):
 
     monkeypatch.setattr(example, "run_simulation", capture_simulation)
     results = example.run_experiment()
-    assert captured["nsim"] == 100
-    assert captured["nsim"] * len(captured["factorial_design"]) == 800
-    assert len(results.groupby(["network", "snr", "hypothesis"])) == 8
-    for _, rows in results.groupby("network"):
-        assert rows["snr"].tolist() == [0, 0.5, 1, 2]
-        assert rows["hypothesis"].tolist() == ["H0", "H1", "H1", "H1"]
+    assert captured["nsim"] == 50
+    assert captured["nsim"] * len(captured["factorial_design"]) == 1_500
+    assert len(results.groupby(["network", "method", "snr", "hypothesis"])) == 30
+    assert set(results["method"]) == {"RV", "CCA", "MGC"}
+    for _, rows in results.groupby(["network", "method"]):
+        assert rows["snr"].tolist() == [0, 0.1, 0.25, 0.5, 1]
+        assert rows["hypothesis"].tolist() == ["H0", "H1", "H1", "H1", "H1"]
 
 
 def test_empty_snr_sweep_is_rejected_before_starting_workers(monkeypatch):
