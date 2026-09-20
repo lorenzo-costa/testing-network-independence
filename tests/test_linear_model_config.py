@@ -2,6 +2,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from src.dgp import BernoulliNetwork, GaussianNetwork
 from src.helper_functions.simulation_functions import run_scenario
@@ -22,11 +23,12 @@ def test_linear_model_config_builds_requested_factorial_sweep():
 
     assert config["experiment_type"] == "linear_model"
     assert config["simulation"]["n"] == [50, 100, 200]
-    assert config["simulation"]["p"] == [5, 10, 25]
+    assert config["simulation"]["p"] == [5, 10, 25, 50, 100]
     assert config["simulation"]["d_x"] == [5]
     assert config["simulation"]["d_y"] == [5]
     assert config["simulation"]["snr"] == [0, 0.1, 0.25, 0.5, 1]
-    assert len(design) == 2 * 3 * 3 * 3 * 5
+    assert config["methods"]["use_true_latent"] == [False, True]
+    assert len(design) == 2 * 3 * 3 * 5 * 5 * 2
 
     assert {row["setup"][0].args[0] for row in design} == {
         GaussianNetwork,
@@ -71,6 +73,8 @@ def test_every_linear_model_network_and_method_combination_runs():
         assert result["args"]["d_x"] == 5
         assert result["args"]["d_y"] == 5
         assert np.isfinite(result["ComputeAll"]["Rejection"])
+        if row["method"].func is CanonicalCorrelationTest:
+            assert result["args"]["cca_gamma"] == pytest.approx(np.sqrt(12))
 
 
 def test_linear_model_results_flatten_without_legacy_k_or_rho():

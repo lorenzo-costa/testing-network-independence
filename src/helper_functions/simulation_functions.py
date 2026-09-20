@@ -59,6 +59,8 @@ def run_scenario(metrics, args, seed, method_params=None):
     args["method_name"] = method.get_name()
 
     method.fit(data, **(method_params if method_params else {}))
+    if getattr(method, "effective_gamma", None) is not None:
+        args["cca_gamma"] = method.effective_gamma
     results = method.get_estimated()
 
     is_null = dgp.is_null if hasattr(dgp, "is_null") else None

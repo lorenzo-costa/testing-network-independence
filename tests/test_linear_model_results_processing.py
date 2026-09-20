@@ -10,7 +10,7 @@ from results.results_processing import (
 from results.visualise_linear_model import aggregate_rejection_rates
 
 
-def _row(n, p, snr, rejection, method="RVTest"):
+def _row(n, p, snr, rejection, method="RVTest", gamma=None):
     args = {
         "n": n,
         "p": p,
@@ -30,6 +30,8 @@ def _row(n, p, snr, rejection, method="RVTest"):
     }
     if method == "RVTest":
         args["approximation"] = "permutation"
+    if gamma is not None:
+        args["gamma"] = gamma
     return {
         "args": args,
         "ComputeAll": {
@@ -54,7 +56,7 @@ def _write_shards(tmp_path: Path):
     ]
     rows = [
         _row(50, 5, 0, False),
-        _row(100, 5, 0.5, True),
+        _row(100, 5, 0.5, True, method="CanonicalCorrelationTest", gamma=0.7),
         _row(200, 10, 1, True, method="DistanceCorrelationTest"),
     ]
     for name, row in zip(names, rows):
@@ -80,9 +82,10 @@ def test_combine_and_process_linear_model_shards(tmp_path):
     assert processed["permutation_type"].tolist() == ["latent"] * 3
     assert processed["method"].tolist() == [
         "RVTest_permutation",
-        "RVTest_permutation",
+        "CCA",
         "DC",
     ]
+    assert processed["cca_gamma"].tolist() == ["NA", 0.7, "NA"]
     for column in (
         "RelativeFrobeniusNorm_Y",
         "RelativeFrobeniusNorm_X_1",

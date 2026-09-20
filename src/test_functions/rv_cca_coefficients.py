@@ -67,26 +67,86 @@ def rv_coefficient_adjusted(A, B):
 # ---------------------------------------------------------------------------
 # CCA score
 # ---------------------------------------------------------------------------
+def _resolve_cca_gamma(gamma: float | None, n: int) -> float:
+    """Validate the X-covariance ridge and resolve its sample-size default."""
+    if gamma is None:
+        gamma = np.sqrt(n)
+    if (
+        isinstance(gamma, (bool, np.bool_))
+        or not isinstance(gamma, (int, float, np.integer, np.floating))
+        or not np.isfinite(gamma)
+        or gamma < 0
+    ):
+        raise ValueError("gamma must be a nonnegative finite scalar or None.")
+    return float(gamma)
+
+
+def _regularized_cca_x_basis(
+    Xhat: np.ndarray,
+    gamma: float | None = None,
+    rcond: float = 1e-10,
+) -> np.ndarray:
+    """Return the fixed, ridge-whitened left-singular basis for X."""
+    n = Xhat.shape[0]
+    gamma = _resolve_cca_gamma(gamma, n)
+    X = Xhat - Xhat.mean(axis=0, keepdims=True)
+    Ux, sx, _ = np.linalg.svd(X, full_matrices=False)
+    x_rank = sx > rcond * sx[0] if sx[0] > 0 else np.zeros_like(sx, dtype=bool)
+    if not x_rank.any():
+        return np.empty((n, 0), dtype=float)
+
+    Ux = Ux[:, x_rank]
+    sx = sx[x_rank]
+    shrinkage = sx / np.sqrt(sx**2 + n * gamma)
+    return Ux * shrinkage
+
+
+def _first_cca_component_from_x_basis(
+    Yhat: np.ndarray,
+    regularized_x_basis: np.ndarray,
+    rcond: float = 1e-10,
+) -> float:
+    """Compute the first CCA component using a precomputed X-side basis."""
+    Y = Yhat - Yhat.mean(axis=0, keepdims=True)
+    Uy, sy, _ = np.linalg.svd(Y, full_matrices=False)
+    y_rank = sy > rcond * sy[0] if sy[0] > 0 else np.zeros_like(sy, dtype=bool)
+    if not y_rank.any() or regularized_x_basis.shape[1] == 0:
+        return 0.0
+
+    whitened_cross_covariance = Uy[:, y_rank].T @ regularized_x_basis
+    return float(np.linalg.svd(whitened_cross_covariance, compute_uv=False)[0])
+
+
 def first_cca_component(
-    Xhat: np.ndarray, Zhat: np.ndarray, rcond: float = 1e-10
+    Xhat: np.ndarray,
+    Zhat: np.ndarray,
+    rcond: float = 1e-10,
+    gamma: float | None = None,
 ) -> float:
     """
-    First canonical correlation coefficient between Xhat and Zhat.
+    First canonical correlation with ridge regularization on the second input.
 
-    Computes the largest singular value of
+    In the multiple-network test, ``Xhat`` contains the Y-network positions and
+    ``Zhat`` contains the concatenated X-network positions. The statistic is
+    the largest singular value of
 
-        (1/n · X̂ᵀ Mₙ X̂)^{-1/2}  (1/n · X̂ᵀ Mₙ Ẑ)  (1/n · Ẑᵀ Mₙ Ẑ)^{-1/2}
+        C_YY^{-1/2} C_YX (C_XX + gamma I)^{-1/2},
 
-    where Mₙ = Iₙ - (1/n) 11ᵀ is the centering matrix.
+    where every covariance uses the ``1/n`` normalization. An SVD formulation
+    applies the ridge shrinkage without constructing the potentially large
+    X covariance matrix.
 
     Parameters
     ----------
     Xhat: np.ndarray, shape (n, p)
-        latent positions for graph B.
+        Latent positions for the Y network (the first test input).
     Zhat  : np.ndarray, shape (n, q)
-        latent positions for graph A.
+        Concatenated latent positions for the X networks. Its sample covariance
+        receives the ridge term.
 
     rcond : threshold for rank truncation (relative to largest singular value)
+    gamma : nonnegative float, optional
+        Ridge added to the X covariance. Defaults to ``sqrt(n)``.
 
     Returns
     -------
@@ -94,19 +154,13 @@ def first_cca_component(
     """
     n = Xhat.shape[0]
     assert Zhat.shape[0] == n, "Xhat and Zhat must have the same n"
-
-    # ── 1. Center: apply Mₙ ─────────────────────────────────────────────────
-    X = Xhat - Xhat.mean(axis=0, keepdims=True)  # (n, p)
-    Z = Zhat - Zhat.mean(axis=0, keepdims=True)  # (n, q)
-
-    # ── 2. Thin SVD of each centered matrix ─────────────────────────────────
-    Ux, sx, _ = np.linalg.svd(X, full_matrices=False)  # Ux: (n, p)
-    Uz, sz, _ = np.linalg.svd(Z, full_matrices=False)  # Uz: (n, q)
-
-    # ── 3. Drop numerically zero singular directions ─────────────────────────
-    #       (avoids inverting near-zero singular values implicitly)
-    Ux = Ux[:, sx > rcond * sx[0]]
-    Uz = Uz[:, sz > rcond * sz[0]]
-
-    # ── 4. First singular value of the small (rx × rz) matrix Uₓᵀ U𝓏 ────────
-    return float(np.linalg.svd(Ux.T @ Uz, compute_uv=False)[0])
+    regularized_x_basis = _regularized_cca_x_basis(
+        Zhat,
+        gamma=gamma,
+        rcond=rcond,
+    )
+    return _first_cca_component_from_x_basis(
+        Xhat,
+        regularized_x_basis,
+        rcond=rcond,
+    )

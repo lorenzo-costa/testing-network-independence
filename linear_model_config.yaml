@@ -9,7 +9,7 @@ simulation:
 
   # User-controlled network and latent dimensions.
   n: [50, 100, 200]
-  p: [5, 10, 25]
+  p: [5, 10, 25, 50, 100]
   d_x: [5]
   d_y: [5]
 
@@ -26,7 +26,7 @@ simulation:
 
 methods:
   npermutations: [400]
-  use_true_latent: [false]
+  use_true_latent: [false, true]
   list:
     - name: RVTest
       kwargs:

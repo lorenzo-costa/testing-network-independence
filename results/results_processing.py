@@ -292,6 +292,7 @@ def parse_config_string(value: Any) -> dict[str, Any]:
             "adaptive_m": "adaptive_m",
             "test_method": "test_method",
             "method_n_jobs": "n_jobs",
+            "cca_gamma": "gamma",
         }
         for output_name, argument_name in method_arguments.items():
             extracted = extract_argument(method_value, argument_name)
@@ -312,6 +313,7 @@ def parse_config_string(value: Any) -> dict[str, Any]:
         "latent_sim": "latent_sim",
         "rdpg": "rdpg",
         "solver_backend": "backend",
+        "cca_gamma": "gamma",
     }
     for output_name, argument_name in optional_arguments.items():
         extracted = extract_argument(value, argument_name)
@@ -491,6 +493,7 @@ def _add_config_columns(results: pd.DataFrame) -> pd.DataFrame:
         "permutation_type": ("permutation_type", _clean_string),
         "test_method": ("test_method", _clean_string),
         "method_n_jobs": ("method_n_jobs", _to_int_or_na),
+        "cca_gamma": ("cca_gamma", _to_float_or_na),
         "rdpg": ("rdpg", _parse_argument_value),
         "solver_backend": ("solver_backend", _clean_string),
         "make_sparse": ("make_sparse", None),

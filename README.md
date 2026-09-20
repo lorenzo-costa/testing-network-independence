@@ -250,10 +250,11 @@ of `p` arranged as a single row of facets, under
 
 Edit the `n`, `p`, `d_x`, `d_y`, and `snr` lists in
 `linear_model_config.yaml` to define the factorial sweep. The supplied config
-runs `n` in `(50, 100, 200)`, `p` in `(5, 10, 25)`, and SNR in
+runs `n` in `(50, 100, 200)`, `p` in `(5, 10, 25, 50, 100)`, and SNR in
 `(0, 0.1, 0.25, 0.5, 1)` for Gaussian and logistic-Bernoulli networks with RV,
-CCA, and MGC. It also configures simulation-level multiprocessing, one BLAS
-thread per worker, and latent permutations within each method.
+CCA, and MGC, using both true and estimated latent positions. It also configures
+simulation-level multiprocessing, one BLAS thread per worker, and latent
+permutations within each method.
 
 ### Solvers (`src/solvers/`)
 
@@ -308,7 +309,7 @@ Estimation-only methods use the same multiple-network input and output structure
 | `LLKRatioTest` | — | Likelihood-ratio test |
 | `QAP` | — | Quadratic Assignment Procedure |
 | `DiffusionCorrelation` | — | Diffusion-map based correlation |
-| `CanonicalCorrelationTest` | `permutation_type`, `solver` | Permutation test via canonical correlations of estimated latent positions |
+| `CanonicalCorrelationTest` | `permutation_type`, `solver`, `gamma` | Permutation test via canonical correlations; the concatenated X covariance is regularized as sample covariance + `gamma * I`, with `gamma=sqrt(n)` by default |
 | `FitIndependent` | `solver`, `d_y`, `d_x` | Not a test; fits Y and every X network independently, stores individual X blocks, and concatenates them |
 
 Permutation-based methods accept `n_jobs`, `batch_size`, and `verbose`.
