@@ -162,25 +162,58 @@ The script automatically detects the experiment type from the YAML structure (se
 
 ### Data Generating Processes (`dgp.py`)
 
-`src/dgp.py` provides `GaussianNetwork` and `BernoulliNetwork`, both inheriting from `CopulaDGP` and `BaseSBM`. Key constructor arguments:
+`src/dgp.py` provides `GaussianNetwork` and `BernoulliNetwork`. Both use
+`MultipleNetworksSampler` to generate `Y = X_concat @ B.T + epsilon`, then
+generate one Y network and p X networks. Key constructor arguments:
 
 | Argument | Type | Description |
 |----------|------|-------------|
 | `n` | `int` | Number of nodes |
-| `k` | `int` | Latent space dimensionality |
-| `rho` | `float` | Copula correlation parameter (0 = independent) |
-| `marginals` | `str` or `dict` | Marginal distribution(s) (`'gaussian'`, `'uniform -1 1'`, `'cauchy'`, …); pass a dict with `'x'`/`'z'` keys for asymmetric marginals |
-| `copula_model` | `str` | Dependency structure (see table above) |
+| `p` | `int` | Number of X networks |
+| `d_x`, `d_y` | `int` | Latent dimensions of each X network and Y |
+| `B` | matrix, `0`, or `None` | Fixed `(d_y, p*d_x)` coefficients; `0` gives all zeros; `None` samples a new matrix per generation |
+| `snr` | nonnegative `float` or `None` | Population latent signal/noise variance ratio; rescales B while keeping noise fixed; `None` disables calibration |
+| `x_mean` | scalar or vector | Mean of concatenated X positions |
+| `x_variance` | scalar or covariance matrix | Covariance of concatenated X; a scalar multiplies the identity |
+| `eps_variance` | scalar or covariance matrix | Error covariance for Y; a scalar multiplies the identity |
+| `b_mean`, `b_variance` | `float` | Mean/variance of coefficient draws before optional SNR scaling |
+| `x_distribution`, `eps_distribution`, `b_distribution` | `str` | Registered latent/error/coefficient distributions |
 | `edge_var` | `float` | Edge noise variance (Gaussian network only) |
-| `column_covariance` | `ndarray` | Optional `k×k` covariance for the copula Gaussian factor |
-| `latent_sim` | `str` | Name of a `hyppo` simulation function (e.g. `'quadratic'`, `'spiral'`) used instead of the copula path |
-| `sim_kwargs` | `dict` | Extra keyword arguments forwarded to the `latent_sim` function |
-| `sbm` | `bool` | Use a stochastic block model to draw latent positions |
-| `dim_common` / `dim_individual` | `int` | For multi-network experiments: shared and private latent dimensions |
-| `shared_latent_type` | `str` | How shared dimensions are drawn: `'gaussian'` or `'one_hot'` |
-| `rdpg` | `str` | Normalisation strategy for `BernoulliNetwork` (`'max'`, `'spectral'`, `'minmax'`) |
+| `rdpg` | `bool` | Bernoulli link: `False` uses sigmoid of latent inner products; `True` uses the inner products directly and requires valid probabilities |
 
-`generate()` returns a dict with keys `A`, `B` (adjacency matrices) and `Z`, `X` (true latent positions).
+`generate()` returns `A_Y`, a list `A_X`, true latent `Y`, a list `X`, and the
+effective coefficient matrix `B` (after SNR scaling, when enabled).
+
+With `snr=s`, the sampler calibrates the population ratio conditional on B:
+
+```text
+SNR = trace(B @ Sigma_X @ B.T) / trace(Sigma_epsilon)
+B_effective = B_raw * sqrt(s * trace(Sigma_epsilon)
+                            / trace(B_raw @ Sigma_X @ B_raw.T))
+```
+
+This is a variance ratio summed across Y dimensions, not a sample ratio or an
+R-squared value. Noise covariance is unchanged. For `B=None`, every new draw
+is calibrated separately; for a supplied matrix, its magnitude is rescaled
+without changing its direction. `snr=0` gives zero coefficients and `Y=epsilon`.
+Finite SNR requires positive noise variance; a positive target also requires
+positive signal variance before scaling (`B=0, snr>0` raises an error).
+Custom registered distributions must honor the configured X/error covariances
+for this population interpretation to hold. The ratio concerns the latent
+linear model, not Gaussian edge noise or Bernoulli edge probabilities.
+
+```python
+data = GaussianNetwork(n=200, p=5, d_x=5, d_y=5, B=None, snr=2.0).generate()
+```
+
+The notebook-safe example defaults to
+`run_experiment(snr_values=(0, 0.5, 1, 2))`. It uses B=0 for SNR zero and newly
+sampled, calibrated B for each positive setting. With two network models and
+100 repetitions per setting, this gives 800 simulations, without duplicating
+the null cases. The output includes an `snr` column and the printed summary
+groups by network, SNR, and hypothesis. Pass another sequence via `snr_values`
+to customize the sweep. Restart the notebook kernel before importing updated
+code. For the sampler and DGP constructors, `snr=None` still disables calibration.
 
 ### Solvers (`src/solvers/`)
 
@@ -209,8 +242,10 @@ rows of `Yhat`. `permutation_type="adjacency"` permutes both axes of `A_Y` and
 re-estimates Y for every permutation. The X embeddings stay fixed in both modes.
 True latent Y and X can be supplied with `use_true_latent=True` in latent mode;
 otherwise they are used only as reference values and to infer omitted dimensions.
-`get_estimated()["estimated_latent"]` contains `{"Y": Yhat, "X": Xhat}`;
-the `"true_latent"` entry contains the corresponding true matrices, if available.
+`get_estimated()["estimated_latent"]` contains
+`{"Y": Yhat, "X": Xhat, "X_blocks": Xhat_blocks}`;
+the `"true_latent"` entry contains the corresponding true matrices and blocks,
+if available. The block list preserves network order for recovery metrics.
 
 ```python
 from src.methods import RVTest
@@ -224,7 +259,7 @@ method = RVTest(
 method.fit(data)  # output of GaussianNetwork or BernoulliNetwork
 ```
 
-Configuration loading, pipeline metrics, and the separate estimation-only
+Configuration loading, simulation argument routing, and the separate estimation-only
 methods still use their earlier interfaces and require separate migration.
 
 | Class | Key parameters | Notes |
@@ -264,6 +299,29 @@ exact counts, coefficients, permutation-test results, and RNG states against it.
 ### Metrics (`metrics.py`)
 
 `ComputeAll` is the recommended metric class — it computes both testing outcomes and latent-position recovery errors in a single pass.
+
+For multiple-network results it returns flat Frobenius and Procrustes error
+fields for Y, each X network, and concatenated X, for example:
+`RelativeFrobeniusNorm_Y`, `RelativeFrobeniusNorm_X_1`, ...,
+`RelativeFrobeniusNorm_X_global` (and corresponding `ProcrustesDistance_*`
+fields). The global error is evaluated on the horizontally concatenated
+estimated and true X matrices, **not** the average of per-network errors.
+Frobenius errors compare Gram matrices by default; existing metric formulas
+are unchanged.
+
+The individual recovery metric classes return dictionaries keyed by `Y`,
+`X_1`, ..., `X_global` for named multi-network inputs. They consume the
+`X_blocks` lists in method results; named inputs with X lists also work.
+Legacy single-matrix and unnamed sequence inputs retain scalar/list results.
+RV metrics remain similarity coefficients and MSE remains unaligned coordinate
+error. `ReturnMetric("Y")` and `ReturnMetric("X")` return true Y and concatenated
+true X; `ReturnMetric("estimated")` includes estimates and individual X blocks.
+
+Unavailable true positions produce `NaN` recovery errors. Pass a known
+`is_null=True` or `False` to obtain null-dependent outcome indicators; without
+that label, those indicators return `NaN`, while the rejection decision remains
+available. No null label is inferred from B. The simulation runner no longer
+computes or returns density.
 
 Individual metric classes: `Rejection`, `FalseRejection`, `TrueRejection`, `FalseAcceptance`, `TrueAcceptance`, `RelativeFrobeniusNorm`, `RobustRelativeProcrustesDistance`, `RVCoefficient`, `AdjustedRVCoefficient`, `MSE`.
 

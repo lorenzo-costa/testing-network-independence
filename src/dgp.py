@@ -16,9 +16,14 @@ class GaussianNetwork:
         Positive number of X networks, in addition to the Y network.
     d_x, d_y : int
         Positive latent dimensions of each X network and the Y network.
-    B : array-like of shape (d_y, p * d_x), optional
+    B : {None, 0} or array-like of shape (d_y, p * d_x), optional
         Fixed coefficients in ``Y = concatenate(X, axis=1) @ B.T + epsilon``.
-        If absent, coefficients are sampled on every call to ``generate``.
+        Scalar 0 uses an all-zero matrix. If None or omitted, coefficients are
+        sampled on every call to ``generate``.
+    snr : float, optional
+        Population latent signal/noise variance ratio, summed over Y dimensions.
+        Rescale B to match snr, keeping eps_variance fixed. None disables scaling;
+        zero gives zero coefficients. This controls latent noise, not edge_var.
     x_mean : float or array-like of shape (p * d_x,), default=0
         Mean of concatenated X positions, ordered by network.
     x_variance : float or array-like of shape (p * d_x, p * d_x), default=1
@@ -45,6 +50,7 @@ class GaussianNetwork:
         d_y,
         *,
         B=None,
+        snr=None,
         x_mean=0,
         x_variance=1,
         eps_variance=1,
@@ -63,6 +69,7 @@ class GaussianNetwork:
             d_x=d_x,
             d_y=d_y,
             B=B,
+            snr=snr,
             x_mean=x_mean,
             x_variance=x_variance,
             eps_variance=eps_variance,
@@ -78,6 +85,7 @@ class GaussianNetwork:
         self.p = self.latent_sampler.p
         self.d_x = self.latent_sampler.d_x
         self.d_y = self.latent_sampler.d_y
+        self.snr = self.latent_sampler.snr
 
     def __repr__(self):
         return (
@@ -128,9 +136,14 @@ class BernoulliNetwork(GaussianNetwork):
         Positive number of X networks, in addition to the Y network.
     d_x, d_y : int
         Positive latent dimensions of each X network and the Y network.
-    B : array-like of shape (d_y, p * d_x), optional
+    B : {None, 0} or array-like of shape (d_y, p * d_x), optional
         Fixed coefficients in ``Y = concatenate(X, axis=1) @ B.T + epsilon``.
-        If absent, coefficients are sampled on each call to ``generate``.
+        Scalar 0 uses an all-zero matrix. If None or omitted, coefficients are
+        sampled on each call to ``generate``.
+    snr : float, optional
+        Population latent signal/noise variance ratio, summed over Y dimensions.
+        Rescale B to match snr, keeping eps_variance fixed. None disables scaling;
+        zero gives zero coefficients. This precedes the logistic/RDPG edge link.
     x_mean : float or array-like of shape (p * d_x,), default=0
         Mean of concatenated X positions, ordered by network.
     x_variance : float or array-like of shape (p * d_x, p * d_x), default=1
@@ -166,6 +179,7 @@ class BernoulliNetwork(GaussianNetwork):
         d_y,
         *,
         B=None,
+        snr=None,
         x_mean=0,
         x_variance=1,
         eps_variance=1,
@@ -186,6 +200,7 @@ class BernoulliNetwork(GaussianNetwork):
             d_x=d_x,
             d_y=d_y,
             B=B,
+            snr=snr,
             x_mean=x_mean,
             x_variance=x_variance,
             eps_variance=eps_variance,

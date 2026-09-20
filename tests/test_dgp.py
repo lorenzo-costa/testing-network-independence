@@ -7,6 +7,28 @@ from src.latent_samplers import MultipleNetworksSampler
 
 
 @pytest.mark.parametrize(
+    "network_class,options",
+    [(GaussianNetwork, {}), (BernoulliNetwork, {}), (BernoulliNetwork, {"rdpg": True})],
+)
+def test_networks_accept_zero_B_shorthand(network_class, options):
+    kwargs = dict(n=7, p=3, d_x=2, d_y=4, x_mean=0.1, x_variance=0, eps_variance=0)
+    shorthand = network_class(**kwargs, **options, B=0, rng=np.random.default_rng(82))
+    explicit = network_class(
+        **kwargs, **options, B=np.zeros((4, 6)), rng=np.random.default_rng(82)
+    )
+    for _ in range(2):
+        actual, expected = shorthand.generate(), explicit.generate()
+        np.testing.assert_array_equal(actual["B"], np.zeros((4, 6)))
+        np.testing.assert_array_equal(actual["Y"], np.zeros((7, 4)))
+        for key in ("A_Y", "Y", "B"):
+            np.testing.assert_array_equal(actual[key], expected[key])
+        for key in ("A_X", "X"):
+            for a, b in zip(actual[key], expected[key]):
+                np.testing.assert_array_equal(a, b)
+        assert shorthand.rng.bit_generator.state == explicit.rng.bit_generator.state
+
+
+@pytest.mark.parametrize(
     "n,p,d_x,d_y", [(12, 3, 2, 4), (1, 1, 1, 1), (1, 3, 2, 1), (7, 2, 1, 3)]
 )
 def test_gaussian_network_contract(n, p, d_x, d_y):

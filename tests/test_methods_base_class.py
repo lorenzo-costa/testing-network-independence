@@ -435,7 +435,8 @@ def test_ordered_network_input_and_result_matrices_preserve_block_order():
     result = method.get_estimated()
     assert result["estimated_latent"]["Y"] is method.Yhat
     assert result["estimated_latent"]["X"] is method.Xhat
-    assert result["true_latent"] == {"Y": None, "X": None}
+    assert result["estimated_latent"]["X_blocks"] is method.Xhat_blocks
+    assert result["true_latent"] == {"Y": None, "X": None, "X_blocks": None}
 
 
 def test_true_multiple_latents_bypass_solver_without_mutating_inputs():
@@ -454,6 +455,13 @@ def test_true_multiple_latents_bypass_solver_without_mutating_inputs():
     np.testing.assert_array_equal(method.Yhat, data["Y"])
     np.testing.assert_array_equal(method.Xhat, np.concatenate(data["X"], axis=1))
     np.testing.assert_array_equal(result["true_latent"]["X"], method.Xhat)
+    for estimated, actual, truth in zip(
+        result["estimated_latent"]["X_blocks"],
+        result["true_latent"]["X_blocks"],
+        data["X"],
+    ):
+        np.testing.assert_array_equal(estimated, truth)
+        np.testing.assert_array_equal(actual, truth)
     method.Yhat[:] = -99
     method.Xhat_blocks[0][:] = -99
     np.testing.assert_array_equal(data["Y"], latent_data()["Y"])

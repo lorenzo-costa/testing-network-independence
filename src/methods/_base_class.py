@@ -350,12 +350,17 @@ class BasePermutationTest(BaseMethod):
         self._fit_permutation()
 
     def get_estimated(self):
-        """Return both latent matrices used in the test, truth, and test results."""
+        """Return test matrices and individual X blocks for recovery metrics."""
         return {
-            "estimated_latent": {"Y": self.Yhat, "X": self.Xhat},
+            "estimated_latent": {
+                "Y": self.Yhat,
+                "X": self.Xhat,
+                "X_blocks": self.Xhat_blocks,
+            },
             "true_latent": {
                 "Y": self.Y,
                 "X": None if self.X is None else np.concatenate(self.X, axis=1),
+                "X_blocks": self.X,
             },
             "p-value": self.pvalue,
             "reject_null": self.reject_null,

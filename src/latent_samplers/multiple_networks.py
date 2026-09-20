@@ -41,9 +41,16 @@ class MultipleNetworksSampler:
         Positive number of X networks.
     d_x, d_y : int
         Positive latent dimensions of each X network and the Y network.
-    B : array-like of shape (d_y, p * d_x), optional
-        Fixed coefficient matrix. If omitted, a new matrix is drawn on each
-        call to :meth:`sample_latent`.
+    B : {None, 0} or array-like of shape (d_y, p * d_x), optional
+        Fixed coefficient matrix. Scalar 0 creates an all-zero matrix. If None
+        or omitted, a new matrix is drawn on each call to :meth:`sample_latent`.
+    snr : float, optional
+        Nonnegative population variance ratio, conditional on B:
+        ``trace(B @ x_covariance @ B.T) / trace(eps_covariance)``.
+        Rescale supplied or sampled B to attain this ratio, leaving the error
+        covariance unchanged. None preserves the original coefficients; zero
+        sets them to zero. Requires positive noise variance, and positive
+        signal variance before scaling when snr > 0. Returned B is rescaled.
     x_mean : float or array-like of shape (p * d_x,), default=0
         Mean of the concatenated X positions, in network block order.
     x_variance : float or array-like of shape (p * d_x, p * d_x), default=1
@@ -68,6 +75,9 @@ class MultipleNetworksSampler:
     Univariate distributions draw independent entries using ``loc`` and
     ``scale=sqrt(variance)``; multivariate distributions draw independent rows
     using ``mean`` and ``cov``. No global random state is used.
+    SNR calibration uses the configured covariances, not sample variances or
+    squared means. Registered X/error distributions must honor those moments
+    for the population SNR guarantee to hold.
     """
 
     distribution_registry = {
@@ -87,6 +97,7 @@ class MultipleNetworksSampler:
         d_y,
         *,
         B=None,
+        snr=None,
         x_mean=0,
         x_variance=1,
         eps_variance=1,
@@ -128,13 +139,52 @@ class MultipleNetworksSampler:
         )
         self.b_mean = _finite_scalar(b_mean, "b_mean")
         self.b_variance = _finite_scalar(b_variance, "b_variance", nonnegative=True)
+        if isinstance(snr, (bool, np.bool_)):
+            raise ValueError("snr must be a nonnegative finite scalar or None.")
+        self.snr = None if snr is None else _finite_scalar(snr, "snr", nonnegative=True)
+        self._noise_power = None
+        if self.snr is not None:
+            with np.errstate(over="ignore"):
+                self._noise_power = float(np.trace(self.eps_covariance))
+            if not np.isfinite(self._noise_power) or self._noise_power <= 0:
+                raise ValueError(
+                    "snr requires a positive, finite trace of eps_variance."
+                )
         self.B = None
         if B is not None:
             self.B = _finite_array(B, "B")
+            if self.B.ndim == 0 and np.asarray(B).dtype.kind in "iuf" and self.B == 0:
+                self.B = np.zeros((self.d_y, width))
             if self.B.shape != (self.d_y, width):
                 raise ValueError(
-                    f"B must have shape ({self.d_y}, {width}); got {self.B.shape}."
+                    f"B must be 0, None, or have shape ({self.d_y}, {width}); "
+                    f"got {self.B.shape}."
                 )
+            self.B = self._rescale_B(self.B)
+
+    def _rescale_B(self, B):
+        """Calibrate coefficient magnitude without drawing randomness."""
+        if self.snr is None:
+            return B
+        if self.snr == 0:
+            return np.zeros_like(B)
+        with np.errstate(over="ignore", invalid="ignore"):
+            signal_power = float(np.sum((B @ self.x_covariance) * B))
+        if not np.isfinite(signal_power) or signal_power <= 0:
+            raise ValueError(
+                "Positive snr requires positive, finite signal variance "
+                "trace(B @ x_covariance @ B.T); B=0 or degenerate X covariance "
+                "cannot supply a positive signal."
+            )
+        # Work in log scale to avoid overflowing snr * noise_power before division.
+        log_scale = 0.5 * (
+            np.log(self.snr) + np.log(self._noise_power) - np.log(signal_power)
+        )
+        with np.errstate(over="ignore", invalid="ignore", under="ignore"):
+            scaled_B = B * np.exp(log_scale)
+        if not np.isfinite(scaled_B).all() or not np.any(scaled_B):
+            raise ValueError("snr scaling cannot produce finite, nonzero coefficients.")
+        return scaled_B
 
     @classmethod
     def register_distribution(cls, name, distribution, *, kind="univariate"):
@@ -244,7 +294,8 @@ class MultipleNetworksSampler:
         dict
             Exactly ``Y``, an array of shape ``(n, d_y)``; ``X``, a Python list
             of ``p`` arrays of shape ``(n, d_x)``; and ``B``, an array of shape
-            ``(d_y, p * d_x)``. List order matches the column blocks of B.
+            ``(d_y, p * d_x)``. B contains the effective coefficients after
+            optional SNR scaling. List order matches the column blocks of B.
             Neither errors nor concatenated X are included.
         """
         x_concat = self._draw_rows(
@@ -254,11 +305,13 @@ class MultipleNetworksSampler:
         B = (
             self.B.copy()
             if self.B is not None
-            else self._draw_rows(
-                self._b_distribution,
-                np.full(width, self.b_mean),
-                self.b_variance * np.eye(width),
-                self.d_y,
+            else self._rescale_B(
+                self._draw_rows(
+                    self._b_distribution,
+                    np.full(width, self.b_mean),
+                    self.b_variance * np.eye(width),
+                    self.d_y,
+                )
             )
         )
         epsilon = self._draw_rows(

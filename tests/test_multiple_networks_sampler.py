@@ -71,6 +71,48 @@ def test_default_B_entries_have_standard_normal_moments():
     assert abs(np.corrcoef(result["B"].reshape(-1, 2), rowvar=False)[0, 1]) < 0.04
 
 
+@pytest.mark.parametrize("zero", [0, 0.0, np.int64(0), np.float64(0), np.array(0)])
+def test_zero_B_shorthand_matches_explicit_matrix_without_sampling_coefficients(zero):
+    kwargs = dict(n=7, p=3, d_x=2, d_y=4, b_mean=9, b_variance=0)
+    shorthand = MultipleNetworksSampler(**kwargs, B=zero, rng=np.random.default_rng(80))
+    explicit = MultipleNetworksSampler(
+        **kwargs, B=np.zeros((4, 6)), rng=np.random.default_rng(80)
+    )
+    for _ in range(2):
+        actual, expected = shorthand.sample_latent(), explicit.sample_latent()
+        np.testing.assert_array_equal(actual["B"], np.zeros((4, 6)))
+        np.testing.assert_array_equal(actual["Y"], expected["Y"])
+        for x, expected_x in zip(actual["X"], expected["X"]):
+            np.testing.assert_array_equal(x, expected_x)
+        assert shorthand.rng.bit_generator.state == explicit.rng.bit_generator.state
+        # Returned coefficients must not mutate the fixed zero matrix.
+        actual["B"][:] = 99
+
+
+def test_zero_B_removes_linear_signal():
+    sampler = MultipleNetworksSampler(5, 2, 3, 4, B=0, eps_variance=0)
+    result = sampler.sample_latent()
+    np.testing.assert_array_equal(result["Y"], np.zeros((5, 4)))
+
+
+def test_explicit_none_B_samples_on_every_call_like_default():
+    explicit = MultipleNetworksSampler(
+        5, 2, 3, 4, B=None, rng=np.random.default_rng(81)
+    )
+    default = MultipleNetworksSampler(5, 2, 3, 4, rng=np.random.default_rng(81))
+    first = explicit.sample_latent()
+    np.testing.assert_array_equal(first["B"], default.sample_latent()["B"])
+    second = explicit.sample_latent()
+    np.testing.assert_array_equal(second["B"], default.sample_latent()["B"])
+    assert not np.array_equal(first["B"], second["B"])
+
+
+@pytest.mark.parametrize("invalid", [1, -1, 0.5, False, "0", [0]])
+def test_only_numeric_scalar_zero_is_a_B_shorthand(invalid):
+    with pytest.raises(ValueError, match="B must be 0, None, or have shape"):
+        MultipleNetworksSampler(5, 2, 3, 4, B=invalid)
+
+
 def test_scalar_covariances_match_explicit_identity_matrices():
     kwargs = dict(n=10, p=2, d_x=2, d_y=3, B=np.zeros((3, 4)))
     scalar = MultipleNetworksSampler(
