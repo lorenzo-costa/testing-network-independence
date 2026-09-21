@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Plot testing performance and Y recovery for the linear-model study.
 
-Populate ``RESULT_FILES`` after all shards finish, or pass the three filenames
-with ``--files``. Networks and true/estimated latent modes are plotted
-separately.
+Populate ``RESULT_FILES`` and ``ASYMPTOTIC_RESULT_FILES`` after all shards
+finish, or pass the filenames with ``--files`` and ``--asymptotic-files``.
+Only asymptotic RV rows are retained from the asymptotic run. Networks and
+true/estimated latent modes are plotted separately.
 """
 
 from __future__ import annotations
@@ -42,6 +43,11 @@ RESULT_FILES: tuple[str, ...] = (
     "linear_model_results_61599204_shard-001-of-003.csv",
     "linear_model_results_61599204_shard-002-of-003.csv",
 )
+ASYMPTOTIC_RESULT_FILES: tuple[str, ...] = (
+    "linear_model_asymptotic_results_61628751_shard-000-of-003.csv",
+    "linear_model_asymptotic_results_61628751_shard-001-of-003.csv",
+    "linear_model_asymptotic_results_61628751_shard-002-of-003.csv",
+)
 
 NETWORK_LABELS = {
     "GaussianNetwork": "Gaussian weighted network",
@@ -51,21 +57,30 @@ LATENT_MODE_LABELS = {
     False: "Estimated latent positions",
     True: "True latent positions",
 }
-METHOD_ORDER = ("RVTest_permutation", "CCA", "DC")
+METHOD_ORDER = ("RVTest_permutation", "RVTest_asymptotic", "CCA", "DC")
 METHOD_LABELS = {
-    "RVTest_permutation": "RV",
+    "RVTest_permutation": "RV (permutation)",
+    "RVTest_asymptotic": "RV (asymptotic)",
     "CCA": "CCA",
     "DC": "MGC",
 }
 COLORS = {
     "RVTest_permutation": "#E69F00",
+    "RVTest_asymptotic": "#E69F00",
     "CCA": "#0072B2",
     "DC": "#009E73",
 }
 MARKERS = {
     "RVTest_permutation": "o",
+    "RVTest_asymptotic": "D",
     "CCA": "s",
     "DC": "^",
+}
+LINESTYLES = {
+    "RVTest_permutation": "-",
+    "RVTest_asymptotic": "--",
+    "CCA": "-",
+    "DC": "-",
 }
 PNG_DPI = 600
 PLOT_CHUNKSIZE = 5_000
@@ -91,7 +106,16 @@ def parse_args(argv=None) -> argparse.Namespace:
         "--files",
         nargs="+",
         default=None,
-        help="Shard filenames; overrides RESULT_FILES.",
+        help="Primary shard filenames; overrides RESULT_FILES.",
+    )
+    parser.add_argument(
+        "--asymptotic-files",
+        nargs="+",
+        default=None,
+        help=(
+            "Asymptotic shard filenames; overrides ASYMPTOTIC_RESULT_FILES. "
+            "Only RV rows are retained."
+        ),
     )
     return parser.parse_args(argv)
 
@@ -121,9 +145,12 @@ def configure_plot_style() -> None:
 
 
 def prepare_linear_model_results(
-    results_dir: Path, filenames: Sequence[str]
+    results_dir: Path,
+    filenames: Sequence[str],
+    include_methods: Sequence[str] | None = None,
 ) -> pd.DataFrame:
-    """Stream all shards and retain only fields used by these figures."""
+    """Stream shards, optionally filtering methods before parsing metrics."""
+    included = None if include_methods is None else set(include_methods)
     frames = []
     for chunk in iter_shard_outputs(
         results_dir,
@@ -132,6 +159,14 @@ def prepare_linear_model_results(
         usecols=("args", "ComputeAll"),
     ):
         configs = chunk["args"].map(parse_config_string)
+        methods = configs.map(_method_label)
+        if included is not None:
+            keep = methods.isin(included)
+            chunk = chunk.loc[keep]
+            configs = configs.loc[keep]
+            methods = methods.loc[keep]
+        if chunk.empty:
+            continue
         metrics = chunk["ComputeAll"].map(parse_result_string)
         frames.append(
             pd.DataFrame(
@@ -147,7 +182,7 @@ def prepare_linear_model_results(
                             value.get("use_true_latent")
                         )
                     ),
-                    "method": configs.map(_method_label),
+                    "method": methods,
                     "dgp_name": configs.map(
                         lambda value: _clean_text(value.get("dgp_name")).split(
                             "_"
@@ -162,7 +197,8 @@ def prepare_linear_model_results(
         )
 
     if not frames:
-        raise ValueError("The shard files contain no result rows.")
+        detail = " matching the method filter" if included is not None else ""
+        raise ValueError(f"The shard files contain no result rows{detail}.")
     results = pd.concat(frames, ignore_index=True)
     numeric_columns = (
         "n",
@@ -283,6 +319,7 @@ def _method_handles(methods: Sequence[str]) -> list[Line2D]:
             [0],
             color=COLORS[method],
             marker=MARKERS[method],
+            linestyle=LINESTYLES[method],
             markerfacecolor="none",
             label=METHOD_LABELS[method],
         )
@@ -323,6 +360,7 @@ def _plot_curves(
             mean,
             color=COLORS[method],
             marker=MARKERS[method],
+            linestyle=LINESTYLES[method],
             markerfacecolor="none",
             markeredgewidth=0.9,
             zorder=3,
@@ -677,13 +715,32 @@ def plot_null_frobenius_by_p(
 def main(argv=None) -> list[Path]:
     args = parse_args(argv)
     filenames = tuple(args.files) if args.files is not None else RESULT_FILES
+    asymptotic_filenames = (
+        tuple(args.asymptotic_files)
+        if args.asymptotic_files is not None
+        else ASYMPTOTIC_RESULT_FILES
+    )
     if not filenames:
         raise ValueError(
             "No shard files configured. Populate RESULT_FILES or pass --files."
         )
+    if not asymptotic_filenames:
+        raise ValueError(
+            "No asymptotic shard files configured. Populate "
+            "ASYMPTOTIC_RESULT_FILES or pass --asymptotic-files."
+        )
 
     configure_plot_style()
-    results = prepare_linear_model_results(args.results_dir, filenames)
+    primary_results = prepare_linear_model_results(args.results_dir, filenames)
+    asymptotic_rv_results = prepare_linear_model_results(
+        args.results_dir,
+        asymptotic_filenames,
+        include_methods=("RVTest_asymptotic",),
+    )
+    results = pd.concat(
+        [primary_results, asymptotic_rv_results],
+        ignore_index=True,
+    )
     rejection_rates = aggregate_rejection_rates(results)
     frobenius_errors = aggregate_frobenius_errors(results)
     outputs = []

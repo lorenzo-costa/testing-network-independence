@@ -11,6 +11,7 @@ from results.results_processing import (
 from results.visualise_linear_model import (
     aggregate_frobenius_errors,
     aggregate_rejection_rates,
+    prepare_linear_model_results,
 )
 
 
@@ -20,6 +21,7 @@ def _row(
     snr,
     rejection,
     method="RVTest",
+    approximation="permutation",
     gamma=None,
     use_true_latent=False,
     frobenius_y=0.2,
@@ -44,7 +46,7 @@ def _row(
         "solver": "ASE",
     }
     if method == "RVTest":
-        args["approximation"] = "permutation"
+        args["approximation"] = approximation
     if gamma is not None:
         args["gamma"] = gamma
     return {
@@ -173,6 +175,31 @@ def test_plot_aggregations_separate_latent_modes_and_y_frobenius_error():
     assert rejection["rejection_rate"].tolist() == [0.5, 1.0]
     assert frobenius["frobenius_error"].tolist() == pytest.approx([0.3, 0.0])
     assert frobenius["replicates"].tolist() == [2, 1]
+
+
+def test_asymptotic_shards_keep_only_rv_rows(tmp_path):
+    names = [
+        "linear_model_asymptotic_results_123_shard-000-of-003.csv",
+        "linear_model_asymptotic_results_123_shard-001-of-003.csv",
+        "linear_model_asymptotic_results_123_shard-002-of-003.csv",
+    ]
+    rows = [
+        _row(50, 5, 0.5, True, approximation="asymptotic"),
+        _row(50, 5, 0.5, True, method="CanonicalCorrelationTest"),
+        _row(50, 5, 0.5, True, method="DistanceCorrelationTest"),
+    ]
+    for name, row in zip(names, rows):
+        pd.DataFrame([row]).to_csv(tmp_path / name, index=False)
+
+    results = prepare_linear_model_results(
+        tmp_path,
+        names,
+        include_methods=("RVTest_asymptotic",),
+    )
+
+    assert len(results) == 1
+    assert results["method"].tolist() == ["RVTest_asymptotic"]
+    assert results["Rejection"].tolist() == [1]
 
 
 def test_combine_shards_rejects_an_incomplete_set(tmp_path):
