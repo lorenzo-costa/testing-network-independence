@@ -330,7 +330,7 @@ Estimation-only methods use the same multiple-network input and output structure
 
 | Class | Key parameters | Notes |
 |-------|---------------|-------|
-| `RVTest` | `approximation` (`'permutation'` / `'asymptotic'`), `permutation_type` (`'latent'` / `'adjacency'`), `d_y`, `d_x`, `npermutations`, `solver` | The asymptotic branch uses the Imhof method (`imhof.py`) to compute the p-value |
+| `RVTest` | `approximation` (`'permutation'` / `'asymptotic'`), `asymptotic_null` (`'independence'` / `'zero_covariance'`), `permutation_type` (`'latent'` / `'adjacency'`), `d_y`, `d_x`, `npermutations`, `solver` | The asymptotic branch uses the Imhof method (`imhof.py`); independence uses the Kronecker covariance spectrum, while zero covariance estimates the full centered cross-product covariance |
 | `ObservedCVM` | `test_function` | CvM statistic on adjacency matrices; no embedding step needed |
 | `LLKRatioTest` | — | Likelihood-ratio test |
 | `QAP` | — | Quadratic Assignment Procedure |

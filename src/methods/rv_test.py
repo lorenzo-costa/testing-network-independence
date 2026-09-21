@@ -54,6 +54,15 @@ class RVTest(BasePermutationTest):
 
     Parameters
     ----------
+    approximation : {"permutation", "asymptotic"}, default="permutation"
+        Reference distribution used to compute the p-value. A degenerate
+        covariance in asymptotic mode produces the sentinel p-value ``-1``
+        and sentinel rejection decision ``None``.
+    asymptotic_null : {"independence", "zero_covariance"}, default="independence"
+        Covariance model used by the asymptotic reference distribution.
+        Independence estimates the eigenvalues of Omega_YX as all pairwise
+        products of the eigenvalues of S_Y and S_X. Zero covariance estimates
+        the unrestricted Omega_YX from centered row-wise cross-products.
     rho: float
         Correlation between latent positions (zero under independence i.e. H0 is true)
     npermutations : int
@@ -82,6 +91,7 @@ class RVTest(BasePermutationTest):
     def __init__(
         self,
         approximation="permutation",
+        asymptotic_null="independence",
         d_y=None,
         d_x=None,
         npermutations=100,
@@ -96,6 +106,10 @@ class RVTest(BasePermutationTest):
         verbose=False,
         **kwargs,
     ):
+        if asymptotic_null not in {"independence", "zero_covariance"}:
+            raise ValueError(
+                "asymptotic_null must be 'independence' or 'zero_covariance'."
+            )
         super().__init__(
             d_y=d_y,
             d_x=d_x,
@@ -113,6 +127,7 @@ class RVTest(BasePermutationTest):
         )
 
         self.approximation = approximation
+        self.asymptotic_null = asymptotic_null
 
     def fit(self, data, **kwargs):
         """Compute the test statistic and p-value."""
@@ -129,7 +144,9 @@ class RVTest(BasePermutationTest):
                 "Invalid approximation method. Choose 'permutation' or 'asymptotic'."
             )
 
-        self.reject_null = bool(self.pvalue < self.alpha)
+        self.reject_null = (
+            None if self.pvalue == -1 else bool(self.pvalue < self.alpha)
+        )
 
         return
 
@@ -170,30 +187,31 @@ class RVTest(BasePermutationTest):
         S_X = (X.T @ X) / n
         den = np.sqrt(np.trace(S_Y @ S_Y) * np.trace(S_X @ S_X))
         if not np.isfinite(den) or den <= 0:
-            raise ValueError(
-                "The asymptotic RV approximation requires positive, finite "
-                "Frobenius norms for the Y and X sample covariances."
+            self.pvalue = -1
+            return
+
+        if self.asymptotic_null == "independence":
+            eigenvalues_y = np.maximum(np.linalg.eigvalsh(S_Y), 0)
+            eigenvalues_x = np.maximum(np.linalg.eigvalsh(S_X), 0)
+            hat_lambda = np.multiply.outer(eigenvalues_y, eigenvalues_x).ravel()
+        else:
+            # Let W_i = vec(Y_i X_i.T). The Hadamard product below is W W.T,
+            # whose doubly centered form is the Gram representation of
+            # sum_i (W_i - W_bar)(W_i - W_bar).T / n.
+            GY = Y @ Y.T
+            GX = X @ X.T
+            W_gram = GY * GX
+            W_gram_mean = W_gram.mean(axis=0, keepdims=True)
+            W_gram = (
+                W_gram - W_gram_mean - W_gram_mean.T + W_gram_mean.mean()
             )
+            Omega_gram = W_gram / n
+            hat_lambda = np.linalg.eigvalsh(Omega_gram)
 
-        # Let W_i = vec(Y_i X_i.T). The Hadamard product below is W W.T,
-        # whose doubly centered form is the Gram representation of
-        # sum_i (W_i - W_bar)(W_i - W_bar).T / n.
-        GY = Y @ Y.T
-        GX = X @ X.T
-        W_gram = GY * GX
-        W_gram_mean = W_gram.mean(axis=0, keepdims=True)
-        W_gram = (
-            W_gram - W_gram_mean - W_gram_mean.T + W_gram_mean.mean()
-        )
-        Omega_gram = W_gram / n
-
-        hat_lambda = np.linalg.eigvalsh(Omega_gram)
         hat_lambda = np.sort(hat_lambda)[::-1]
         if hat_lambda[0] <= 0:
-            raise ValueError(
-                "The asymptotic RV approximation requires nondegenerate "
-                "cross-product covariance."
-            )
+            self.pvalue = -1
+            return
         hat_lambda = hat_lambda[hat_lambda > 1e-10 * hat_lambda[0]]
 
         weights = hat_lambda / den

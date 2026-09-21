@@ -99,36 +99,26 @@ def test_every_linear_model_network_and_method_combination_runs():
             assert result["args"]["cca_gamma"] == pytest.approx(np.sqrt(12))
 
 
-def test_asymptotic_linear_model_config_uses_all_three_methods():
+def test_asymptotic_linear_model_config_uses_both_rv_null_models():
     config = load_config(ROOT / "linear_model_asymptotic_config.yaml")
     design = build_factorial_design(config)
 
-    assert len(design) == 2 * 3 * 3 * 5 * 5 * 2
+    assert len(design) == 2 * 2 * 3 * 5 * 5 * 2
     assert config["output"]["file_prefix"] == "linear_model_asymptotic_results"
-    assert {row["method"].func for row in design} == {
-        RVTest,
-        CanonicalCorrelationTest,
-        DistanceCorrelationTest,
-    }
+    assert {row["method"].func for row in design} == {RVTest}
 
     rv_methods = [row["method"] for row in design if row["method"].func is RVTest]
-    cca_methods = [
-        row["method"]
-        for row in design
-        if row["method"].func is CanonicalCorrelationTest
-    ]
-    mgc_methods = [
-        row["method"]
-        for row in design
-        if row["method"].func is DistanceCorrelationTest
-    ]
     assert all(method.keywords["approximation"] == "asymptotic" for method in rv_methods)
-    assert all(method.keywords["permutation_type"] == "latent" for method in cca_methods)
-    assert all(method.keywords["permutation_type"] == "latent" for method in mgc_methods)
-    assert all(method.keywords["test_method"] == "mgc" for method in mgc_methods)
+    assert {method.keywords["asymptotic_null"] for method in rv_methods} == {
+        "independence",
+        "zero_covariance",
+    }
 
 
-def test_asymptotic_linear_model_config_runs_representative_rv_scenario():
+@pytest.mark.parametrize("asymptotic_null", ["independence", "zero_covariance"])
+def test_asymptotic_linear_model_config_runs_each_rv_null_scenario(
+    asymptotic_null,
+):
     config = load_config(ROOT / "linear_model_asymptotic_config.yaml")
     design = build_factorial_design(config)
     row = next(
@@ -139,6 +129,7 @@ def test_asymptotic_linear_model_config_runs_representative_rv_scenario():
         and row["use_true_latent"] is True
         and row["p"] == 5
         and row["snr"] == 0
+        and row["method"].keywords["asymptotic_null"] == asymptotic_null
     )
     runtime = dict(row)
     runtime["n"] = 30
@@ -150,6 +141,7 @@ def test_asymptotic_linear_model_config_runs_representative_rv_scenario():
     )
 
     assert result["args"]["method_name"] == "RV_AsymptoticTest"
+    assert result["args"]["asymptotic_null"] == asymptotic_null
     assert np.isfinite(result["ComputeAll"]["Rejection"])
 
 
@@ -160,6 +152,7 @@ def test_linear_model_results_flatten_without_legacy_k_or_rho():
         "d_x": 5,
         "d_y": 3,
         "snr": 0.25,
+        "asymptotic_null": "zero_covariance",
         "x_network_correlation": 0.5,
         "eps_distribution": "student_t_3",
         "hypothesis": "H1",
@@ -175,6 +168,7 @@ def test_linear_model_results_flatten_without_legacy_k_or_rho():
     assert frame.loc[0, "d_x"] == 5
     assert frame.loc[0, "d_y"] == 3
     assert frame.loc[0, "snr"] == 0.25
+    assert frame.loc[0, "asymptotic_null"] == "zero_covariance"
     assert frame.loc[0, "x_network_correlation"] == 0.5
     assert frame.loc[0, "eps_distribution"] == "student_t_3"
     assert frame.loc[0, "hypothesis"] == "H1"

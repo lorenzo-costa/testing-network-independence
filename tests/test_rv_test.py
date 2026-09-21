@@ -216,7 +216,7 @@ def test_asymptotic_rv_null_calibration_with_identity_covariance():
     )
 
 
-def test_asymptotic_rv_uses_centered_cross_product_covariance_and_rv_denominator(
+def test_zero_covariance_asymptotic_rv_uses_full_centered_omega_and_rv_denominator(
     monkeypatch,
 ):
     Y = np.array(
@@ -240,7 +240,11 @@ def test_asymptotic_rv_uses_centered_cross_product_covariance_and_rv_denominator
         return {"Qq": 0.25}
 
     monkeypatch.setattr("src.methods.rv_test.imhof", capture_imhof)
-    method = RVTest(use_true_latent=True, approximation="asymptotic")
+    method = RVTest(
+        use_true_latent=True,
+        approximation="asymptotic",
+        asymptotic_null="zero_covariance",
+    )
     method.fit({"Y": Y, "X": X_blocks})
 
     centered_y = Y - Y.mean(axis=0, keepdims=True)
@@ -262,16 +266,76 @@ def test_asymptotic_rv_uses_centered_cross_product_covariance_and_rv_denominator
     assert method.pvalue == 0.25
 
 
-def test_asymptotic_rv_rejects_degenerate_sample_covariance():
+def test_independence_asymptotic_rv_uses_kronecker_covariance_eigenvalues(
+    monkeypatch,
+):
+    data = multiple_latent_data(seed=202)
+    captured = {}
+
+    def capture_imhof(q, weights):
+        captured["q"] = q
+        captured["weights"] = weights.copy()
+        return {"Qq": 0.4}
+
+    monkeypatch.setattr("src.methods.rv_test.imhof", capture_imhof)
+    method = RVTest(use_true_latent=True, approximation="asymptotic")
+    method.fit(data)
+
+    Y = data["Y"] - data["Y"].mean(axis=0, keepdims=True)
+    X = np.concatenate(data["X"], axis=1)
+    X = X - X.mean(axis=0, keepdims=True)
+    S_Y = Y.T @ Y / len(Y)
+    S_X = X.T @ X / len(Y)
+    eigenvalues = np.multiply.outer(
+        np.maximum(np.linalg.eigvalsh(S_Y), 0),
+        np.maximum(np.linalg.eigvalsh(S_X), 0),
+    ).ravel()
+    eigenvalues = np.sort(eigenvalues)[::-1]
+    eigenvalues = eigenvalues[eigenvalues > 1e-10 * eigenvalues[0]]
+    denominator = np.sqrt(np.trace(S_Y @ S_Y) * np.trace(S_X @ S_X))
+
+    assert method.asymptotic_null == "independence"
+    np.testing.assert_allclose(captured["weights"], eigenvalues / denominator)
+    assert captured["q"] == pytest.approx(len(Y) * rv_coefficient(Y, X))
+    assert method.pvalue == 0.4
+
+
+def test_asymptotic_rv_returns_sentinel_for_zero_sample_covariance():
     method = RVTest(use_true_latent=True, approximation="asymptotic")
 
-    with pytest.raises(ValueError, match="asymptotic RV.*Frobenius norms"):
-        method.fit(
-            {
-                "Y": np.ones((5, 1)),
-                "X": [np.arange(5.0).reshape(-1, 1)],
-            }
-        )
+    method.fit(
+        {
+            "Y": np.ones((5, 1)),
+            "X": [np.arange(5.0).reshape(-1, 1)],
+        }
+    )
+
+    assert method.pvalue == -1
+    assert method.reject_null is None
+
+
+def test_asymptotic_rv_returns_sentinel_for_zero_cross_product_covariance():
+    method = RVTest(
+        use_true_latent=True,
+        approximation="asymptotic",
+        asymptotic_null="zero_covariance",
+    )
+
+    method.fit(
+        {
+            "Y": np.array([[-1.0], [1.0]]),
+            "X": [np.array([[-1.0], [1.0]])],
+        }
+    )
+
+    assert method.pvalue == -1
+    assert method.reject_null is None
+
+
+@pytest.mark.parametrize("asymptotic_null", [None, "invalid", 1, False])
+def test_asymptotic_rv_rejects_unknown_null_type(asymptotic_null):
+    with pytest.raises(ValueError, match="asymptotic_null"):
+        RVTest(asymptotic_null=asymptotic_null)
 
 
 def test_rv_test_rejects_unknown_approximation():

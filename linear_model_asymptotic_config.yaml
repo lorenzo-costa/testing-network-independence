@@ -1,6 +1,5 @@
-# Multiple-network latent linear-model experiment comparing all three methods.
-# RV uses its asymptotic reference distribution; CCA and MGC remain permutation
-# tests because they do not implement asymptotic inference.
+# Multiple-network latent linear-model experiment comparing both RV asymptotic
+# null models: independence and zero cross-covariance.
 #
 # Warning: the RV asymptotic approximation is poorly calibrated when p*d_x is
 # large relative to n. Use this config for comparison, not as the primary result.
@@ -27,24 +26,19 @@ simulation:
   blas_threads: 1
 
 methods:
-  # Used by CCA and MGC. RV ignores this under approximation=asymptotic.
+  # Required by the shared runner but ignored by asymptotic RV.
   npermutations: [400]
   use_true_latent: [false, true]
   list:
     - name: RVTest
       kwargs:
         approximation: asymptotic
+        asymptotic_null: independence
 
-    - name: CanonicalCorrelationTest
+    - name: RVTest
       kwargs:
-        permutation_type: latent
-        n_jobs: 1
-
-    - name: DistanceCorrelationTest
-      kwargs:
-        test_method: mgc
-        permutation_type: latent
-        n_jobs: 1
+        approximation: asymptotic
+        asymptotic_null: zero_covariance
 
 setups:
   - dgp: GaussianNetwork

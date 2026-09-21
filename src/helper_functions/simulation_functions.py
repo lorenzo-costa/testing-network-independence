@@ -69,6 +69,8 @@ def run_scenario(metrics, args, seed, method_params=None):
         method = method(**args)
 
     args["method_name"] = method.get_name()
+    if getattr(method, "approximation", None) == "asymptotic":
+        args["asymptotic_null"] = method.asymptotic_null
 
     method.fit(data, **(method_params if method_params else {}))
     if getattr(method, "effective_gamma", None) is not None:

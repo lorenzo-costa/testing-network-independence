@@ -980,6 +980,9 @@ def flatten_args_columns(df, extra_cols: dict = None):
     df["hypothesis"] = df["args"].apply(lambda x: x.get("hypothesis", "NA"))
     df["edge_var"] = df["args"].apply(lambda x: x.get("edge_var", "NA"))
     df["approximation"] = df["args"].apply(lambda x: x.get("approximation", "NA"))
+    df["asymptotic_null"] = df["args"].apply(
+        lambda x: x.get("asymptotic_null", "NA")
+    )
     df["dgp"] = df["args"].apply(lambda x: x.get("dgp_name", "NA"))
     df["solver"] = df["args"].apply(lambda x: x.get("solver", "NA"))
     df["rho"] = df["args"].apply(lambda x: x.get("rho", "NA"))
