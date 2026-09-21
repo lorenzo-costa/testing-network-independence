@@ -11,7 +11,7 @@ from __future__ import annotations
 import ast
 from os import PathLike
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -678,17 +678,11 @@ def _fill_missing_values(results: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
-def combine_shard_outputs(
+def _resolve_shard_metadata(
     results_dir: str | PathLike[str],
     filenames: Sequence[str | PathLike[str]],
-) -> pd.DataFrame:
-    """Read, validate, and concatenate every CSV shard from one Slurm run.
-
-    Filenames must use the shard runner's ``_shard-III-of-NNN.csv`` suffix.
-    The function rejects mixed runs, duplicate shard indices, and incomplete
-    shard sets so power and type-I-error estimates cannot silently use a
-    partial simulation batch.
-    """
+) -> list[tuple[str, int, int, Path]]:
+    """Resolve and validate one complete, non-duplicated shard set."""
     if not filenames:
         raise ValueError("At least one shard filename must be provided.")
 
@@ -735,8 +729,43 @@ def combine_shard_outputs(
             f"missing={missing_indices}, unexpected={extra_indices}."
         )
 
+    return sorted(metadata, key=lambda item: item[1])
+
+
+def iter_shard_outputs(
+    results_dir: str | PathLike[str],
+    filenames: Sequence[str | PathLike[str]],
+    *,
+    chunksize: int = 10_000,
+    usecols: Sequence[str] | None = None,
+) -> Iterator[pd.DataFrame]:
+    """Yield validated shard rows in bounded-memory chunks."""
+    if isinstance(chunksize, bool) or not isinstance(chunksize, int) or chunksize < 1:
+        raise ValueError("chunksize must be a positive integer.")
+
+    metadata = _resolve_shard_metadata(results_dir, filenames)
+    for _, shard_index, shard_count, path in metadata:
+        for frame in pd.read_csv(path, chunksize=chunksize, usecols=usecols):
+            frame["source_file"] = path.name
+            frame["shard_index"] = shard_index
+            frame["num_shards"] = shard_count
+            yield frame
+
+
+def combine_shard_outputs(
+    results_dir: str | PathLike[str],
+    filenames: Sequence[str | PathLike[str]],
+) -> pd.DataFrame:
+    """Read, validate, and concatenate every CSV shard from one Slurm run.
+
+    Filenames must use the shard runner's ``_shard-III-of-NNN.csv`` suffix.
+    The function rejects mixed runs, duplicate shard indices, and incomplete
+    shard sets so power and type-I-error estimates cannot silently use a
+    partial simulation batch.
+    """
+    metadata = _resolve_shard_metadata(results_dir, filenames)
     frames = []
-    for _, shard_index, _, path in sorted(metadata, key=lambda item: item[1]):
+    for _, shard_index, shard_count, path in metadata:
         frame = pd.read_csv(path)
         frame["source_file"] = path.name
         frame["shard_index"] = shard_index
@@ -785,6 +814,7 @@ __all__ = [
     "combine_shard_outputs",
     "covariance_condition_number",
     "extract_argument",
+    "iter_shard_outputs",
     "parse_config_string",
     "parse_matrix",
     "parse_result_string",

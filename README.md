@@ -243,10 +243,11 @@ python results/visualise_linear_model.py --files \
 ```
 
 The processor verifies that the files form one complete, non-duplicated shard
-set before combining them. The visualization writes separate Gaussian and
-Bernoulli power grids, plus one type-I-error figure per network with the values
-of `p` arranged as a single row of facets, under
-`results/linear_model_figures`.
+set and streams large shards in bounded-memory chunks. The visualization writes
+separate figures for Gaussian/Bernoulli networks and true/estimated latent
+positions. Each combination receives a positive-SNR power grid, an SNR-zero
+type-I-error row, and matching figures for the relative Frobenius error between
+Y and its estimate, under `results/linear_model_figures`.
 
 Edit the `n`, `p`, `d_x`, `d_y`, and `snr` lists in
 `linear_model_config.yaml` to define the factorial sweep. The supplied config

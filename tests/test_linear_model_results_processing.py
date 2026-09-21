@@ -5,12 +5,25 @@ import pytest
 
 from results.results_processing import (
     combine_shard_outputs,
+    iter_shard_outputs,
     process_shard_results,
 )
-from results.visualise_linear_model import aggregate_rejection_rates
+from results.visualise_linear_model import (
+    aggregate_frobenius_errors,
+    aggregate_rejection_rates,
+)
 
 
-def _row(n, p, snr, rejection, method="RVTest", gamma=None):
+def _row(
+    n,
+    p,
+    snr,
+    rejection,
+    method="RVTest",
+    gamma=None,
+    use_true_latent=False,
+    frobenius_y=0.2,
+):
     args = {
         "n": n,
         "p": p,
@@ -20,7 +33,7 @@ def _row(n, p, snr, rejection, method="RVTest", gamma=None):
         "hypothesis": "H0" if snr == 0 else "H1",
         "alpha": 0.05,
         "npermutations": 400,
-        "use_true_latent": False,
+        "use_true_latent": use_true_latent,
         "B": 0 if snr == 0 else None,
         "method": method,
         "permutation_type": "latent",
@@ -38,7 +51,7 @@ def _row(n, p, snr, rejection, method="RVTest", gamma=None):
             "Rejection": rejection,
             "FalseRejection": snr == 0 and rejection,
             "TrueRejection": snr > 0 and rejection,
-            "RelativeFrobeniusNorm_Y": 0.2,
+            "RelativeFrobeniusNorm_Y": frobenius_y,
             "RelativeFrobeniusNorm_X_1": 0.3,
             "RelativeFrobeniusNorm_X_global": 0.25,
             "ProcrustesDistance_Y": 0.1,
@@ -98,6 +111,64 @@ def test_combine_and_process_linear_model_shards(tmp_path):
 
     aggregate = aggregate_rejection_rates(processed)
     assert aggregate["replicates"].tolist() == [1, 1, 1]
+
+
+def test_chunked_shard_reader_retains_shard_metadata(tmp_path):
+    names = _write_shards(tmp_path)
+
+    chunks = list(
+        iter_shard_outputs(
+            tmp_path,
+            names,
+            chunksize=1,
+            usecols=("args", "ComputeAll"),
+        )
+    )
+
+    assert len(chunks) == 3
+    assert [chunk["shard_index"].iloc[0] for chunk in chunks] == [0, 1, 2]
+    assert all(chunk["num_shards"].iloc[0] == 3 for chunk in chunks)
+
+
+def test_plot_aggregations_separate_latent_modes_and_y_frobenius_error():
+    base = {
+        "dgp_name": "GaussianNetwork",
+        "p": 5,
+        "snr": 0.5,
+        "n": 100,
+        "method": "CCA",
+        "alpha": 0.05,
+    }
+    results = pd.DataFrame(
+        [
+            {
+                **base,
+                "use_true_latent": False,
+                "Rejection": 1,
+                "RelativeFrobeniusNorm_Y": 0.4,
+            },
+            {
+                **base,
+                "use_true_latent": False,
+                "Rejection": 0,
+                "RelativeFrobeniusNorm_Y": 0.2,
+            },
+            {
+                **base,
+                "use_true_latent": True,
+                "Rejection": 1,
+                "RelativeFrobeniusNorm_Y": 0.0,
+            },
+        ]
+    )
+
+    rejection = aggregate_rejection_rates(results).sort_values("use_true_latent")
+    frobenius = aggregate_frobenius_errors(results).sort_values("use_true_latent")
+
+    assert rejection["use_true_latent"].tolist() == [False, True]
+    assert rejection["rejection_rate"].tolist() == [0.5, 1.0]
+    assert frobenius["frobenius_error"].tolist() == pytest.approx([0.3, 0.0])
+    assert frobenius["replicates"].tolist() == [2, 1]
 
 
 def test_combine_shards_rejects_an_incomplete_set(tmp_path):
