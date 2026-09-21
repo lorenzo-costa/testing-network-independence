@@ -216,6 +216,64 @@ def test_asymptotic_rv_null_calibration_with_identity_covariance():
     )
 
 
+def test_asymptotic_rv_uses_centered_cross_product_covariance_and_rv_denominator(
+    monkeypatch,
+):
+    Y = np.array(
+        [
+            [1.0, -1.0],
+            [2.0, 0.0],
+            [-1.0, 2.0],
+            [0.0, 1.0],
+            [3.0, -2.0],
+        ]
+    )
+    X_blocks = [
+        np.array([[0.0], [1.0], [3.0], [-1.0], [2.0]]),
+        np.array([[2.0], [-2.0], [1.0], [4.0], [0.0]]),
+    ]
+    captured = {}
+
+    def capture_imhof(q, weights):
+        captured["q"] = q
+        captured["weights"] = weights.copy()
+        return {"Qq": 0.25}
+
+    monkeypatch.setattr("src.methods.rv_test.imhof", capture_imhof)
+    method = RVTest(use_true_latent=True, approximation="asymptotic")
+    method.fit({"Y": Y, "X": X_blocks})
+
+    centered_y = Y - Y.mean(axis=0, keepdims=True)
+    X = np.concatenate(X_blocks, axis=1)
+    centered_x = X - X.mean(axis=0, keepdims=True)
+    W = np.einsum("ni,nj->nij", centered_y, centered_x).reshape(len(Y), -1)
+    centered_W = W - W.mean(axis=0, keepdims=True)
+    Omega = centered_W.T @ centered_W / len(Y)
+    eigenvalues = np.linalg.eigvalsh(Omega)[::-1]
+    eigenvalues = eigenvalues[eigenvalues > 1e-10 * eigenvalues[0]]
+    S_Y = centered_y.T @ centered_y / len(Y)
+    S_X = centered_x.T @ centered_x / len(Y)
+    denominator = np.sqrt(np.trace(S_Y @ S_Y) * np.trace(S_X @ S_X))
+
+    np.testing.assert_allclose(captured["weights"], eigenvalues / denominator)
+    assert captured["q"] == pytest.approx(
+        len(Y) * rv_coefficient(centered_y, centered_x)
+    )
+    assert method.pvalue == 0.25
+
+
+def test_asymptotic_rv_rejects_degenerate_sample_covariance():
+    method = RVTest(use_true_latent=True, approximation="asymptotic")
+
+    with pytest.raises(ValueError, match="asymptotic RV.*Frobenius norms"):
+        method.fit(
+            {
+                "Y": np.ones((5, 1)),
+                "X": [np.arange(5.0).reshape(-1, 1)],
+            }
+        )
+
+
 def test_rv_test_rejects_unknown_approximation():
     method = RVTest(
         solver=dummy_solver,

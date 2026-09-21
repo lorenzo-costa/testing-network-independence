@@ -159,22 +159,42 @@ class RVTest(BasePermutationTest):
     def _fit_asymptotic(self):
         X = self.Xhat.copy()
         Y = self.Yhat.copy()
-        X = X - X.mean(axis=0)
-        Y = Y - Y.mean(axis=0)
+        X = X - X.mean(axis=0, keepdims=True)
+        Y = Y - Y.mean(axis=0, keepdims=True)
         n, _ = X.shape
 
         rv = self.test_function(Y, X)
         self.test_stat_estimate = rv
 
+        S_Y = (Y.T @ Y) / n
+        S_X = (X.T @ X) / n
+        den = np.sqrt(np.trace(S_Y @ S_Y) * np.trace(S_X @ S_X))
+        if not np.isfinite(den) or den <= 0:
+            raise ValueError(
+                "The asymptotic RV approximation requires positive, finite "
+                "Frobenius norms for the Y and X sample covariances."
+            )
+
+        # Let W_i = vec(Y_i X_i.T). The Hadamard product below is W W.T,
+        # whose doubly centered form is the Gram representation of
+        # sum_i (W_i - W_bar)(W_i - W_bar).T / n.
         GY = Y @ Y.T
         GX = X @ X.T
-        Omega_gram = (GY * GX) / n
+        W_gram = GY * GX
+        W_gram_mean = W_gram.mean(axis=0, keepdims=True)
+        W_gram = (
+            W_gram - W_gram_mean - W_gram_mean.T + W_gram_mean.mean()
+        )
+        Omega_gram = W_gram / n
 
         hat_lambda = np.linalg.eigvalsh(Omega_gram)
         hat_lambda = np.sort(hat_lambda)[::-1]
+        if hat_lambda[0] <= 0:
+            raise ValueError(
+                "The asymptotic RV approximation requires nondegenerate "
+                "cross-product covariance."
+            )
         hat_lambda = hat_lambda[hat_lambda > 1e-10 * hat_lambda[0]]
-
-        den = np.sqrt(np.sum(hat_lambda**2))
 
         weights = hat_lambda / den
         self.pvalue = imhof(n * rv, weights)["Qq"]
