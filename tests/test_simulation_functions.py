@@ -75,6 +75,35 @@ def test_parallel_simulation_configures_one_blas_thread_per_worker(monkeypatch):
     assert captured["initargs"] == (1,)
 
 
+def test_parallel_simulation_can_stream_results_without_collecting(monkeypatch):
+    class FakePool:
+        def __init__(self, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def imap_unordered(self, function, tasks, chunksize):
+            return [{"scenario": 1}, {"scenario": 2}]
+
+    monkeypatch.setattr(simulation_functions, "Pool", FakePool)
+    streamed = []
+
+    returned = simulation_functions.run_simulation_parallel(
+        nsim=0,
+        factorial_design=[],
+        metrics=[],
+        n_jobs=2,
+        result_callback=streamed.append,
+    )
+
+    assert returned is None
+    assert streamed == [{"scenario": 1}, {"scenario": 2}]
+
+
 @pytest.mark.parametrize("blas_threads", [0, -1, 1.5, True, None])
 def test_parallel_simulation_rejects_invalid_blas_thread_limits(blas_threads):
     with pytest.raises(ValueError, match="blas_threads"):
@@ -105,3 +134,32 @@ def test_run_simulation_forwards_blas_thread_limit(monkeypatch):
         blas_threads=3,
     )
     assert captured["blas_threads"] == 3
+
+
+def test_serial_simulation_can_stream_results_without_collecting(monkeypatch):
+    scenarios = [
+        ({"scenario": 1}, [], None, object()),
+        ({"scenario": 2}, [], None, object()),
+    ]
+    monkeypatch.setattr(
+        simulation_functions,
+        "_build_seeded_scenarios",
+        lambda *args, **kwargs: (scenarios, len(scenarios)),
+    )
+    monkeypatch.setattr(
+        simulation_functions,
+        "run_scenario",
+        lambda metrics, args, seed, method_params=None: {"scenario": args["scenario"]},
+    )
+    streamed = []
+
+    returned = simulation_functions.run_simulation(
+        nsim=1,
+        factorial_design=[{"scenario": 1}],
+        metrics=[],
+        parallel=False,
+        result_callback=streamed.append,
+    )
+
+    assert returned is None
+    assert streamed == [{"scenario": 1}, {"scenario": 2}]

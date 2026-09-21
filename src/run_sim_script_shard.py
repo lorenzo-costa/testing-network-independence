@@ -15,6 +15,43 @@ from src.load_config import (
 )
 
 
+CSV_BATCH_SIZE = 1000
+
+
+class _CsvResultWriter:
+    """Write simulation results in bounded batches while preserving CSV shape."""
+
+    def __init__(self, output_path, batch_size=CSV_BATCH_SIZE):
+        self.output_path = Path(output_path)
+        self.batch_size = batch_size
+        self.buffer = []
+        self.rows_written = 0
+        self._wrote_header = False
+
+    def add(self, result):
+        self.buffer.append(result)
+        if len(self.buffer) >= self.batch_size:
+            self.flush()
+
+    def flush(self):
+        if not self.buffer:
+            return
+        frame = pd.DataFrame(self.buffer)
+        flatten_args_columns(frame)
+        frame.to_csv(
+            self.output_path,
+            mode="a" if self._wrote_header else "w",
+            header=not self._wrote_header,
+            index=False,
+        )
+        self.rows_written += len(frame)
+        self._wrote_header = True
+        self.buffer.clear()
+
+    def close(self):
+        self.flush()
+
+
 def _environment_int(name, default=None):
     """Return an integer Slurm environment variable when it is defined."""
     value = os.environ.get(name)
@@ -95,7 +132,9 @@ def main(argv=None):
         f"{local_total} of {global_total} scenarios, {n_jobs or 'all'} local workers."
     )
     started = datetime.now()
-    results = run_simulation(
+    output_path = _output_path(configs[0], args.shard_index, args.num_shards)
+    writer = _CsvResultWriter(output_path)
+    run_simulation(
         nsim=simulation["nsim"],
         metrics=configs[0]["metrics"],
         factorial_design=factorial,
@@ -106,14 +145,13 @@ def main(argv=None):
         blas_threads=simulation.get("blas_threads", 1),
         shard_index=args.shard_index,
         num_shards=args.num_shards,
+        result_callback=writer.add,
     )
-
-    frame = pd.DataFrame(results)
-    if not frame.empty:
-        flatten_args_columns(frame)
-    output_path = _output_path(configs[0], args.shard_index, args.num_shards)
-    frame.to_csv(output_path, index=False)
-    print(f"Saved {len(frame)} rows to {output_path} in {datetime.now() - started}.")
+    writer.close()
+    print(
+        f"Saved {writer.rows_written} rows to {output_path} "
+        f"in {datetime.now() - started}."
+    )
     return str(output_path)
 
 

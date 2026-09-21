@@ -60,15 +60,15 @@ def test_shard_runner_uses_slurm_values_and_unique_output(monkeypatch, tmp_path)
 
     def fake_run_simulation(**kwargs):
         captured.update(kwargs)
-        return [
+        kwargs["result_callback"](
             {
                 "args": {
                     "n": 20,
                     "dgp_name": "GaussianNetwork_multiple_networks",
                     "method_name": "RV_PermutationTest_latent",
-                }
+                },
             }
-        ]
+        )
 
     monkeypatch.setattr(shard_script, "run_simulation", fake_run_simulation)
     output = shard_script.main(
@@ -88,6 +88,24 @@ def test_shard_runner_uses_slurm_values_and_unique_output(monkeypatch, tmp_path)
     assert captured["num_shards"] == 3
     assert captured["n_jobs"] == 32
     assert captured["blas_threads"] == 1
+    assert callable(captured["result_callback"])
     assert Path(output).name == "linear_12345_shard-001-of-003.csv"
     saved = pd.read_csv(output)
     assert len(saved) == 1
+
+
+def test_csv_result_writer_flushes_bounded_batches(tmp_path):
+    output = tmp_path / "streamed.csv"
+    writer = shard_script._CsvResultWriter(output, batch_size=2)
+
+    for n in (10, 20, 30):
+        writer.add({"value": n, "args": {"n": n}})
+
+    assert writer.rows_written == 2
+    assert len(writer.buffer) == 1
+
+    writer.close()
+
+    saved = pd.read_csv(output)
+    assert saved["value"].tolist() == [10, 20, 30]
+    assert saved["n"].tolist() == [10, 20, 30]

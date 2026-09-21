@@ -142,6 +142,7 @@ def run_simulation_parallel(
     blas_threads=1,
     shard_index=0,
     num_shards=1,
+    result_callback=None,
 ):
     if rng is None:
         rng = np.random.default_rng()
@@ -175,7 +176,7 @@ def run_simulation_parallel(
     chunk_size = max(1, total_scenarios // (n_jobs * batch_size))
     # chunk_size = max(1, total_scenarios // (n_jobs * 32))
 
-    results = []
+    results = [] if result_callback is None else None
     with Pool(
         processes=n_jobs,
         initializer=_initialize_parallel_worker,
@@ -191,7 +192,10 @@ def run_simulation_parallel(
             for result in pool.imap_unordered(
                 run_scenario_wrapper, all_scenarios_seed, chunksize=chunk_size
             ):
-                results.append(result)
+                if result_callback is None:
+                    results.append(result)
+                else:
+                    result_callback(result)
                 pbar.update(1)
 
     if num_shards > 1:
@@ -214,6 +218,7 @@ def run_simulation(
     blas_threads=1,
     shard_index=0,
     num_shards=1,
+    result_callback=None,
 ):
     """Run a simulation study.
 
@@ -244,6 +249,9 @@ def run_simulation(
         Zero-based shard to execute, by default 0.
     num_shards : int, optional
         Number of disjoint shards in the global simulation task list, by default 1.
+    result_callback : callable, optional
+        Called once in the parent process for each completed result. When supplied,
+        results are not accumulated in memory and this function returns ``None``.
 
     Returns
     -------
@@ -262,6 +270,7 @@ def run_simulation(
             blas_threads=blas_threads,
             shard_index=shard_index,
             num_shards=num_shards,
+            result_callback=result_callback,
         )
 
     if rng is None:
@@ -277,15 +286,17 @@ def run_simulation(
         num_shards=num_shards,
         shuffle=num_shards > 1,
     )
-    results = []
+    results = [] if result_callback is None else None
     for args, scenario_metrics, scenario_method_params, seed in tqdm(scenarios):
-        results.append(
-            run_scenario(
-                scenario_metrics,
-                args,
-                method_params=scenario_method_params,
-                seed=seed,
-            )
+        result = run_scenario(
+            scenario_metrics,
+            args,
+            method_params=scenario_method_params,
+            seed=seed,
         )
+        if result_callback is None:
+            results.append(result)
+        else:
+            result_callback(result)
 
     return results
