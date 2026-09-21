@@ -1,0 +1,65 @@
+# Multiple-network latent linear-model experiment comparing all three methods.
+# RV uses its asymptotic reference distribution; CCA and MGC remain permutation
+# tests because they do not implement asymptotic inference.
+#
+# Warning: the RV asymptotic approximation is poorly calibrated when p*d_x is
+# large relative to n. Use this config for comparison, not as the primary result.
+
+experiment_type: linear_model
+
+simulation:
+  nsim: 200
+  seed: 2
+
+  n: [50, 100, 200]
+  p: [5, 10, 25, 50, 100]
+  d_x: [5]
+  d_y: [5]
+
+  # snr=0 uses B=0 (the null); positive SNRs sample and rescale B.
+  snr: [0, 0.1, 0.25, 0.5, 1]
+  alpha: [0.05]
+  edge_var: [2]
+
+  parallel: true
+  n_jobs: -1
+  batch_size: 32
+  blas_threads: 1
+
+methods:
+  # Used by CCA and MGC. RV ignores this under approximation=asymptotic.
+  npermutations: [400]
+  use_true_latent: [false, true]
+  list:
+    - name: RVTest
+      kwargs:
+        approximation: asymptotic
+
+    - name: CanonicalCorrelationTest
+      kwargs:
+        permutation_type: latent
+        n_jobs: 1
+
+    - name: DistanceCorrelationTest
+      kwargs:
+        test_method: mgc
+        permutation_type: latent
+        n_jobs: 1
+
+setups:
+  - dgp: GaussianNetwork
+    solver: ASE
+
+  - dgp: BernoulliNetwork
+    solver: pgd_fit_wrapper
+    dgp_kwargs:
+      rdpg: false
+    solver_kwargs:
+      backend: numpy
+
+metrics:
+  compute_all: true
+
+output:
+  results_dir: results
+  file_prefix: linear_model_asymptotic_results

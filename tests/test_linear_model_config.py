@@ -77,6 +77,60 @@ def test_every_linear_model_network_and_method_combination_runs():
             assert result["args"]["cca_gamma"] == pytest.approx(np.sqrt(12))
 
 
+def test_asymptotic_linear_model_config_uses_all_three_methods():
+    config = load_config(ROOT / "linear_model_asymptotic_config.yaml")
+    design = build_factorial_design(config)
+
+    assert len(design) == 2 * 3 * 3 * 5 * 5 * 2
+    assert config["output"]["file_prefix"] == "linear_model_asymptotic_results"
+    assert {row["method"].func for row in design} == {
+        RVTest,
+        CanonicalCorrelationTest,
+        DistanceCorrelationTest,
+    }
+
+    rv_methods = [row["method"] for row in design if row["method"].func is RVTest]
+    cca_methods = [
+        row["method"]
+        for row in design
+        if row["method"].func is CanonicalCorrelationTest
+    ]
+    mgc_methods = [
+        row["method"]
+        for row in design
+        if row["method"].func is DistanceCorrelationTest
+    ]
+    assert all(method.keywords["approximation"] == "asymptotic" for method in rv_methods)
+    assert all(method.keywords["permutation_type"] == "latent" for method in cca_methods)
+    assert all(method.keywords["permutation_type"] == "latent" for method in mgc_methods)
+    assert all(method.keywords["test_method"] == "mgc" for method in mgc_methods)
+
+
+def test_asymptotic_linear_model_config_runs_representative_rv_scenario():
+    config = load_config(ROOT / "linear_model_asymptotic_config.yaml")
+    design = build_factorial_design(config)
+    row = next(
+        row
+        for row in design
+        if row["setup"][0].args[0] is GaussianNetwork
+        and row["method"].func is RVTest
+        and row["use_true_latent"] is True
+        and row["p"] == 5
+        and row["snr"] == 0
+    )
+    runtime = dict(row)
+    runtime["n"] = 30
+
+    result = run_scenario(
+        config["metrics"],
+        runtime,
+        seed=np.random.SeedSequence(700),
+    )
+
+    assert result["args"]["method_name"] == "RV_AsymptoticTest"
+    assert np.isfinite(result["ComputeAll"]["Rejection"])
+
+
 def test_linear_model_results_flatten_without_legacy_k_or_rho():
     args = {
         "n": 200,

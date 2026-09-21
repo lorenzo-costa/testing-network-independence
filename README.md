@@ -222,6 +222,16 @@ The same experiment can be run from the YAML-driven simulation runner:
 python -m src.run_simulation_script --config linear_model_config.yaml
 ```
 
+For a comparison using asymptotic RV alongside permutation CCA and MGC, use:
+
+```bash
+python -m src.run_simulation_script --config linear_model_asymptotic_config.yaml
+```
+
+The RV asymptotic approximation is not well calibrated when `p * d_x` is large
+relative to `n`; the permutation configuration remains the recommended primary
+experiment.
+
 On a Slurm cluster, submit the three-shard job array with:
 
 ```bash
