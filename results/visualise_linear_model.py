@@ -416,7 +416,7 @@ def plot_power_grid(
     network: str,
     use_true_latent: bool,
 ) -> Path:
-    """Plot rows of p facets and columns of positive-SNR facets."""
+    """Plot rows of positive-SNR facets and columns of p facets."""
     data = aggregated[
         (aggregated["dgp_name"] == network)
         & (aggregated["snr"] > 0)
@@ -432,16 +432,16 @@ def plot_power_grid(
     methods = _available_methods(data)
 
     fig, axes = plt.subplots(
-        len(p_values),
         len(snr_values),
-        figsize=(2.15 * len(snr_values), 1.8 * len(p_values) + 0.8),
+        len(p_values),
+        figsize=(2.15 * len(p_values), 1.8 * len(snr_values) + 0.8),
         sharex=True,
         sharey=True,
         squeeze=False,
         layout="constrained",
     )
-    for row, p_value in enumerate(p_values):
-        for column, snr in enumerate(snr_values):
+    for row, snr in enumerate(snr_values):
+        for column, p_value in enumerate(p_values):
             ax = axes[row, column]
             panel = data[(data["p"] == p_value) & (data["snr"] == snr)]
             _plot_curves(
@@ -455,10 +455,10 @@ def plot_power_grid(
             ax.set_ylim(-0.02, 1.02)
             ax.set_yticks([0, 0.25, 0.5, 0.75, 1])
             if row == 0:
-                ax.set_title(f"SNR = {snr:g}")
-            if column == len(snr_values) - 1:
+                ax.set_title(f"p = {int(p_value)}")
+            if column == len(p_values) - 1:
                 ax.annotate(
-                    f"p = {int(p_value)}",
+                    f"SNR = {snr:g}",
                     xy=(1.04, 0.5),
                     xycoords="axes fraction",
                     rotation=270,
@@ -574,7 +574,7 @@ def plot_frobenius_grid(
     network: str,
     use_true_latent: bool,
 ) -> Path:
-    """Plot positive-SNR Y relative-Frobenius errors over n."""
+    """Plot Y errors with SNR rows and p columns over n."""
     data = aggregated[
         (aggregated["dgp_name"] == network)
         & (aggregated["snr"] > 0)
@@ -591,16 +591,16 @@ def plot_frobenius_grid(
     upper_limit = _frobenius_upper_limit(data)
 
     fig, axes = plt.subplots(
-        len(p_values),
         len(snr_values),
-        figsize=(2.15 * len(snr_values), 1.8 * len(p_values) + 0.8),
+        len(p_values),
+        figsize=(2.15 * len(p_values), 1.8 * len(snr_values) + 0.8),
         sharex=True,
         sharey=True,
         squeeze=False,
         layout="constrained",
     )
-    for row, p_value in enumerate(p_values):
-        for column, snr in enumerate(snr_values):
+    for row, snr in enumerate(snr_values):
+        for column, p_value in enumerate(p_values):
             ax = axes[row, column]
             panel = data[(data["p"] == p_value) & (data["snr"] == snr)]
             _plot_curves(
@@ -612,10 +612,10 @@ def plot_frobenius_grid(
             )
             ax.set_ylim(0, upper_limit)
             if row == 0:
-                ax.set_title(f"SNR = {snr:g}")
-            if column == len(snr_values) - 1:
+                ax.set_title(f"p = {int(p_value)}")
+            if column == len(p_values) - 1:
                 ax.annotate(
-                    f"p = {int(p_value)}",
+                    f"SNR = {snr:g}",
                     xy=(1.04, 0.5),
                     xycoords="axes fraction",
                     rotation=270,

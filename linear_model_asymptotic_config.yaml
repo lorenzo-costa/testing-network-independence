@@ -1,8 +1,5 @@
-# Multiple-network latent linear-model experiment comparing both RV asymptotic
-# null models: independence and zero cross-covariance.
-#
-# Warning: the RV asymptotic approximation is poorly calibrated when p*d_x is
-# large relative to n. Use this config for comparison, not as the primary result.
+# Multiple-network linear-model experiment using the adjacency-level global
+# MRQAP permutation test.
 
 experiment_type: linear_model
 
@@ -26,19 +23,12 @@ simulation:
   blas_threads: 1
 
 methods:
-  # Required by the shared runner but ignored by asymptotic RV.
   npermutations: [400]
-  use_true_latent: [false, true]
   list:
-    - name: RVTest
+    - name: MRQAP
       kwargs:
-        approximation: asymptotic
-        asymptotic_null: independence
-
-    - name: RVTest
-      kwargs:
-        approximation: asymptotic
-        asymptotic_null: zero_covariance
+        permutation_strategy: y_permutation
+        batch_size: 32
 
 setups:
   - dgp: GaussianNetwork
@@ -56,4 +46,4 @@ metrics:
 
 output:
   results_dir: results
-  file_prefix: linear_model_asymptotic_results
+  file_prefix: linear_model_mrqap_results

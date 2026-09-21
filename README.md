@@ -237,15 +237,15 @@ That configuration crosses both network models with independent X networks
 errors. With the current grid it contains 1,800 design cells, or 360,000 runs
 at 200 repetitions per cell.
 
-For a comparison using asymptotic RV alongside permutation CCA and MGC, use:
+For the adjacency-level global MRQAP permutation experiment, use:
 
 ```bash
 python -m src.run_simulation_script --config linear_model_asymptotic_config.yaml
 ```
 
-The RV asymptotic approximation is not well calibrated when `p * d_x` is large
-relative to `n`; the permutation configuration remains the recommended primary
-experiment.
+This configuration tests `H0: beta_1 = ... = beta_p = 0` with 400 node-label
+permutations of `A_Y`. It operates on the observed networks and therefore has no
+`use_true_latent` sweep.
 
 On a Slurm cluster, submit the three-shard job array with:
 
