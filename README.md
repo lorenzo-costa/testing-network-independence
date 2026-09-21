@@ -334,9 +334,21 @@ Estimation-only methods use the same multiple-network input and output structure
 | `ObservedCVM` | `test_function` | CvM statistic on adjacency matrices; no embedding step needed |
 | `LLKRatioTest` | — | Likelihood-ratio test |
 | `QAP` | — | Quadratic Assignment Procedure |
+| `MRQAP` | `permutation_strategy`, `symmetric`, `include_intercept`, `npermutations`, `batch_size` | A `Y`/`A`/optional-`X` input tests one coefficient; an `A_Y`/`A_X` input uses an omnibus F-statistic to test whether all network coefficients are zero |
 | `DiffusionCorrelation` | — | Diffusion-map based correlation |
 | `CanonicalCorrelationTest` | `permutation_type`, `solver`, `gamma` | Permutation test via canonical correlations; the concatenated X covariance is regularized as sample covariance + `gamma * I`, with `gamma=sqrt(n)` by default |
 | `FitIndependent` | `solver`, `d_y`, `d_x` | Not a test; fits Y and every X network independently, stores individual X blocks, and concatenates them |
+
+The global MRQAP interface operates directly on adjacency matrices and tests
+`H0: beta_1 = ... = beta_p = 0` by permuting the node labels of `A_Y`:
+
+```python
+from src.methods import MRQAP
+
+method = MRQAP(npermutations=999)
+method.fit({"A_Y": A_Y, "A_X": [A_1, A_2, A_3]})
+print(method.test_stat_estimate, method.pvalue, method.reject_null)
+```
 
 Permutation-based methods accept `n_jobs`, `batch_size`, and `verbose`.
 The default `n_jobs=1` evaluates permutations serially, positive values use

@@ -124,10 +124,15 @@ class QAP(BaseMethod):
 class MRQAP(BaseMethod):
     """Multiple Regression Quadratic Assignment Procedure.
 
-    The tested network is ``A`` when it is supplied. Otherwise, ``Z`` is used,
-    converting node-valued observations to pairwise Euclidean distances. The
-    outcome ``Y`` and optional controls ``X`` may likewise be network- or
-    node-valued.
+    Two input forms are supported. ``{"Y": Y, "A": A, "X": X}`` tests the
+    coefficient of one network ``A`` while treating the optional networks in
+    ``X`` as controls. ``{"A_Y": A_Y, "A_X": [A_1, ..., A_p]}`` tests the
+    global null that all ``p`` network coefficients are zero using an omnibus
+    regression F-statistic. Global tests permute the node labels of ``A_Y``.
+
+    In the coefficient test, ``Z`` may replace ``A`` and node-valued inputs are
+    converted to pairwise Euclidean distances. Global-test inputs must all be
+    square networks.
 
     Parameters
     ----------
@@ -137,7 +142,8 @@ class MRQAP(BaseMethod):
         Number of random node permutations (default 100).
     permutation_strategy : {"y_permutation", "dsp"}, optional
         Null permutation scheme. ``"dsp"`` implements double
-        semipartialling (default ``"y_permutation"``).
+        semipartialling for coefficient tests (default ``"y_permutation"``).
+        Global tests require ``"y_permutation"``.
     symmetric : bool, optional
         If True, regress on the upper-triangular dyads. If False, regress on
         all ordered off-diagonal dyads (default True).
@@ -195,9 +201,19 @@ class MRQAP(BaseMethod):
         self.Z = None
         self.Zhat = None
         self.Xhat = None
+        self.global_test = False
 
     def fit(self, data, **kwargs):
         """Fit the observed regression and run the selected permutation test."""
+        if isinstance(data, dict) and ("A_Y" in data or "A_X" in data):
+            self._fit_global(data)
+            return
+
+        self._fit_coefficient(data)
+
+    def _fit_coefficient(self, data):
+        """Test one network coefficient, optionally conditional on controls."""
+        self.global_test = False
         self._process_input(data)
 
         controls = self._vectorized_controls()
@@ -231,7 +247,70 @@ class MRQAP(BaseMethod):
         self.pvalue = (extreme + 1) / (self.npermutations + 1)
         self.reject_null = bool(self.pvalue < self.alpha)
 
-        return
+    def _fit_global(self, data):
+        """Test whether all network coefficients are jointly zero."""
+        if self.permutation_strategy != "y_permutation":
+            raise ValueError(
+                "Global MRQAP tests support only permutation_strategy="
+                "'y_permutation'."
+            )
+
+        self.global_test = True
+        self._process_global_input(data)
+
+        predictors = self._vectorized_global_predictors()
+        outcome = self._vectorize(self.outcome_network)
+        design = self._control_design(predictors)
+        q_full, r_full = self._full_rank_qr(
+            design, "The global MRQAP regression design is degenerate."
+        )
+
+        n_dyads = outcome.size
+        numerator_df = predictors.shape[1]
+        denominator_df = n_dyads - design.shape[1]
+        if denominator_df <= 0:
+            raise ValueError(
+                "The global MRQAP regression needs more dyads than fitted "
+                "parameters."
+            )
+
+        if self.include_intercept:
+            reduced_design = np.ones((n_dyads, 1), dtype=float)
+            q_reduced, _ = self._full_rank_qr(
+                reduced_design, "The global MRQAP reduced design is degenerate."
+            )
+        else:
+            q_reduced = np.empty((n_dyads, 0), dtype=float)
+
+        coefficients = self._solve_qr(q_full, r_full, outcome)
+        coefficient_start = int(self.include_intercept)
+        self.observed_coefficients = np.asarray(
+            coefficients[coefficient_start:], dtype=float
+        )
+        self.numerator_df = numerator_df
+        self.denominator_df = denominator_df
+        self.test_stat_estimate = float(
+            self._omnibus_f_statistic(
+                q_full,
+                q_reduced,
+                outcome,
+                numerator_df,
+                denominator_df,
+            )
+        )
+
+        self.permutation_indices = [
+            self.rng.permutation(self.n_nodes) for _ in range(self.npermutations)
+        ]
+        self.permutation_distribution = np.asarray(
+            self._permute_y_global(q_full, q_reduced, numerator_df, denominator_df),
+            dtype=float,
+        )
+        extreme = np.count_nonzero(
+            self.permutation_distribution >= self.test_stat_estimate
+        )
+        self.pvalue = (extreme + 1) / (self.npermutations + 1)
+        self.reject_null = bool(self.pvalue < self.alpha)
 
     def get_name(self):
         return "MRQAP"
@@ -282,6 +361,62 @@ class MRQAP(BaseMethod):
             self._row_indices, self._column_indices = np.triu_indices(n, k=1)
         else:
             self._row_indices, self._column_indices = np.where(~np.eye(n, dtype=bool))
+
+    def _process_global_input(self, data):
+        """Validate adjacency-only input for an omnibus network regression."""
+        if data.get("A_Y") is None or data.get("A_X") is None:
+            raise ValueError("A_Y and A_X must be supplied together.")
+
+        outcome_network = self._as_square_network(data["A_Y"], "A_Y")
+        raw_predictors = data["A_X"]
+        if not isinstance(raw_predictors, (list, tuple)) or not raw_predictors:
+            raise ValueError("A_X must be a nonempty list of network matrices.")
+
+        predictor_networks = [
+            self._as_square_network(network, f"A_X[{index}]")
+            for index, network in enumerate(raw_predictors)
+        ]
+        n = outcome_network.shape[0]
+        if any(network.shape != (n, n) for network in predictor_networks):
+            raise ValueError("All A_X networks must have shape (n, n), matching A_Y.")
+
+        self.n_nodes = n
+        self.n = n
+        self.p = len(predictor_networks)
+        self.A_Y = outcome_network
+        self.A_X = predictor_networks
+        self.outcome_network = outcome_network
+        self.predictor_networks = np.stack(predictor_networks, axis=2)
+
+        # BaseMethod.get_estimated compatibility. In global mode there are no
+        # covariates: A_X contains only the jointly tested networks.
+        self.A = None
+        self.Y = outcome_network
+        self.X = None
+        self.Z = None
+
+        if self.symmetric:
+            self._row_indices, self._column_indices = np.triu_indices(n, k=1)
+        else:
+            self._row_indices, self._column_indices = np.where(~np.eye(n, dtype=bool))
+
+    @staticmethod
+    def _as_square_network(values, name):
+        """Return a finite real square network without mutating caller data."""
+        if np.iscomplexobj(values):
+            raise ValueError(f"{name} must be a finite real square matrix.")
+        try:
+            network = np.asarray(values, dtype=float)
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"{name} must be a finite real square matrix.") from error
+        if (
+            network.ndim != 2
+            or network.shape[0] == 0
+            or network.shape[0] != network.shape[1]
+            or not np.isfinite(network).all()
+        ):
+            raise ValueError(f"{name} must be a finite real square matrix.")
+        return network.copy()
 
     @staticmethod
     def _pairwise_distances(values):
@@ -354,6 +489,9 @@ class MRQAP(BaseMethod):
             return np.empty((self._row_indices.size, 0), dtype=float)
         return self.control_networks[self._row_indices, self._column_indices, :]
 
+    def _vectorized_global_predictors(self):
+        return self.predictor_networks[self._row_indices, self._column_indices, :]
+
     def _control_design(self, controls):
         if not self.include_intercept:
             return controls
@@ -392,6 +530,48 @@ class MRQAP(BaseMethod):
             permuted_coefficients = self._solve_qr(q, r, responses)
             coefficients.extend(np.atleast_1d(permuted_coefficients[-1]).tolist())
         return coefficients
+
+    def _permute_y_global(self, q_full, q_reduced, numerator_df, denominator_df):
+        statistics = []
+        for permutations in self._permutation_batches():
+            responses = np.column_stack(
+                [
+                    self._vectorize_permuted(self.outcome_network, permutation)
+                    for permutation in permutations
+                ]
+            )
+            batch_statistics = self._omnibus_f_statistic(
+                q_full,
+                q_reduced,
+                responses,
+                numerator_df,
+                denominator_df,
+            )
+            statistics.extend(np.atleast_1d(batch_statistics).tolist())
+        return statistics
+
+    @staticmethod
+    def _omnibus_f_statistic(
+        q_full, q_reduced, responses, numerator_df, denominator_df
+    ):
+        """Compute the nested-regression F statistic for one or more responses."""
+        responses = np.asarray(responses, dtype=float)
+        full_residuals = responses - q_full @ (q_full.T @ responses)
+        reduced_residuals = responses - q_reduced @ (q_reduced.T @ responses)
+        full_rss = np.sum(full_residuals * full_residuals, axis=0)
+        reduced_rss = np.sum(reduced_residuals * reduced_residuals, axis=0)
+        explained_rss = np.maximum(reduced_rss - full_rss, 0.0)
+
+        if np.any(reduced_rss <= 0):
+            raise ValueError(
+                "The global MRQAP outcome has no variation under the reduced model."
+            )
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            statistic = (explained_rss / numerator_df) / (full_rss / denominator_df)
+        if np.any(np.isnan(statistic)):
+            raise ValueError("The global MRQAP F-statistic is undefined.")
+        return statistic
 
     def _double_semipartialling(self, control_design, tested, outcome):
         q_controls, _ = self._full_rank_qr(

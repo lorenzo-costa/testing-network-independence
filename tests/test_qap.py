@@ -21,9 +21,30 @@ def _network_data(seed=12, n=7):
     return {"A": tested, "Y": outcome, "X": controls}
 
 
+def _global_network_data(seed=112, n=8, p=3):
+    rng = np.random.default_rng(seed)
+    predictors = [_symmetric(rng.normal(size=(n, n))) for _ in range(p)]
+    noise = _symmetric(rng.normal(scale=0.3, size=(n, n)))
+    outcome = 0.8 * predictors[0] - 0.45 * predictors[-1] + noise
+    return {"A_Y": outcome, "A_X": predictors}
+
+
 def _upper(network):
     indices = np.triu_indices(network.shape[0], k=1)
     return network[indices]
+
+
+def _manual_omnibus_f(outcome, predictors, include_intercept=True):
+    y = _upper(outcome)
+    x = np.column_stack([_upper(network) for network in predictors])
+    design = np.column_stack((np.ones(y.size), x)) if include_intercept else x
+    coefficients = np.linalg.lstsq(design, y, rcond=None)[0]
+    full_rss = np.sum((y - design @ coefficients) ** 2)
+    reduced_residuals = y - y.mean() if include_intercept else y
+    reduced_rss = np.sum(reduced_residuals**2)
+    numerator_df = x.shape[1]
+    denominator_df = y.size - design.shape[1]
+    return ((reduced_rss - full_rss) / numerator_df) / (full_rss / denominator_df)
 
 
 def test_qap_uses_finite_permutation_pvalue_correction():
@@ -119,6 +140,65 @@ def test_dsp_matches_double_semipartialling_formula():
     np.testing.assert_allclose(method.permutation_distribution, expected_null)
 
 
+def test_global_y_permutation_matches_manual_omnibus_f_and_pvalue():
+    data = _global_network_data()
+    method = MRQAP(
+        npermutations=9,
+        rng=np.random.default_rng(181),
+        permutation_strategy="y_permutation",
+    )
+
+    method.fit(data)
+
+    expected_observed = _manual_omnibus_f(data["A_Y"], data["A_X"])
+    expected_null = []
+    for permutation in method.permutation_indices:
+        permuted_y = data["A_Y"][permutation][:, permutation]
+        expected_null.append(_manual_omnibus_f(permuted_y, data["A_X"]))
+
+    assert method.global_test is True
+    assert method.numerator_df == len(data["A_X"])
+    assert method.denominator_df == _upper(data["A_Y"]).size - len(data["A_X"]) - 1
+    assert method.observed_coefficients.shape == (len(data["A_X"]),)
+    assert method.test_stat_estimate == pytest.approx(expected_observed)
+    np.testing.assert_allclose(method.permutation_distribution, expected_null)
+    extreme = np.count_nonzero(expected_null >= expected_observed)
+    assert method.pvalue == (extreme + 1) / 10
+
+
+def test_global_test_without_intercept_matches_manual_omnibus_f():
+    data = _global_network_data(seed=113, n=7, p=2)
+    method = MRQAP(
+        npermutations=5,
+        include_intercept=False,
+        rng=np.random.default_rng(182),
+    )
+
+    method.fit(data)
+
+    assert method.test_stat_estimate == pytest.approx(
+        _manual_omnibus_f(data["A_Y"], data["A_X"], include_intercept=False)
+    )
+    assert method.denominator_df == _upper(data["A_Y"]).size - len(data["A_X"])
+
+
+def test_global_mode_ignores_optional_latent_truth_metadata():
+    data = _global_network_data(seed=114, n=7, p=2)
+    data["Y"] = np.arange(14, dtype=float).reshape(7, 2)
+    data["X"] = [np.ones((7, 1)), np.zeros((7, 1))]
+    original_y = data["A_Y"].copy()
+    original_x = [network.copy() for network in data["A_X"]]
+    method = MRQAP(npermutations=3, rng=np.random.default_rng(183))
+
+    method.fit(data)
+
+    assert method.global_test is True
+    assert method.X is None
+    np.testing.assert_array_equal(data["A_Y"], original_y)
+    for actual, original in zip(data["A_X"], original_x):
+        np.testing.assert_array_equal(actual, original)
+
+
 @pytest.mark.parametrize("strategy", ["y_permutation", "dsp"])
 def test_batching_does_not_change_results(strategy):
     data = _network_data(seed=31, n=8)
@@ -132,6 +212,29 @@ def test_batching_does_not_change_results(strategy):
         npermutations=11,
         rng=np.random.default_rng(10),
         permutation_strategy=strategy,
+        batch_size=4,
+    )
+
+    unbatched.fit(data)
+    batched.fit(data)
+
+    np.testing.assert_allclose(
+        unbatched.permutation_distribution, batched.permutation_distribution
+    )
+    assert unbatched.test_stat_estimate == pytest.approx(batched.test_stat_estimate)
+    assert unbatched.pvalue == batched.pvalue
+
+
+def test_global_batching_does_not_change_results():
+    data = _global_network_data(seed=115, n=8, p=3)
+    unbatched = MRQAP(
+        npermutations=11,
+        rng=np.random.default_rng(184),
+        batch_size=None,
+    )
+    batched = MRQAP(
+        npermutations=11,
+        rng=np.random.default_rng(184),
         batch_size=4,
     )
 
@@ -229,6 +332,41 @@ def test_degenerate_regression_raises_clear_error():
     with pytest.raises(ValueError, match="degenerate"):
         MRQAP(npermutations=3).fit(
             {"A": constant_network, "Y": np.arange(n, dtype=float)}
+        )
+
+
+def test_global_degenerate_regression_raises_clear_error():
+    data = _global_network_data(seed=116, n=7, p=2)
+    data["A_X"][1] = data["A_X"][0].copy()
+
+    with pytest.raises(
+        ValueError, match="global MRQAP regression design is degenerate"
+    ):
+        MRQAP(npermutations=3).fit(data)
+
+
+@pytest.mark.parametrize(
+    ("data", "message"),
+    [
+        ({"A_Y": np.eye(4)}, "supplied together"),
+        ({"A_X": [np.eye(4)]}, "supplied together"),
+        ({"A_Y": np.eye(4), "A_X": []}, "nonempty list"),
+        ({"A_Y": np.ones((4, 3)), "A_X": [np.eye(4)]}, "square matrix"),
+        (
+            {"A_Y": np.eye(4), "A_X": [np.eye(5)]},
+            "matching A_Y",
+        ),
+    ],
+)
+def test_global_input_validation(data, message):
+    with pytest.raises(ValueError, match=message):
+        MRQAP(npermutations=3).fit(data)
+
+
+def test_global_test_rejects_dsp_permutation_strategy():
+    with pytest.raises(ValueError, match="only.*y_permutation"):
+        MRQAP(npermutations=3, permutation_strategy="dsp").fit(
+            _global_network_data(seed=117)
         )
 
 
