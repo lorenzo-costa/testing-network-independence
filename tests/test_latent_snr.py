@@ -94,6 +94,27 @@ def test_snr_uses_population_covariance_even_for_one_node(x_dist, eps_dist, b_di
     assert ratio == pytest.approx(2.5)
 
 
+def test_student_t_3_error_variance_preserves_population_snr_calibration():
+    sampler = MultipleNetworksSampler(
+        5,
+        3,
+        2,
+        4,
+        snr=2.5,
+        x_variance=2,
+        x_network_correlation=0.5,
+        eps_variance=3,
+        eps_distribution="student_t_3",
+        rng=np.random.default_rng(308),
+    )
+
+    result = sampler.sample_latent()
+
+    signal_power = np.trace(result["B"] @ sampler.x_covariance @ result["B"].T)
+    noise_power = np.trace(sampler.eps_covariance)
+    assert signal_power / noise_power == pytest.approx(2.5)
+
+
 def test_empirical_variance_ratio_converges_to_requested_population_snr():
     target = 2.5
     noise_covariance = np.array([[2.0, 0.5, 0.0], [0.5, 1.0, 0.2], [0.0, 0.2, 0.5]])

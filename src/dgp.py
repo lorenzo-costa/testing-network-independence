@@ -28,6 +28,9 @@ class GaussianNetwork:
         Mean of concatenated X positions, ordered by network.
     x_variance : float or array-like of shape (p * d_x, p * d_x), default=1
         Scalar variance times identity or full positive-semidefinite covariance.
+    x_network_correlation : float, optional
+        Correlation between matching dimensions in different X networks;
+        different dimensions remain independent.
     eps_variance : float or array-like of shape (d_y, d_y), default=1
         Scalar variance or full covariance of zero-mean latent errors.
     b_mean, b_variance : float, default=0, 1
@@ -53,6 +56,7 @@ class GaussianNetwork:
         snr=None,
         x_mean=0,
         x_variance=1,
+        x_network_correlation=None,
         eps_variance=1,
         b_mean=0,
         b_variance=1,
@@ -72,6 +76,7 @@ class GaussianNetwork:
             snr=snr,
             x_mean=x_mean,
             x_variance=x_variance,
+            x_network_correlation=x_network_correlation,
             eps_variance=eps_variance,
             b_mean=b_mean,
             b_variance=b_variance,
@@ -148,6 +153,9 @@ class BernoulliNetwork(GaussianNetwork):
         Mean of concatenated X positions, ordered by network.
     x_variance : float or array-like of shape (p * d_x, p * d_x), default=1
         Scalar variance times identity or full positive-semidefinite covariance.
+    x_network_correlation : float, optional
+        Correlation between matching dimensions in different X networks;
+        different dimensions remain independent.
     eps_variance : float or array-like of shape (d_y, d_y), default=1
         Scalar variance or full covariance of zero-mean latent errors.
     b_mean, b_variance : float, default=0, 1
@@ -182,6 +190,7 @@ class BernoulliNetwork(GaussianNetwork):
         snr=None,
         x_mean=0,
         x_variance=1,
+        x_network_correlation=None,
         eps_variance=1,
         b_mean=0,
         b_variance=1,
@@ -203,6 +212,7 @@ class BernoulliNetwork(GaussianNetwork):
             snr=snr,
             x_mean=x_mean,
             x_variance=x_variance,
+            x_network_correlation=x_network_correlation,
             eps_variance=eps_variance,
             b_mean=b_mean,
             b_variance=b_variance,

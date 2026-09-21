@@ -175,6 +175,7 @@ generate one Y network and p X networks. Key constructor arguments:
 | `snr` | nonnegative `float` or `None` | Population latent signal/noise variance ratio; rescales B while keeping noise fixed; `None` disables calibration |
 | `x_mean` | scalar or vector | Mean of concatenated X positions |
 | `x_variance` | scalar or covariance matrix | Covariance of concatenated X; a scalar multiplies the identity |
+| `x_network_correlation` | `float` or `None` | Equicorrelation between matching dimensions in different X networks; requires scalar `x_variance` |
 | `eps_variance` | scalar or covariance matrix | Error covariance for Y; a scalar multiplies the identity |
 | `b_mean`, `b_variance` | `float` | Mean/variance of coefficient draws before optional SNR scaling |
 | `x_distribution`, `eps_distribution`, `b_distribution` | `str` | Registered latent/error/coefficient distributions |
@@ -202,6 +203,14 @@ Custom registered distributions must honor the configured X/error covariances
 for this population interpretation to hold. The ratio concerns the latent
 linear model, not Gaussian edge noise or Bernoulli edge probabilities.
 
+Set `eps_distribution="student_t_3"` for independent univariate Student-t
+errors with three degrees of freedom. These draws are standardized to unit
+population variance before applying `eps_variance`, so SNR calibration retains
+the same population-variance interpretation. To correlate the X networks, set
+`x_network_correlation=rho`; this gives correlation `rho` to matching latent
+dimensions in distinct X networks while different dimensions remain
+independent.
+
 ```python
 data = GaussianNetwork(n=200, p=5, d_x=5, d_y=5, B=None, snr=2.0).generate()
 ```
@@ -221,6 +230,12 @@ The same experiment can be run from the YAML-driven simulation runner:
 ```bash
 python -m src.run_simulation_script --config linear_model_config.yaml
 ```
+
+That configuration crosses both network models with independent X networks
+(`x_network_correlation: 0`) and correlated X networks
+(`x_network_correlation: 0.5`). Both cases use independent standardized t3
+errors. With the current grid it contains 1,800 design cells, or 360,000 runs
+at 200 repetitions per cell.
 
 For a comparison using asymptotic RV alongside permutation CCA and MGC, use:
 

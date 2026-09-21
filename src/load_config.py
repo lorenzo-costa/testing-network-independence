@@ -971,6 +971,12 @@ def flatten_args_columns(df, extra_cols: dict = None):
     df["d_x"] = df["args"].apply(lambda x: x.get("d_x", "NA"))
     df["d_y"] = df["args"].apply(lambda x: x.get("d_y", "NA"))
     df["snr"] = df["args"].apply(lambda x: x.get("snr", "NA"))
+    df["x_network_correlation"] = df["args"].apply(
+        lambda x: x.get("x_network_correlation", "NA")
+    )
+    df["eps_distribution"] = df["args"].apply(
+        lambda x: x.get("eps_distribution", "NA")
+    )
     df["hypothesis"] = df["args"].apply(lambda x: x.get("hypothesis", "NA"))
     df["edge_var"] = df["args"].apply(lambda x: x.get("edge_var", "NA"))
     df["approximation"] = df["args"].apply(lambda x: x.get("approximation", "NA"))

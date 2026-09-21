@@ -28,7 +28,7 @@ def test_linear_model_config_builds_requested_factorial_sweep():
     assert config["simulation"]["d_y"] == [5]
     assert config["simulation"]["snr"] == [0, 0.1, 0.25, 0.5, 1]
     assert config["methods"]["use_true_latent"] == [False, True]
-    assert len(design) == 2 * 3 * 3 * 5 * 5 * 2
+    assert len(design) == 4 * 3 * 3 * 5 * 5 * 2
 
     assert {row["setup"][0].args[0] for row in design} == {
         GaussianNetwork,
@@ -40,8 +40,24 @@ def test_linear_model_config_builds_requested_factorial_sweep():
         DistanceCorrelationTest,
     }
     for row in design:
+        network_kwargs = row["setup"][0].keywords["network_kwargs"]
+        assert network_kwargs["eps_distribution"] == "student_t_3"
+        assert network_kwargs["x_network_correlation"] in {0, 0.5}
         assert row["B"] == (0 if row["snr"] == 0 else None)
         assert row["hypothesis"] == ("H0" if row["snr"] == 0 else "H1")
+
+    assert {
+        (
+            row["setup"][0].args[0],
+            row["setup"][0].keywords["network_kwargs"]["x_network_correlation"],
+        )
+        for row in design
+    } == {
+        (GaussianNetwork, 0),
+        (GaussianNetwork, 0.5),
+        (BernoulliNetwork, 0),
+        (BernoulliNetwork, 0.5),
+    }
 
     mgc_methods = [
         row["method"] for row in design if row["method"].func is DistanceCorrelationTest
@@ -55,11 +71,15 @@ def test_every_linear_model_network_and_method_combination_runs():
     design = build_factorial_design(config)
     representatives = {}
     for row in design:
-        key = (row["setup"][0].args[0], row["method"].func)
+        key = (
+            row["setup"][0].args[0],
+            row["setup"][0].keywords["network_kwargs"]["x_network_correlation"],
+            row["method"].func,
+        )
         if row["snr"] == 0.5:
             representatives.setdefault(key, row)
 
-    assert len(representatives) == 6
+    assert len(representatives) == 12
     for index, row in enumerate(representatives.values()):
         runtime = dict(row)
         runtime.update(n=12, npermutations=2)
@@ -72,6 +92,8 @@ def test_every_linear_model_network_and_method_combination_runs():
         assert result["args"]["p"] == 5
         assert result["args"]["d_x"] == 5
         assert result["args"]["d_y"] == 5
+        assert result["args"]["eps_distribution"] == "student_t_3"
+        assert result["args"]["x_network_correlation"] in {0, 0.5}
         assert np.isfinite(result["ComputeAll"]["Rejection"])
         if row["method"].func is CanonicalCorrelationTest:
             assert result["args"]["cca_gamma"] == pytest.approx(np.sqrt(12))
@@ -138,6 +160,8 @@ def test_linear_model_results_flatten_without_legacy_k_or_rho():
         "d_x": 5,
         "d_y": 3,
         "snr": 0.25,
+        "x_network_correlation": 0.5,
+        "eps_distribution": "student_t_3",
         "hypothesis": "H1",
         "dgp_name": "GaussianNetwork_multiple_networks",
         "method_name": "RV_PermutationTest_latent",
@@ -151,4 +175,6 @@ def test_linear_model_results_flatten_without_legacy_k_or_rho():
     assert frame.loc[0, "d_x"] == 5
     assert frame.loc[0, "d_y"] == 3
     assert frame.loc[0, "snr"] == 0.25
+    assert frame.loc[0, "x_network_correlation"] == 0.5
+    assert frame.loc[0, "eps_distribution"] == "student_t_3"
     assert frame.loc[0, "hypothesis"] == "H1"

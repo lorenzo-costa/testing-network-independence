@@ -129,6 +129,33 @@ def test_gaussian_network_forwards_covariances_and_distribution_choices():
         np.testing.assert_array_equal(actual, expected)
 
 
+@pytest.mark.parametrize("network_class", [GaussianNetwork, BernoulliNetwork])
+def test_networks_forward_t3_errors_and_x_network_correlation(network_class):
+    kwargs = dict(
+        n=6,
+        p=3,
+        d_x=2,
+        d_y=2,
+        B=0,
+        x_variance=2,
+        x_network_correlation=0.5,
+        eps_variance=3,
+        eps_distribution="student_t_3",
+    )
+    network = network_class(**kwargs, rng=np.random.default_rng(51))
+    direct = MultipleNetworksSampler(
+        **kwargs, rng=np.random.default_rng(51)
+    ).sample_latent()
+
+    result = network.generate()
+
+    assert network.latent_sampler.x_network_correlation == 0.5
+    assert network.latent_sampler.eps_distribution == "student_t_3"
+    np.testing.assert_array_equal(result["Y"], direct["Y"])
+    for actual, expected in zip(result["X"], direct["X"]):
+        np.testing.assert_array_equal(actual, expected)
+
+
 @pytest.mark.parametrize(
     "edge_var", [-1, np.inf, -np.inf, np.nan, [1.0], np.eye(2), 1j]
 )

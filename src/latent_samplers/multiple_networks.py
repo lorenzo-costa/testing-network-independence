@@ -30,6 +30,21 @@ def _finite_scalar(value, name, *, nonnegative=False):
     return value
 
 
+class _StandardizedStudentT:
+    """Independent Student-t entries standardized to unit population variance."""
+
+    def __init__(self, df):
+        self.df = df
+        self._standard_deviation = np.sqrt(df / (df - 2))
+
+    def rvs(self, *, loc, scale, size, random_state):
+        draws = stats.t.rvs(df=self.df, size=size, random_state=random_state)
+        return np.asarray(loc) + np.asarray(scale) * draws / self._standard_deviation
+
+
+_STUDENT_T_3 = _StandardizedStudentT(df=3)
+
+
 class MultipleNetworksSampler:
     """Sample the row-oriented linear model ``Y = X_concat @ B.T + epsilon``.
 
@@ -56,13 +71,20 @@ class MultipleNetworksSampler:
     x_variance : float or array-like of shape (p * d_x, p * d_x), default=1
         Nonnegative variance, expanded as variance times identity, or a full
         positive-semidefinite covariance, including cross-network covariance.
+    x_network_correlation : float, optional
+        Equicorrelation between matching dimensions in different X networks.
+        Different latent dimensions remain independent. Requires scalar
+        ``x_variance``. None preserves the covariance specified by
+        ``x_variance`` directly.
     eps_variance : float or array-like of shape (d_y, d_y), default=1
         Variance or positive-semidefinite covariance of zero-mean errors.
     b_mean, b_variance : float, default=0, 1
         Mean and nonnegative variance of independent coefficient entries.
     x_distribution, eps_distribution : str, default="multivariate_gaussian"
         Names in :attr:`distribution_registry`. Full covariances require a
-        distribution registered with kind ``"multivariate"``.
+        distribution registered with kind ``"multivariate"``. The
+        ``"student_t_3"`` distribution draws independent, variance-standardized
+        univariate t errors with three degrees of freedom.
     b_distribution : str, default="gaussian"
         Registered distribution for coefficient entries.
     rng : numpy.random.Generator, optional
@@ -83,10 +105,12 @@ class MultipleNetworksSampler:
     distribution_registry = {
         "gaussian": stats.norm,
         "multivariate_gaussian": stats.multivariate_normal,
+        "student_t_3": _STUDENT_T_3,
     }
     _distribution_kinds = {
         "gaussian": "univariate",
         "multivariate_gaussian": "multivariate",
+        "student_t_3": "univariate",
     }
 
     def __init__(
@@ -100,6 +124,7 @@ class MultipleNetworksSampler:
         snr=None,
         x_mean=0,
         x_variance=1,
+        x_network_correlation=None,
         eps_variance=1,
         b_mean=0,
         b_variance=1,
@@ -131,6 +156,10 @@ class MultipleNetworksSampler:
 
         width = self.p * self.d_x
         self.x_mean = self._normalize_mean(x_mean, width, "x_mean")
+        self.x_network_correlation = self._network_correlation(
+            x_network_correlation
+        )
+        x_variance = self._network_covariance(x_variance)
         self.x_covariance = self._normalize_covariance(
             x_variance, width, "x_variance", self._x_distribution[1]
         )
@@ -242,6 +271,31 @@ class MultipleNetworksSampler:
                 f"{name} must be scalar or have shape ({dimension},); got {mean.shape}."
             )
         return mean
+
+    def _network_correlation(self, value):
+        if value is None:
+            return None
+        if isinstance(value, (bool, np.bool_)):
+            raise ValueError("x_network_correlation must be a finite scalar.")
+        correlation = _finite_scalar(value, "x_network_correlation")
+        lower_bound = -1 if self.p == 1 else -1 / (self.p - 1)
+        if correlation < lower_bound or correlation > 1:
+            raise ValueError(
+                "x_network_correlation must produce a positive-semidefinite "
+                f"equicorrelation matrix; expected {lower_bound:g} <= rho <= 1."
+            )
+        return correlation
+
+    def _network_covariance(self, x_variance):
+        if self.x_network_correlation is None:
+            return x_variance
+        variance = _finite_array(x_variance, "x_variance")
+        if variance.ndim != 0:
+            raise ValueError("x_network_correlation requires scalar x_variance.")
+        variance = _finite_scalar(x_variance, "x_variance", nonnegative=True)
+        correlation = self.x_network_correlation
+        network_correlation = (1 - correlation) * np.eye(self.p) + correlation
+        return variance * np.kron(network_correlation, np.eye(self.d_x))
 
     @staticmethod
     def _normalize_covariance(value, dimension, name, kind):

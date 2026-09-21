@@ -514,6 +514,8 @@ def _add_config_columns(results: pd.DataFrame) -> pd.DataFrame:
         ),
         "assortativity": ("assortativity", None),
         "x_distribution": ("x_distribution", _clean_string),
+        "x_network_correlation": ("x_network_correlation", _to_float_or_na),
+        "eps_distribution": ("eps_distribution", _clean_string),
         "approximation": ("approximation", _clean_string),
         "adaptive_m": ("adaptive_m", None),
         "column_covariance": ("column_covariance", None),

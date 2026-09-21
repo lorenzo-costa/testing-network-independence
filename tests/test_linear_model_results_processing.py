@@ -30,6 +30,8 @@ def _row(
         "d_x": 5,
         "d_y": 4,
         "snr": snr,
+        "x_network_correlation": 0.5,
+        "eps_distribution": "student_t_3",
         "hypothesis": "H0" if snr == 0 else "H1",
         "alpha": 0.05,
         "npermutations": 400,
@@ -91,6 +93,8 @@ def test_combine_and_process_linear_model_shards(tmp_path):
     assert processed["d_x"].tolist() == [5, 5, 5]
     assert processed["d_y"].tolist() == [4, 4, 4]
     assert processed["snr"].tolist() == [0.0, 0.5, 1.0]
+    assert processed["x_network_correlation"].tolist() == [0.5, 0.5, 0.5]
+    assert processed["eps_distribution"].tolist() == ["student_t_3"] * 3
     assert processed["npermutations"].tolist() == [400, 400, 400]
     assert processed["permutation_type"].tolist() == ["latent"] * 3
     assert processed["method"].tolist() == [

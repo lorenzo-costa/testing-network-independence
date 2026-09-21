@@ -166,6 +166,55 @@ def test_univariate_draws_use_square_root_of_variance_and_shared_rng():
     assert rng.bit_generator.state == reference_rng.bit_generator.state
 
 
+def test_student_t_3_errors_are_independent_and_variance_standardized():
+    rng = np.random.default_rng(130)
+    reference_rng = np.random.default_rng(130)
+    sampler = MultipleNetworksSampler(
+        4,
+        2,
+        1,
+        2,
+        B=0,
+        x_variance=0,
+        eps_variance=9,
+        x_distribution="gaussian",
+        eps_distribution="student_t_3",
+        rng=rng,
+    )
+    stats.norm.rvs(loc=0, scale=0, size=(4, 2), random_state=reference_rng)
+    expected_errors = (
+        3 * stats.t.rvs(df=3, size=(4, 2), random_state=reference_rng) / np.sqrt(3)
+    )
+
+    result = sampler.sample_latent()
+
+    np.testing.assert_array_equal(result["Y"], expected_errors)
+    np.testing.assert_array_equal(sampler.eps_covariance, 9 * np.eye(2))
+    assert rng.bit_generator.state == reference_rng.bit_generator.state
+
+
+def test_x_network_correlation_only_couples_matching_dimensions():
+    sampler = MultipleNetworksSampler(
+        30_000,
+        3,
+        2,
+        1,
+        B=0,
+        x_variance=2,
+        x_network_correlation=0.5,
+        eps_variance=0,
+        rng=np.random.default_rng(131),
+    )
+    network_correlation = np.full((3, 3), 0.5)
+    np.fill_diagonal(network_correlation, 1)
+    expected_covariance = 2 * np.kron(network_correlation, np.eye(2))
+
+    np.testing.assert_array_equal(sampler.x_covariance, expected_covariance)
+    result = sampler.sample_latent()
+    x = np.concatenate(result["X"], axis=1)
+    np.testing.assert_allclose(np.cov(x, rowvar=False), expected_covariance, atol=0.05)
+
+
 def test_full_covariances_control_cross_network_dependence_and_errors():
     x_covariance = np.array([[1.0, 0.75], [0.75, 1.0]])
     eps_covariance = np.array([[2.0, -0.8], [-0.8, 1.0]])
@@ -233,11 +282,12 @@ def test_sampling_does_not_mutate_or_alias_supplied_parameters():
     np.testing.assert_array_equal(sampler.sample_latent()["B"], originals[1])
 
 
-def test_registry_has_exact_scipy_objects():
-    assert MultipleNetworksSampler.distribution_registry == {
-        "gaussian": stats.norm,
-        "multivariate_gaussian": stats.multivariate_normal,
-    }
+def test_registry_has_expected_builtin_distributions():
+    registry = MultipleNetworksSampler.distribution_registry
+    assert registry["gaussian"] is stats.norm
+    assert registry["multivariate_gaussian"] is stats.multivariate_normal
+    assert registry["student_t_3"].df == 3
+    assert MultipleNetworksSampler._distribution_kinds["student_t_3"] == "univariate"
 
 
 @pytest.mark.parametrize(
@@ -401,6 +451,49 @@ def test_full_covariance_requires_multivariate_distribution(
     ):
         MultipleNetworksSampler(
             3, 2, 1, 2, **{parameter: covariance, distribution: "gaussian"}
+        )
+
+
+def test_student_t_3_errors_reject_full_error_covariance():
+    with pytest.raises(
+        ValueError, match="eps_variance.*choose a multivariate distribution"
+    ):
+        MultipleNetworksSampler(
+            3,
+            2,
+            1,
+            2,
+            eps_variance=np.eye(2),
+            eps_distribution="student_t_3",
+        )
+
+
+@pytest.mark.parametrize(
+    "value,message",
+    [
+        (True, "finite scalar"),
+        (np.nan, "finite"),
+        (1.01, "positive-semidefinite"),
+        (-0.51, "positive-semidefinite"),
+        ([0.5], "finite scalar"),
+    ],
+)
+def test_invalid_x_network_correlations_are_rejected(value, message):
+    with pytest.raises(ValueError, match=f"x_network_correlation.*{message}"):
+        MultipleNetworksSampler(3, 3, 1, 2, x_network_correlation=value)
+
+
+def test_x_network_correlation_requires_scalar_variance():
+    with pytest.raises(
+        ValueError, match="x_network_correlation requires scalar x_variance"
+    ):
+        MultipleNetworksSampler(
+            3,
+            2,
+            1,
+            2,
+            x_variance=np.eye(2),
+            x_network_correlation=0.5,
         )
 
 

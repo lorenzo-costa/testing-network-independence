@@ -43,6 +43,18 @@ def run_scenario(metrics, args, seed, method_params=None):
         dgp = dgp(**args)
         data = dgp.generate()
         args["dgp_name"] = dgp.get_name()
+        latent_sampler = getattr(dgp, "latent_sampler", None)
+        if latent_sampler is not None:
+            args["x_network_correlation"] = getattr(
+                latent_sampler,
+                "x_network_correlation",
+                None,
+            )
+            args["eps_distribution"] = getattr(
+                latent_sampler,
+                "eps_distribution",
+                None,
+            )
     else:
         data = args["data"]
         solver = ...  # i don't which placeholder value to use
