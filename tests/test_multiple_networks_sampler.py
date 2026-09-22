@@ -62,6 +62,56 @@ def test_sampled_B_has_correct_shape_seed_and_constant_zero_variance(distributio
     np.testing.assert_array_equal(constant["B"], np.full((2, 6), -2.5))
 
 
+def test_sampled_B_activates_rounded_fraction_of_uniform_network_blocks():
+    sampler = MultipleNetworksSampler(
+        n=2,
+        p=5,
+        d_x=2,
+        d_y=3,
+        b_mean=1,
+        b_variance=0,
+        b_active_network_fraction=0.5,
+        rng=np.random.default_rng(91),
+    )
+
+    seen = set()
+    for _ in range(20):
+        B = sampler.sample_latent()["B"]
+        active = tuple(
+            network
+            for network, block in enumerate(np.split(B, sampler.p, axis=1))
+            if np.any(block)
+        )
+        assert len(active) == 3
+        for network, block in enumerate(np.split(B, sampler.p, axis=1)):
+            expected = np.ones((3, 2)) if network in active else np.zeros((3, 2))
+            np.testing.assert_array_equal(block, expected)
+        seen.add(active)
+
+    assert len(seen) > 1
+
+
+@pytest.mark.parametrize("fraction,expected", [(0, 0), (0.24, 1), (1, 5)])
+def test_active_network_fraction_boundary_and_rounding_cases(fraction, expected):
+    B = MultipleNetworksSampler(
+        1,
+        5,
+        1,
+        1,
+        b_mean=1,
+        b_variance=0,
+        b_active_network_fraction=fraction,
+        rng=np.random.default_rng(92),
+    ).sample_latent()["B"]
+    assert np.count_nonzero(B) == expected
+
+
+@pytest.mark.parametrize("value", [True, -0.1, 1.1, np.nan, np.inf, [0.5]])
+def test_invalid_active_network_fractions_are_rejected(value):
+    with pytest.raises(ValueError, match="b_active_network_fraction"):
+        MultipleNetworksSampler(3, 2, 1, 2, b_active_network_fraction=value)
+
+
 def test_default_B_entries_have_standard_normal_moments():
     result = MultipleNetworksSampler(
         1, 1, 100, 100, rng=np.random.default_rng(11)

@@ -80,6 +80,12 @@ class MultipleNetworksSampler:
         Variance or positive-semidefinite covariance of zero-mean errors.
     b_mean, b_variance : float, default=0, 1
         Mean and nonnegative variance of independent coefficient entries.
+    b_active_network_fraction : float, optional
+        Fraction of X-network coefficient blocks to keep nonzero when B is
+        sampled. On every call to :meth:`sample_latent`, exactly
+        ``round(fraction * p)`` networks are selected uniformly without
+        replacement; all coefficients in the other network blocks are zero.
+        Half-integers round up. None leaves every sampled block active.
     x_distribution, eps_distribution : str, default="multivariate_gaussian"
         Names in :attr:`distribution_registry`. Full covariances require a
         distribution registered with kind ``"multivariate"``. The
@@ -128,6 +134,7 @@ class MultipleNetworksSampler:
         eps_variance=1,
         b_mean=0,
         b_variance=1,
+        b_active_network_fraction=None,
         x_distribution="multivariate_gaussian",
         eps_distribution="multivariate_gaussian",
         b_distribution="gaussian",
@@ -168,6 +175,23 @@ class MultipleNetworksSampler:
         )
         self.b_mean = _finite_scalar(b_mean, "b_mean")
         self.b_variance = _finite_scalar(b_variance, "b_variance", nonnegative=True)
+        if isinstance(b_active_network_fraction, (bool, np.bool_)):
+            raise ValueError(
+                "b_active_network_fraction must be a finite scalar in [0, 1] "
+                "or None."
+            )
+        self.b_active_network_fraction = (
+            None
+            if b_active_network_fraction is None
+            else _finite_scalar(
+                b_active_network_fraction, "b_active_network_fraction"
+            )
+        )
+        if (
+            self.b_active_network_fraction is not None
+            and not 0 <= self.b_active_network_fraction <= 1
+        ):
+            raise ValueError("b_active_network_fraction must be in [0, 1].")
         if isinstance(snr, (bool, np.bool_)):
             raise ValueError("snr must be a nonnegative finite scalar or None.")
         self.snr = None if snr is None else _finite_scalar(snr, "snr", nonnegative=True)
@@ -214,6 +238,21 @@ class MultipleNetworksSampler:
         if not np.isfinite(scaled_B).all() or not np.any(scaled_B):
             raise ValueError("snr scaling cannot produce finite, nonzero coefficients.")
         return scaled_B
+
+    def _select_active_networks(self, B):
+        """Zero coefficient blocks outside a newly sampled uniform subset."""
+        if self.b_active_network_fraction is None:
+            return B
+        active_count = int(np.floor(self.b_active_network_fraction * self.p + 0.5))
+        if active_count == self.p:
+            return B
+        sparse_B = np.zeros_like(B)
+        if active_count:
+            active = self.rng.choice(self.p, size=active_count, replace=False)
+            for network in active:
+                start = network * self.d_x
+                sparse_B[:, start : start + self.d_x] = B[:, start : start + self.d_x]
+        return sparse_B
 
     @classmethod
     def register_distribution(cls, name, distribution, *, kind="univariate"):
@@ -360,11 +399,13 @@ class MultipleNetworksSampler:
             self.B.copy()
             if self.B is not None
             else self._rescale_B(
-                self._draw_rows(
-                    self._b_distribution,
-                    np.full(width, self.b_mean),
-                    self.b_variance * np.eye(width),
-                    self.d_y,
+                self._select_active_networks(
+                    self._draw_rows(
+                        self._b_distribution,
+                        np.full(width, self.b_mean),
+                        self.b_variance * np.eye(width),
+                        self.d_y,
+                    )
                 )
             )
         )

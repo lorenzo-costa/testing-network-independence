@@ -3,14 +3,19 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+import results.visualise_linear_model as visualise_linear_model
 from results.results_processing import (
     combine_shard_outputs,
     iter_shard_outputs,
     process_shard_results,
 )
 from results.visualise_linear_model import (
+    METHOD_LABELS,
+    _available_methods,
     aggregate_frobenius_errors,
     aggregate_rejection_rates,
+    expand_adjacency_results_across_latent_modes,
+    plot_type_i_error_two_row,
     prepare_linear_model_results,
 )
 
@@ -144,6 +149,8 @@ def test_plot_aggregations_separate_latent_modes_and_y_frobenius_error():
         "n": 100,
         "method": "CCA",
         "alpha": 0.05,
+        "x_network_correlation": 0.5,
+        "eps_distribution": "student_t_3",
     }
     results = pd.DataFrame(
         [
@@ -177,6 +184,49 @@ def test_plot_aggregations_separate_latent_modes_and_y_frobenius_error():
     assert frobenius["replicates"].tolist() == [2, 1]
 
 
+def test_plot_aggregations_keep_network_correlation_and_errors_separate():
+    base = {
+        "dgp_name": "GaussianNetwork",
+        "p": 5,
+        "snr": 0.5,
+        "n": 100,
+        "method": "CCA",
+        "alpha": 0.05,
+        "use_true_latent": False,
+        "RelativeFrobeniusNorm_Y": 0.2,
+    }
+    results = pd.DataFrame(
+        [
+            {
+                **base,
+                "x_network_correlation": 0.0,
+                "eps_distribution": "student_t_3",
+                "Rejection": 0,
+            },
+            {
+                **base,
+                "x_network_correlation": 0.5,
+                "eps_distribution": "student_t_3",
+                "Rejection": 1,
+            },
+            {
+                **base,
+                "x_network_correlation": 0.5,
+                "eps_distribution": "multivariate_gaussian",
+                "Rejection": 0,
+            },
+        ]
+    )
+
+    rejection = aggregate_rejection_rates(results).sort_values(
+        ["eps_distribution", "x_network_correlation"]
+    )
+
+    assert len(rejection) == 3
+    assert rejection["replicates"].tolist() == [1, 1, 1]
+    assert rejection["rejection_rate"].tolist() == [0.0, 0.0, 1.0]
+
+
 def test_asymptotic_shards_keep_only_rv_rows(tmp_path):
     names = [
         "linear_model_asymptotic_results_123_shard-000-of-003.csv",
@@ -200,6 +250,85 @@ def test_asymptotic_shards_keep_only_rv_rows(tmp_path):
     assert len(results) == 1
     assert results["method"].tolist() == ["RVTest_asymptotic"]
     assert results["Rejection"].tolist() == [1]
+
+
+def test_mrqap_shards_are_added_to_both_latent_mode_panels(tmp_path):
+    names = [
+        "linear_model_mrqap_results_123_shard-000-of-003.csv",
+        "linear_model_mrqap_results_123_shard-001-of-003.csv",
+        "linear_model_mrqap_results_123_shard-002-of-003.csv",
+    ]
+    rows = [
+        _row(
+            n,
+            5,
+            0 if n == 50 else 0.5,
+            n != 50,
+            method="MRQAP",
+            use_true_latent=None,
+            frobenius_y=None,
+        )
+        for n in (50, 100, 200)
+    ]
+    for row in rows:
+        row["args"]["x_network_correlation"] = None
+        row["args"]["eps_distribution"] = "multivariate_gaussian"
+    for name, row in zip(names, rows):
+        pd.DataFrame([row]).to_csv(tmp_path / name, index=False)
+
+    parsed = prepare_linear_model_results(
+        tmp_path,
+        names,
+        include_methods=("MRQAP",),
+    )
+    expanded = expand_adjacency_results_across_latent_modes(parsed)
+
+    assert parsed["method"].tolist() == ["MRQAP"] * 3
+    assert parsed["use_true_latent"].isna().all()
+    assert parsed["RelativeFrobeniusNorm_Y"].isna().all()
+    assert parsed["x_network_correlation"].tolist() == [0.0] * 3
+    assert set(expanded["use_true_latent"]) == {False, True}
+    assert len(expanded) == 6
+    assert _available_methods(expanded) == ("MRQAP",)
+    assert METHOD_LABELS["MRQAP"] == "MRQAP (adjacency)"
+
+
+@pytest.mark.parametrize("use_true_latent", [False, True])
+def test_two_row_type_i_plot_includes_mrqap(tmp_path, monkeypatch, use_true_latent):
+    rows = []
+    for p in (5, 10, 25, 50, 100):
+        for n in (50, 100, 200):
+            for method, rate in (("CCA", 0.05), ("MRQAP", 0.06)):
+                rows.append(
+                    {
+                        "dgp_name": "BernoulliNetwork",
+                        "p": p,
+                        "snr": 0,
+                        "n": n,
+                        "method": method,
+                        "alpha": 0.05,
+                        "use_true_latent": use_true_latent,
+                        "x_network_correlation": 0.0,
+                        "eps_distribution": "multivariate_gaussian",
+                        "rejection_rate": rate,
+                        "rejection_sem": 0.01,
+                    }
+                )
+    monkeypatch.setattr(visualise_linear_model, "PNG_DPI", 50)
+
+    output = plot_type_i_error_two_row(
+        pd.DataFrame(rows),
+        tmp_path,
+        "BernoulliNetwork",
+        use_true_latent,
+        "multivariate_gaussian",
+        0.0,
+        show_setting=False,
+    )
+
+    mode = "true_latent" if use_true_latent else "estimated_latent"
+    assert output.name == f"type_i_error_two_row_bernoulli_{mode}.png"
+    assert output.is_file()
 
 
 def test_combine_shards_rejects_an_incomplete_set(tmp_path):

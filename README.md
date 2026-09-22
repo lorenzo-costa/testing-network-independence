@@ -267,12 +267,20 @@ python results/visualise_linear_model.py --files \
   <shard-000.csv> <shard-001.csv> <shard-002.csv>
 ```
 
+Supply a separate global-MRQAP shard set with `--mrqap-files`. MRQAP is an
+adjacency-level test, so its testing-performance curve is included in both the
+true-latent and estimated-latent comparison plots and labeled accordingly. It
+is not included in latent-recovery plots.
+
+To generate only the testing-performance plots, use `--testing-only`.
+
 The processor verifies that the files form one complete, non-duplicated shard
 set and streams large shards in bounded-memory chunks. The visualization writes
-separate figures for Gaussian/Bernoulli networks and true/estimated latent
-positions. Each combination receives a positive-SNR power grid, an SNR-zero
-type-I-error row, and matching figures for the relative Frobenius error between
-Y and its estimate, under `results/linear_model_figures`.
+separate figures for Gaussian/Bernoulli networks, true/estimated latent
+positions, error distributions, and X-network correlations. Each combination
+receives a positive-SNR power grid, an SNR-zero type-I-error row, and, unless
+`--testing-only` is used, matching figures for the relative Frobenius error
+between Y and its estimate, under `results/linear_model_figures`.
 
 Edit the `n`, `p`, `d_x`, `d_y`, and `snr` lists in
 `linear_model_config.yaml` to define the factorial sweep. The supplied config

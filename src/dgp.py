@@ -35,6 +35,9 @@ class GaussianNetwork:
         Scalar variance or full covariance of zero-mean latent errors.
     b_mean, b_variance : float, default=0, 1
         Mean and nonnegative variance of independent coefficient entries.
+    b_active_network_fraction : float, optional
+        Fraction of sampled B network blocks to keep active. The rounded number
+        of active networks is selected uniformly on every generation.
     x_distribution, eps_distribution : str, default="multivariate_gaussian"
         Registered distributions for X positions and latent errors.
     b_distribution : str, default="gaussian"
@@ -60,6 +63,7 @@ class GaussianNetwork:
         eps_variance=1,
         b_mean=0,
         b_variance=1,
+        b_active_network_fraction=None,
         x_distribution="multivariate_gaussian",
         eps_distribution="multivariate_gaussian",
         b_distribution="gaussian",
@@ -80,6 +84,7 @@ class GaussianNetwork:
             eps_variance=eps_variance,
             b_mean=b_mean,
             b_variance=b_variance,
+            b_active_network_fraction=b_active_network_fraction,
             x_distribution=x_distribution,
             eps_distribution=eps_distribution,
             b_distribution=b_distribution,
@@ -160,6 +165,9 @@ class BernoulliNetwork(GaussianNetwork):
         Scalar variance or full covariance of zero-mean latent errors.
     b_mean, b_variance : float, default=0, 1
         Mean and nonnegative variance of independent coefficient entries.
+    b_active_network_fraction : float, optional
+        Fraction of sampled B network blocks to keep active. The rounded number
+        of active networks is selected uniformly on every generation.
     x_distribution, eps_distribution : str, default="multivariate_gaussian"
         Registered distributions for X positions and latent errors.
     b_distribution : str, default="gaussian"
@@ -194,6 +202,7 @@ class BernoulliNetwork(GaussianNetwork):
         eps_variance=1,
         b_mean=0,
         b_variance=1,
+        b_active_network_fraction=None,
         x_distribution="multivariate_gaussian",
         eps_distribution="multivariate_gaussian",
         b_distribution="gaussian",
@@ -216,6 +225,7 @@ class BernoulliNetwork(GaussianNetwork):
             eps_variance=eps_variance,
             b_mean=b_mean,
             b_variance=b_variance,
+            b_active_network_fraction=b_active_network_fraction,
             x_distribution=x_distribution,
             eps_distribution=eps_distribution,
             b_distribution=b_distribution,

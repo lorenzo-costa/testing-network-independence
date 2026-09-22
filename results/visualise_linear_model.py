@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Plot testing performance and Y recovery for the linear-model study.
 
-Populate ``RESULT_FILES`` and ``ASYMPTOTIC_RESULT_FILES`` after all shards
-finish, or pass the filenames with ``--files`` and ``--asymptotic-files``.
-Only asymptotic RV rows are retained from the asymptotic run. Networks and
-true/estimated latent modes are plotted separately.
+Populate ``RESULT_FILES`` after all shards finish, or pass the filenames with
+``--files``. Optional matching MRQAP and asymptotic RV shards can be supplied
+with ``--mrqap-files`` and ``--asymptotic-files``. Networks, true/estimated
+latent modes, error distributions, and X-network correlations are plotted
+separately. Adjacency-level MRQAP results are shown in both latent-mode panels.
 """
 
 from __future__ import annotations
@@ -43,11 +44,13 @@ RESULT_FILES: tuple[str, ...] = (
     "linear_model_results_61599204_shard-001-of-003.csv",
     "linear_model_results_61599204_shard-002-of-003.csv",
 )
-ASYMPTOTIC_RESULT_FILES: tuple[str, ...] = (
-    "linear_model_asymptotic_results_61628751_shard-000-of-003.csv",
-    "linear_model_asymptotic_results_61628751_shard-001-of-003.csv",
-    "linear_model_asymptotic_results_61628751_shard-002-of-003.csv",
+MRQAP_RESULT_FILES: tuple[str, ...] = (
+    "linear_model_mrqap_results_61679617_shard-000-of-003.csv",
+    "linear_model_mrqap_results_61679617_shard-001-of-003.csv",
+    "linear_model_mrqap_results_61679617_shard-002-of-003.csv",
 )
+
+ASYMPTOTIC_RESULT_FILES: tuple[str, ...] = ()
 
 NETWORK_LABELS = {
     "GaussianNetwork": "Gaussian weighted network",
@@ -57,30 +60,39 @@ LATENT_MODE_LABELS = {
     False: "Estimated latent positions",
     True: "True latent positions",
 }
-METHOD_ORDER = ("RVTest_permutation", "RVTest_asymptotic", "CCA", "DC")
+ERROR_DISTRIBUTION_LABELS = {
+    "multivariate_gaussian": "Gaussian errors",
+    "student_t_3": r"Student-$t_3$ errors",
+}
+METHOD_ORDER = ("RVTest_permutation", "RVTest_asymptotic", "CCA", "DC", "MRQAP")
+
 METHOD_LABELS = {
     "RVTest_permutation": "RV (permutation)",
     "RVTest_asymptotic": "RV (asymptotic)",
     "CCA": "CCA",
     "DC": "MGC",
+    "MRQAP": "MRQAP (adjacency)",
 }
 COLORS = {
     "RVTest_permutation": "#E69F00",
     "RVTest_asymptotic": "#E69F00",
     "CCA": "#0072B2",
     "DC": "#009E73",
+    "MRQAP": "#CC79A7",
 }
 MARKERS = {
     "RVTest_permutation": "o",
     "RVTest_asymptotic": "D",
     "CCA": "s",
     "DC": "^",
+    "MRQAP": "v",
 }
 LINESTYLES = {
     "RVTest_permutation": "-",
     "RVTest_asymptotic": "--",
     "CCA": "-",
     "DC": "-",
+    "MRQAP": "-",
 }
 PNG_DPI = 600
 PLOT_CHUNKSIZE = 5_000
@@ -116,6 +128,21 @@ def parse_args(argv=None) -> argparse.Namespace:
             "Asymptotic shard filenames; overrides ASYMPTOTIC_RESULT_FILES. "
             "Only RV rows are retained."
         ),
+    )
+    parser.add_argument(
+        "--mrqap-files",
+        nargs="+",
+        default=None,
+        help=(
+            "Global MRQAP shard filenames; overrides MRQAP_RESULT_FILES. "
+            "Their adjacency-level rejection curves are added to both latent-mode "
+            "testing plots."
+        ),
+    )
+    parser.add_argument(
+        "--testing-only",
+        action="store_true",
+        help="Save only power and type-I-error figures.",
     )
     return parser.parse_args(argv)
 
@@ -177,16 +204,20 @@ def prepare_linear_model_results(
                     "d_y": configs.map(lambda value: value.get("d_y")),
                     "snr": configs.map(lambda value: value.get("snr")),
                     "alpha": configs.map(lambda value: value.get("alpha")),
-                    "use_true_latent": configs.map(
-                        lambda value: _parse_latent_mode(
-                            value.get("use_true_latent")
+                    "x_network_correlation": configs.map(
+                        lambda value: _network_correlation(
+                            value.get("x_network_correlation")
                         )
+                    ),
+                    "eps_distribution": configs.map(
+                        lambda value: _error_distribution(value.get("eps_distribution"))
+                    ),
+                    "use_true_latent": configs.map(
+                        lambda value: _parse_latent_mode(value.get("use_true_latent"))
                     ),
                     "method": methods,
                     "dgp_name": configs.map(
-                        lambda value: _clean_text(value.get("dgp_name")).split(
-                            "_"
-                        )[0]
+                        lambda value: _clean_text(value.get("dgp_name")).split("_")[0]
                     ),
                     "Rejection": metrics.map(lambda value: value.get("Rejection")),
                     "RelativeFrobeniusNorm_Y": metrics.map(
@@ -207,6 +238,7 @@ def prepare_linear_model_results(
         "d_y",
         "snr",
         "alpha",
+        "x_network_correlation",
         "Rejection",
         "RelativeFrobeniusNorm_Y",
     )
@@ -217,11 +249,11 @@ def prepare_linear_model_results(
         "n",
         "p",
         "snr",
+        "x_network_correlation",
+        "eps_distribution",
         "method",
         "dgp_name",
-        "use_true_latent",
         "Rejection",
-        "RelativeFrobeniusNorm_Y",
     )
     missing = [column for column in required if column not in results]
     if missing:
@@ -229,6 +261,20 @@ def prepare_linear_model_results(
     invalid = results[list(required)].isna().any(axis=1)
     if invalid.any():
         raise ValueError(f"{int(invalid.sum())} rows have missing plotting fields.")
+
+    adjacency_rows = results["method"] == "MRQAP"
+    invalid_latent_mode = ~adjacency_rows & results["use_true_latent"].isna()
+    if invalid_latent_mode.any():
+        raise ValueError(
+            f"{int(invalid_latent_mode.sum())} non-MRQAP rows have no "
+            "use_true_latent value."
+        )
+    missing_frobenius = ~adjacency_rows & results["RelativeFrobeniusNorm_Y"].isna()
+    if missing_frobenius.any():
+        raise ValueError(
+            f"{int(missing_frobenius.sum())} non-MRQAP rows have no Y Frobenius "
+            "metric."
+        )
     return results
 
 
@@ -238,15 +284,56 @@ def _clean_text(value) -> str:
     return str(value).strip().strip("'\"")
 
 
-def _parse_latent_mode(value) -> bool:
+def _parse_latent_mode(value) -> bool | None:
     if isinstance(value, (bool, np.bool_)):
         return bool(value)
     normalized = _clean_text(value).lower()
+    if normalized in {"", "na", "nan", "none"}:
+        return None
     if normalized == "true":
         return True
     if normalized == "false":
         return False
     raise ValueError(f"Invalid use_true_latent value: {value!r}")
+
+
+def _error_distribution(value) -> str:
+    """Use the DGP default for result files that predate recorded metadata."""
+    normalized = _clean_text(value)
+    if normalized.lower() in {"", "na", "nan", "none"}:
+        return "multivariate_gaussian"
+    return normalized
+
+
+def _network_correlation(value) -> float:
+    """Use the DGP default for result files that predate recorded metadata."""
+    normalized = _clean_text(value).lower()
+    if normalized in {"", "na", "nan", "none"}:
+        return 0.0
+    try:
+        return float(normalized)
+    except ValueError as error:
+        raise ValueError(f"Invalid x_network_correlation value: {value!r}") from error
+
+
+def expand_adjacency_results_across_latent_modes(
+    results: pd.DataFrame,
+) -> pd.DataFrame:
+    """Copy adjacency-only MRQAP rows into both latent comparison panels."""
+    adjacency = (results["method"] == "MRQAP") & results["use_true_latent"].isna()
+    if not adjacency.any():
+        return results.copy()
+
+    ordinary = results.loc[~adjacency]
+    mrqap = results.loc[adjacency]
+    return pd.concat(
+        [
+            ordinary,
+            mrqap.assign(use_true_latent=False),
+            mrqap.assign(use_true_latent=True),
+        ],
+        ignore_index=True,
+    )
 
 
 def _method_label(config: dict) -> str:
@@ -275,6 +362,8 @@ def _aggregate_metric(
         "method",
         "alpha",
         "use_true_latent",
+        "x_network_correlation",
+        "eps_distribution",
     ]
     aggregated = (
         results.groupby(grouping, dropna=False)[value_column]
@@ -392,6 +481,38 @@ def _latent_mode_label(use_true_latent: bool) -> str:
     return LATENT_MODE_LABELS[use_true_latent]
 
 
+def _setting_label(eps_distribution: str, x_network_correlation: float) -> str:
+    error_label = ERROR_DISTRIBUTION_LABELS.get(
+        eps_distribution,
+        eps_distribution.replace("_", " "),
+    )
+    return f"{error_label} — X-network correlation = {x_network_correlation:g}"
+
+
+def _setting_slug(eps_distribution: str, x_network_correlation: float) -> str:
+    distribution_slug = "_".join(eps_distribution.lower().split())
+    correlation_slug = f"{x_network_correlation:g}".replace("-", "m").replace(".", "p")
+    return f"{distribution_slug}_xcorr_{correlation_slug}"
+
+
+def _select_setting(
+    aggregated: pd.DataFrame,
+    network: str,
+    use_true_latent: bool,
+    eps_distribution: str,
+    x_network_correlation: float,
+) -> pd.DataFrame:
+    return aggregated[
+        (aggregated["dgp_name"] == network)
+        & (aggregated["use_true_latent"] == use_true_latent)
+        & (aggregated["eps_distribution"] == eps_distribution)
+        & np.isclose(
+            aggregated["x_network_correlation"],
+            x_network_correlation,
+        )
+    ].copy()
+
+
 def _frobenius_upper_limit(data: pd.DataFrame) -> float:
     upper_values = data["frobenius_error"] + data["frobenius_sem"]
     return max(0.05, float(upper_values.max()) * 1.05)
@@ -415,17 +536,25 @@ def plot_power_grid(
     output_dir: Path,
     network: str,
     use_true_latent: bool,
+    eps_distribution: str,
+    x_network_correlation: float,
+    show_setting: bool = True,
 ) -> Path:
     """Plot rows of positive-SNR facets and columns of p facets."""
-    data = aggregated[
-        (aggregated["dgp_name"] == network)
-        & (aggregated["snr"] > 0)
-        & (aggregated["use_true_latent"] == use_true_latent)
-    ].copy()
+    data = _select_setting(
+        aggregated,
+        network,
+        use_true_latent,
+        eps_distribution,
+        x_network_correlation,
+    )
+    data = data[data["snr"] > 0].copy()
     if data.empty:
         raise ValueError(
             f"No alternative rows found for {network}, "
-            f"use_true_latent={use_true_latent}."
+            f"use_true_latent={use_true_latent}, "
+            f"eps_distribution={eps_distribution}, "
+            f"x_network_correlation={x_network_correlation:g}."
         )
     p_values = tuple(sorted(data["p"].unique()))
     snr_values = tuple(sorted(data["snr"].unique()))
@@ -471,7 +600,10 @@ def plot_power_grid(
     if layout_engine is not None:
         layout_engine.set(rect=(0.0, 0.0, 1.0, 0.88))
     mode_label = _latent_mode_label(use_true_latent)
-    fig.suptitle(f"Power — {label} — {mode_label}", y=0.995)
+    title = f"Power — {label} — {mode_label}"
+    if show_setting:
+        title += f"\n{_setting_label(eps_distribution, x_network_correlation)}"
+    fig.suptitle(title, y=0.995)
     fig.supxlabel(r"Network size, $n$")
     fig.supylabel("Power")
     fig.legend(
@@ -483,7 +615,14 @@ def plot_power_grid(
     )
     slug = network.removesuffix("Network").lower()
     mode_slug = _latent_mode_slug(use_true_latent)
-    return _save_figure(fig, output_dir, f"power_{slug}_{mode_slug}")
+    filename = f"power_{slug}_{mode_slug}"
+    if show_setting:
+        filename += f"_{_setting_slug(eps_distribution, x_network_correlation)}"
+    return _save_figure(
+        fig,
+        output_dir,
+        filename,
+    )
 
 
 def plot_type_i_error_by_p(
@@ -491,17 +630,25 @@ def plot_type_i_error_by_p(
     output_dir: Path,
     network: str,
     use_true_latent: bool,
+    eps_distribution: str,
+    x_network_correlation: float,
+    show_setting: bool = True,
 ) -> Path:
     """Create one row of SNR-zero type-I-error facets over p."""
-    data = aggregated[
-        (aggregated["dgp_name"] == network)
-        & (aggregated["snr"] == 0)
-        & (aggregated["use_true_latent"] == use_true_latent)
-    ].copy()
+    data = _select_setting(
+        aggregated,
+        network,
+        use_true_latent,
+        eps_distribution,
+        x_network_correlation,
+    )
+    data = data[data["snr"] == 0].copy()
     if data.empty:
         raise ValueError(
             f"No null rows found for {network}, "
-            f"use_true_latent={use_true_latent}."
+            f"use_true_latent={use_true_latent}, "
+            f"eps_distribution={eps_distribution}, "
+            f"x_network_correlation={x_network_correlation:g}."
         )
     methods = _available_methods(data)
     alpha_values = pd.to_numeric(data.get("alpha"), errors="coerce")
@@ -544,7 +691,10 @@ def plot_type_i_error_by_p(
     if layout_engine is not None:
         layout_engine.set(rect=(0.0, 0.0, 1.0, 0.82))
     mode_label = _latent_mode_label(use_true_latent)
-    fig.suptitle(f"Type I error — {label} — {mode_label}", y=0.995)
+    title = f"Type I error — {label} — {mode_label}"
+    if show_setting:
+        title += f"\n{_setting_label(eps_distribution, x_network_correlation)}"
+    fig.suptitle(title, y=0.995)
     fig.supxlabel(r"Network size, $n$")
     fig.supylabel("Type I error rate")
     handles = _method_handles(methods)
@@ -565,7 +715,126 @@ def plot_type_i_error_by_p(
         ncols=len(handles),
     )
     mode_slug = _latent_mode_slug(use_true_latent)
-    return _save_figure(fig, output_dir, f"type_i_error_{slug}_{mode_slug}")
+    filename = f"type_i_error_{slug}_{mode_slug}"
+    if show_setting:
+        filename += f"_{_setting_slug(eps_distribution, x_network_correlation)}"
+    return _save_figure(
+        fig,
+        output_dir,
+        filename,
+    )
+
+
+def plot_type_i_error_two_row(
+    aggregated: pd.DataFrame,
+    output_dir: Path,
+    network: str,
+    use_true_latent: bool,
+    eps_distribution: str,
+    x_network_correlation: float,
+    show_setting: bool = True,
+) -> Path:
+    """Create a centered three-over-two type-I-error facet layout."""
+    data = _select_setting(
+        aggregated,
+        network,
+        use_true_latent,
+        eps_distribution,
+        x_network_correlation,
+    )
+    data = data[data["snr"] == 0].copy()
+    if data.empty:
+        raise ValueError(
+            f"No null rows found for {network}, "
+            f"use_true_latent={use_true_latent}, "
+            f"eps_distribution={eps_distribution}, "
+            f"x_network_correlation={x_network_correlation:g}."
+        )
+
+    p_values = tuple(sorted(data["p"].unique()))
+    if len(p_values) != 5:
+        raise ValueError(
+            "The two-row type-I-error layout requires exactly five p values; "
+            f"found {len(p_values)}."
+        )
+
+    methods = _available_methods(data)
+    alpha_values = pd.to_numeric(data.get("alpha"), errors="coerce")
+    alpha = 0.05 if alpha_values.isna().all() else float(alpha_values.dropna().iloc[0])
+    upper_limit = max(0.15, float(data["rejection_rate"].max()) + 0.04)
+
+    fig = plt.figure(figsize=(9.2, 5.8), layout="constrained")
+    grid = fig.add_gridspec(2, 6)
+    spans = (
+        (0, slice(0, 2)),
+        (0, slice(2, 4)),
+        (0, slice(4, 6)),
+        (1, slice(1, 3)),
+        (1, slice(3, 5)),
+    )
+    axes = []
+    for index, (row, columns) in enumerate(spans):
+        shared = axes[0] if axes else None
+        ax = fig.add_subplot(grid[row, columns], sharex=shared, sharey=shared)
+        axes.append(ax)
+
+        p_value = p_values[index]
+        panel = data[data["p"] == p_value]
+        _plot_curves(
+            ax,
+            panel,
+            methods,
+            mean_column="rejection_rate",
+            sem_column="rejection_sem",
+            upper_clip=1.0,
+        )
+        ax.axhline(
+            alpha,
+            color="#555555",
+            linestyle="--",
+            linewidth=1,
+        )
+        ax.set_ylim(0, upper_limit)
+        ax.set_title(f"p = {int(p_value)}")
+        ax.tick_params(labelleft=index in {0, 3})
+        if index in {0, 3}:
+            ax.set_ylabel("Type I error rate")
+
+    label = NETWORK_LABELS.get(network, network)
+    mode_label = _latent_mode_label(use_true_latent)
+    title = f"Type I error — {label} — {mode_label}"
+    if show_setting:
+        title += f"\n{_setting_label(eps_distribution, x_network_correlation)}"
+    fig.suptitle(title, y=0.995)
+    fig.supxlabel(r"Network size, $n$")
+
+    handles = _method_handles(methods)
+    handles.append(
+        Line2D(
+            [0],
+            [0],
+            color="#555555",
+            linestyle="--",
+            label=rf"Nominal $\alpha={alpha:g}$",
+        )
+    )
+    fig.legend(
+        handles=handles,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.94),
+        frameon=False,
+        ncols=len(handles),
+    )
+    layout_engine = fig.get_layout_engine()
+    if layout_engine is not None:
+        layout_engine.set(rect=(0.0, 0.0, 1.0, 0.82))
+
+    slug = network.removesuffix("Network").lower()
+    mode_slug = _latent_mode_slug(use_true_latent)
+    filename = f"type_i_error_two_row_{slug}_{mode_slug}"
+    if show_setting:
+        filename += f"_{_setting_slug(eps_distribution, x_network_correlation)}"
+    return _save_figure(fig, output_dir, filename)
 
 
 def plot_frobenius_grid(
@@ -573,17 +842,25 @@ def plot_frobenius_grid(
     output_dir: Path,
     network: str,
     use_true_latent: bool,
+    eps_distribution: str,
+    x_network_correlation: float,
+    show_setting: bool = True,
 ) -> Path:
     """Plot Y errors with SNR rows and p columns over n."""
-    data = aggregated[
-        (aggregated["dgp_name"] == network)
-        & (aggregated["snr"] > 0)
-        & (aggregated["use_true_latent"] == use_true_latent)
-    ].copy()
+    data = _select_setting(
+        aggregated,
+        network,
+        use_true_latent,
+        eps_distribution,
+        x_network_correlation,
+    )
+    data = data[data["snr"] > 0].copy()
     if data.empty:
         raise ValueError(
             f"No alternative Frobenius rows found for {network}, "
-            f"use_true_latent={use_true_latent}."
+            f"use_true_latent={use_true_latent}, "
+            f"eps_distribution={eps_distribution}, "
+            f"x_network_correlation={x_network_correlation:g}."
         )
     p_values = tuple(sorted(data["p"].unique()))
     snr_values = tuple(sorted(data["snr"].unique()))
@@ -628,7 +905,10 @@ def plot_frobenius_grid(
     layout_engine = fig.get_layout_engine()
     if layout_engine is not None:
         layout_engine.set(rect=(0.0, 0.0, 1.0, 0.88))
-    fig.suptitle(f"Y relative Frobenius error — {label} — {mode_label}", y=0.995)
+    title = f"Y relative Frobenius error — {label} — {mode_label}"
+    if show_setting:
+        title += f"\n{_setting_label(eps_distribution, x_network_correlation)}"
+    fig.suptitle(title, y=0.995)
     fig.supxlabel(r"Network size, $n$")
     fig.supylabel(r"Relative Frobenius error, $\|\hat Y-Y\|_F/\|Y\|_F$")
     fig.legend(
@@ -640,7 +920,14 @@ def plot_frobenius_grid(
     )
     slug = network.removesuffix("Network").lower()
     mode_slug = _latent_mode_slug(use_true_latent)
-    return _save_figure(fig, output_dir, f"frobenius_y_{slug}_{mode_slug}")
+    filename = f"frobenius_y_{slug}_{mode_slug}"
+    if show_setting:
+        filename += f"_{_setting_slug(eps_distribution, x_network_correlation)}"
+    return _save_figure(
+        fig,
+        output_dir,
+        filename,
+    )
 
 
 def plot_null_frobenius_by_p(
@@ -648,17 +935,25 @@ def plot_null_frobenius_by_p(
     output_dir: Path,
     network: str,
     use_true_latent: bool,
+    eps_distribution: str,
+    x_network_correlation: float,
+    show_setting: bool = True,
 ) -> Path:
     """Plot SNR-zero Y relative-Frobenius error in one row of p facets."""
-    data = aggregated[
-        (aggregated["dgp_name"] == network)
-        & (aggregated["snr"] == 0)
-        & (aggregated["use_true_latent"] == use_true_latent)
-    ].copy()
+    data = _select_setting(
+        aggregated,
+        network,
+        use_true_latent,
+        eps_distribution,
+        x_network_correlation,
+    )
+    data = data[data["snr"] == 0].copy()
     if data.empty:
         raise ValueError(
             f"No null Frobenius rows found for {network}, "
-            f"use_true_latent={use_true_latent}."
+            f"use_true_latent={use_true_latent}, "
+            f"eps_distribution={eps_distribution}, "
+            f"x_network_correlation={x_network_correlation:g}."
         )
     methods = _available_methods(data)
     p_values = tuple(sorted(data["p"].unique()))
@@ -690,10 +985,10 @@ def plot_null_frobenius_by_p(
     layout_engine = fig.get_layout_engine()
     if layout_engine is not None:
         layout_engine.set(rect=(0.0, 0.0, 1.0, 0.82))
-    fig.suptitle(
-        f"Y relative Frobenius error under H0 — {label} — {mode_label}",
-        y=0.995,
-    )
+    title = f"Y relative Frobenius error under H0 — {label} — {mode_label}"
+    if show_setting:
+        title += f"\n{_setting_label(eps_distribution, x_network_correlation)}"
+    fig.suptitle(title, y=0.995)
     fig.supxlabel(r"Network size, $n$")
     fig.supylabel(r"Relative Frobenius error, $\|\hat Y-Y\|_F/\|Y\|_F$")
     fig.legend(
@@ -705,10 +1000,13 @@ def plot_null_frobenius_by_p(
     )
     slug = network.removesuffix("Network").lower()
     mode_slug = _latent_mode_slug(use_true_latent)
+    filename = f"frobenius_y_null_{slug}_{mode_slug}"
+    if show_setting:
+        filename += f"_{_setting_slug(eps_distribution, x_network_correlation)}"
     return _save_figure(
         fig,
         output_dir,
-        f"frobenius_y_null_{slug}_{mode_slug}",
+        filename,
     )
 
 
@@ -720,64 +1018,110 @@ def main(argv=None) -> list[Path]:
         if args.asymptotic_files is not None
         else ASYMPTOTIC_RESULT_FILES
     )
+    mrqap_filenames = (
+        tuple(args.mrqap_files) if args.mrqap_files is not None else MRQAP_RESULT_FILES
+    )
     if not filenames:
         raise ValueError(
             "No shard files configured. Populate RESULT_FILES or pass --files."
         )
-    if not asymptotic_filenames:
-        raise ValueError(
-            "No asymptotic shard files configured. Populate "
-            "ASYMPTOTIC_RESULT_FILES or pass --asymptotic-files."
-        )
-
     configure_plot_style()
     primary_results = prepare_linear_model_results(args.results_dir, filenames)
-    asymptotic_rv_results = prepare_linear_model_results(
-        args.results_dir,
-        asymptotic_filenames,
-        include_methods=("RVTest_asymptotic",),
-    )
-    results = pd.concat(
-        [primary_results, asymptotic_rv_results],
-        ignore_index=True,
+    result_frames = [primary_results]
+    if mrqap_filenames:
+        result_frames.append(
+            prepare_linear_model_results(
+                args.results_dir,
+                mrqap_filenames,
+                include_methods=("MRQAP",),
+            )
+        )
+    if asymptotic_filenames:
+        result_frames.append(
+            prepare_linear_model_results(
+                args.results_dir,
+                asymptotic_filenames,
+                include_methods=("RVTest_asymptotic",),
+            )
+        )
+    results = expand_adjacency_results_across_latent_modes(
+        pd.concat(result_frames, ignore_index=True)
     )
     rejection_rates = aggregate_rejection_rates(results)
-    frobenius_errors = aggregate_frobenius_errors(results)
+    frobenius_errors = (
+        None
+        if args.testing_only
+        else aggregate_frobenius_errors(
+            results[results["RelativeFrobeniusNorm_Y"].notna()]
+        )
+    )
     outputs = []
     for network in NETWORK_LABELS:
-        for use_true_latent in LATENT_MODE_LABELS:
-            outputs.append(
-                plot_power_grid(
-                    rejection_rates,
-                    args.output_dir,
-                    network,
-                    use_true_latent,
+        network_results = results[results["dgp_name"] == network]
+        settings = (
+            network_results[["eps_distribution", "x_network_correlation"]]
+            .drop_duplicates()
+            .sort_values(["eps_distribution", "x_network_correlation"])
+        )
+        show_setting = len(settings) > 1
+        for setting in settings.itertuples(index=False):
+            for use_true_latent in LATENT_MODE_LABELS:
+                outputs.append(
+                    plot_power_grid(
+                        rejection_rates,
+                        args.output_dir,
+                        network,
+                        use_true_latent,
+                        setting.eps_distribution,
+                        setting.x_network_correlation,
+                        show_setting,
+                    )
                 )
-            )
-            outputs.append(
-                plot_type_i_error_by_p(
-                    rejection_rates,
-                    args.output_dir,
-                    network,
-                    use_true_latent,
+                outputs.append(
+                    plot_type_i_error_by_p(
+                        rejection_rates,
+                        args.output_dir,
+                        network,
+                        use_true_latent,
+                        setting.eps_distribution,
+                        setting.x_network_correlation,
+                        show_setting,
+                    )
                 )
-            )
-            outputs.append(
-                plot_frobenius_grid(
-                    frobenius_errors,
-                    args.output_dir,
-                    network,
-                    use_true_latent,
+                outputs.append(
+                    plot_type_i_error_two_row(
+                        rejection_rates,
+                        args.output_dir,
+                        network,
+                        use_true_latent,
+                        setting.eps_distribution,
+                        setting.x_network_correlation,
+                        show_setting,
+                    )
                 )
-            )
-            outputs.append(
-                plot_null_frobenius_by_p(
-                    frobenius_errors,
-                    args.output_dir,
-                    network,
-                    use_true_latent,
-                )
-            )
+                if frobenius_errors is not None:
+                    outputs.append(
+                        plot_frobenius_grid(
+                            frobenius_errors,
+                            args.output_dir,
+                            network,
+                            use_true_latent,
+                            setting.eps_distribution,
+                            setting.x_network_correlation,
+                            show_setting,
+                        )
+                    )
+                    outputs.append(
+                        plot_null_frobenius_by_p(
+                            frobenius_errors,
+                            args.output_dir,
+                            network,
+                            use_true_latent,
+                            setting.eps_distribution,
+                            setting.x_network_correlation,
+                            show_setting,
+                        )
+                    )
     print(f"Saved {len(outputs)} figures to {args.output_dir}")
     return outputs
 

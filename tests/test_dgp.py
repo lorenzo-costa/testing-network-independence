@@ -48,6 +48,24 @@ def test_gaussian_network_contract(n, p, d_x, d_y):
         np.testing.assert_array_equal(adjacency.diagonal(), np.zeros(n))
 
 
+@pytest.mark.parametrize("network_class", [GaussianNetwork, BernoulliNetwork])
+def test_networks_forward_active_B_network_fraction(network_class):
+    network = network_class(
+        4,
+        4,
+        2,
+        3,
+        b_mean=1,
+        b_variance=0,
+        b_active_network_fraction=0.5,
+        rng=np.random.default_rng(93),
+    )
+
+    for _ in range(2):
+        blocks = np.split(network.generate()["B"], 4, axis=1)
+        assert sum(np.any(block) for block in blocks) == 2
+
+
 def test_gaussian_network_zero_noise_matches_latent_model_and_gram_matrices():
     B = np.array([[1.0, 2.0, 3.0, 4.0], [-2.0, 1.0, 0.0, 1.0]])
     result = GaussianNetwork(
