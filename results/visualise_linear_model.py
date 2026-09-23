@@ -50,7 +50,11 @@ MRQAP_RESULT_FILES: tuple[str, ...] = (
     "linear_model_mrqap_results_61679617_shard-002-of-003.csv",
 )
 
-ASYMPTOTIC_RESULT_FILES: tuple[str, ...] = ()
+ASYMPTOTIC_RESULT_FILES: tuple[str, ...] = (
+    "linear_model_asymptotic_results_61636044_shard-000-of-003.csv",
+    "linear_model_asymptotic_results_61636044_shard-001-of-003.csv",
+    "linear_model_asymptotic_results_61636044_shard-002-of-003.csv",
+)
 
 NETWORK_LABELS = {
     "GaussianNetwork": "Gaussian weighted network",
