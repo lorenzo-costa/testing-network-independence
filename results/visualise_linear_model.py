@@ -1,23 +1,32 @@
 #!/usr/bin/env python3
-"""Plot testing performance and Y recovery for the linear-model study.
+"""Load, preprocess, and plot simulation results.
 
 Populate ``RESULT_FILES`` after all shards finish, or pass the filenames with
 ``--files``. Optional matching MRQAP and asymptotic RV shards can be supplied
 with ``--mrqap-files`` and ``--asymptotic-files``. Networks, true/estimated
 latent modes, error distributions, and X-network correlations are plotted
 separately. Adjacency-level MRQAP results are shown in both latent-mode panels.
+
+For notebooks, the reusable pipeline is ``merge_result_shards`` followed by
+``preprocess_results`` and ``plot_metric_grid``. The study-specific
+``generate_linear_model_figures`` wrapper preserves the command-line output.
 """
 
 from __future__ import annotations
 
 import argparse
-from collections.abc import Sequence
+from collections.abc import Callable, Mapping, Sequence
+from itertools import cycle
 from pathlib import Path
 import sys
+from typing import Any
 
 import matplotlib
 
-matplotlib.use("Agg")
+if __name__ == "__main__":
+    matplotlib.use("Agg")
+
+import matplotlib.pyplot as plt
 
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
@@ -101,6 +110,67 @@ LINESTYLES = {
 PNG_DPI = 600
 PLOT_CHUNKSIZE = 5_000
 
+DEFAULT_COLUMN_ALIASES = {
+    "dx": "d_x",
+    "dy": "d_y",
+    "rejection": "Rejection",
+}
+DEFAULT_NUMERIC_COLUMNS = (
+    "n",
+    "p",
+    "d_x",
+    "d_y",
+    "snr",
+    "alpha",
+    "Rejection",
+)
+LINEAR_MODEL_CONFIG_FIELDS = (
+    "n",
+    "p",
+    "d_x",
+    "d_y",
+    "snr",
+    "alpha",
+    "x_network_correlation",
+    "eps_distribution",
+    "use_true_latent",
+    "method",
+    "dgp_name",
+    "approximation",
+    "asymptotic_null",
+)
+LINEAR_MODEL_METRIC_FIELDS = (
+    "Rejection",
+    "RelativeFrobeniusNorm_Y",
+)
+LINEAR_MODEL_GROUP_COLUMNS = (
+    "dgp_name",
+    "p",
+    "snr",
+    "n",
+    "method",
+    "alpha",
+    "use_true_latent",
+    "x_network_correlation",
+    "eps_distribution",
+)
+
+__all__ = [
+    "aggregate_frobenius_errors",
+    "aggregate_metric",
+    "aggregate_rejection_rates",
+    "configure_plot_style",
+    "filter_results",
+    "generate_linear_model_figures",
+    "linear_model_method_label",
+    "merge_result_shard_sets",
+    "merge_result_shards",
+    "plot_metric_grid",
+    "prepare_linear_model_results",
+    "preprocess_linear_model_results",
+    "preprocess_results",
+]
+
 
 def parse_args(argv=None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -175,80 +245,505 @@ def configure_plot_style() -> None:
     )
 
 
-def prepare_linear_model_results(
-    results_dir: Path,
-    filenames: Sequence[str],
-    include_methods: Sequence[str] | None = None,
+def merge_result_shards(
+    results_dir: str | Path,
+    filenames: Sequence[str | Path],
+    *,
+    chunksize: int = PLOT_CHUNKSIZE,
+    usecols: Sequence[str] | None = None,
 ) -> pd.DataFrame:
-    """Stream shards, optionally filtering methods before parsing metrics."""
-    included = None if include_methods is None else set(include_methods)
+    """Validate, read, and concatenate one complete simulation shard set.
+
+    This is the notebook-friendly loading stage. The returned dataframe is
+    deliberately raw: serialized configuration and metric columns are left
+    untouched for :func:`preprocess_results` to expand in a separate step.
+    ``source_file``, ``shard_index``, and ``num_shards`` identify each row's
+    origin.
+    """
+    chunks = list(
+        iter_shard_outputs(
+            results_dir,
+            filenames,
+            chunksize=chunksize,
+            usecols=usecols,
+        )
+    )
+    if not chunks:
+        raise ValueError("The shard files contain no result rows.")
+    return pd.concat(chunks, ignore_index=True)
+
+
+def merge_result_shard_sets(
+    results_dir: str | Path,
+    shard_sets: Mapping[str, Sequence[str | Path]],
+    *,
+    chunksize: int = PLOT_CHUNKSIZE,
+    usecols: Sequence[str] | None = None,
+    set_column: str = "result_set",
+) -> pd.DataFrame:
+    """Merge several independently validated shard sets into one dataframe.
+
+    Each mapping value must be a complete shard run. The mapping key is added
+    in ``set_column``, which makes it possible to filter primary, asymptotic,
+    MRQAP, or other result families after preprocessing.
+    """
     frames = []
-    for chunk in iter_shard_outputs(
-        results_dir,
-        filenames,
-        chunksize=PLOT_CHUNKSIZE,
-        usecols=("args", "ComputeAll"),
-    ):
-        configs = chunk["args"].map(parse_config_string)
-        methods = configs.map(_method_label)
-        if included is not None:
-            keep = methods.isin(included)
-            chunk = chunk.loc[keep]
-            configs = configs.loc[keep]
-            methods = methods.loc[keep]
-        if chunk.empty:
+    for name, filenames in shard_sets.items():
+        if not filenames:
             continue
-        metrics = chunk["ComputeAll"].map(parse_result_string)
-        frames.append(
-            pd.DataFrame(
-                {
-                    "n": configs.map(lambda value: value.get("n")),
-                    "p": configs.map(lambda value: value.get("p")),
-                    "d_x": configs.map(lambda value: value.get("d_x")),
-                    "d_y": configs.map(lambda value: value.get("d_y")),
-                    "snr": configs.map(lambda value: value.get("snr")),
-                    "alpha": configs.map(lambda value: value.get("alpha")),
-                    "x_network_correlation": configs.map(
-                        lambda value: _network_correlation(
-                            value.get("x_network_correlation")
-                        )
-                    ),
-                    "eps_distribution": configs.map(
-                        lambda value: _error_distribution(value.get("eps_distribution"))
-                    ),
-                    "use_true_latent": configs.map(
-                        lambda value: _parse_latent_mode(value.get("use_true_latent"))
-                    ),
-                    "method": methods,
-                    "dgp_name": configs.map(
-                        lambda value: _clean_text(value.get("dgp_name")).split("_")[0]
-                    ),
-                    "Rejection": metrics.map(lambda value: value.get("Rejection")),
-                    "RelativeFrobeniusNorm_Y": metrics.map(
-                        lambda value: value.get("RelativeFrobeniusNorm_Y")
-                    ),
-                }
-            )
+        frame = merge_result_shards(
+            results_dir,
+            filenames,
+            chunksize=chunksize,
+            usecols=usecols,
+        )
+        frame[set_column] = name
+        frames.append(frame)
+    if not frames:
+        raise ValueError("At least one non-empty shard set must be provided.")
+    return pd.concat(frames, ignore_index=True)
+
+
+def _is_missing_value(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return value.strip().lower() in {"", "na", "nan", "none"}
+    try:
+        missing = pd.isna(value)
+    except (TypeError, ValueError):
+        return False
+    return bool(missing) if np.isscalar(missing) else False
+
+
+def _expand_mapping_column(
+    values: pd.Series,
+    parser: Callable[[Any], Mapping[str, Any]],
+    fields: Sequence[str] | None,
+) -> pd.DataFrame:
+    records = values.map(parser)
+    if fields is None:
+        keys = sorted(
+            {key for record in records if isinstance(record, Mapping) for key in record}
+        )
+    else:
+        keys = list(dict.fromkeys(fields))
+    return pd.DataFrame(
+        [
+            {
+                key: record.get(key) if isinstance(record, Mapping) else None
+                for key in keys
+            }
+            for record in records
+        ],
+        index=values.index,
+    )
+
+
+def _overlay_expanded_columns(
+    base: pd.DataFrame,
+    expanded: pd.DataFrame,
+) -> pd.DataFrame:
+    result = base.copy()
+    for column in expanded:
+        parsed = expanded[column]
+        available = ~parsed.map(_is_missing_value)
+        if column not in result:
+            result[column] = parsed
+            continue
+        original = result[column].astype(object)
+        original.loc[available] = parsed.loc[available]
+        result[column] = original
+    return result
+
+
+def preprocess_results(
+    raw_results: pd.DataFrame,
+    *,
+    config_column: str | None = "args",
+    metric_column: str | None = "ComputeAll",
+    config_fields: Sequence[str] | None = None,
+    metric_fields: Sequence[str] | None = None,
+    column_aliases: Mapping[str, str] | None = None,
+    numeric_columns: Sequence[str] = DEFAULT_NUMERIC_COLUMNS,
+    method_labeler: Callable[[Mapping[str, Any]], Any] | None = None,
+    required_columns: Sequence[str] = (),
+    keep_serialized: bool = False,
+) -> pd.DataFrame:
+    """Expand raw simulation rows into a tidy, analysis-ready dataframe.
+
+    The function also accepts an already-tabular dataframe without serialized
+    columns. With ``config_fields=None`` and ``metric_fields=None`` every
+    discovered key is retained, so experiment-specific attributes such as
+    ``approximation`` or ``asymptotic_null`` remain available for filtering,
+    faceting, or defining separate plotted series.
+
+    Parameters
+    ----------
+    raw_results
+        Raw merged shard rows or a similarly structured dataframe.
+    config_column, metric_column
+        Columns containing serialized dictionaries. Pass ``None`` when that
+        source is absent.
+    config_fields, metric_fields
+        Keys to extract. ``None`` discovers and retains every key.
+    column_aliases
+        Source-to-canonical column names. The defaults normalize ``dx``,
+        ``dy``, and lowercase ``rejection``.
+    method_labeler
+        Optional callable receiving the complete processed row as a mapping.
+    required_columns
+        Columns whose presence is required after preprocessing.
+    """
+    if not isinstance(raw_results, pd.DataFrame):
+        raise TypeError("raw_results must be a pandas DataFrame")
+
+    serialized = {
+        column
+        for column in (config_column, metric_column)
+        if column is not None and column in raw_results
+    }
+    result = raw_results.copy()
+    if not keep_serialized:
+        result = result.drop(columns=serialized)
+
+    if config_column is not None and config_column in raw_results:
+        config_values = _expand_mapping_column(
+            raw_results[config_column],
+            parse_config_string,
+            config_fields,
+        )
+        result = _overlay_expanded_columns(result, config_values)
+    if metric_column is not None and metric_column in raw_results:
+        metric_values = _expand_mapping_column(
+            raw_results[metric_column],
+            parse_result_string,
+            metric_fields,
+        )
+        result = _overlay_expanded_columns(result, metric_values)
+
+    aliases = DEFAULT_COLUMN_ALIASES if column_aliases is None else column_aliases
+    for source, target in aliases.items():
+        if source not in result or source == target:
+            continue
+        if target not in result:
+            result = result.rename(columns={source: target})
+            continue
+        missing = result[target].map(_is_missing_value)
+        result.loc[missing, target] = result.loc[missing, source]
+        result = result.drop(columns=source)
+
+    if method_labeler is not None:
+        result["method"] = result.apply(
+            lambda row: method_labeler(row.to_dict()),
+            axis=1,
         )
 
-    if not frames:
-        detail = " matching the method filter" if included is not None else ""
-        raise ValueError(f"The shard files contain no result rows{detail}.")
-    results = pd.concat(frames, ignore_index=True)
-    numeric_columns = (
-        "n",
-        "p",
-        "d_x",
-        "d_y",
-        "snr",
-        "alpha",
-        "x_network_correlation",
-        "Rejection",
-        "RelativeFrobeniusNorm_Y",
-    )
     for column in numeric_columns:
-        results[column] = pd.to_numeric(results[column], errors="coerce")
+        if column in result:
+            result[column] = pd.to_numeric(result[column], errors="coerce")
 
+    missing_columns = [column for column in required_columns if column not in result]
+    if missing_columns:
+        raise ValueError(f"Processed results are missing columns: {missing_columns}")
+    return result.reset_index(drop=True)
+
+
+def filter_results(
+    results: pd.DataFrame,
+    filters: Mapping[str, Any] | None = None,
+) -> pd.DataFrame:
+    """Return rows matching scalar, collection, or callable filters."""
+    if not filters:
+        return results.copy()
+    selected = pd.Series(True, index=results.index)
+    for column, criterion in filters.items():
+        if column not in results:
+            raise KeyError(f"Filter column is not present: {column}")
+        values = results[column]
+        if callable(criterion):
+            mask = criterion(values)
+        elif _is_missing_value(criterion):
+            mask = values.map(_is_missing_value)
+        elif isinstance(criterion, Sequence) and not isinstance(
+            criterion,
+            (str, bytes),
+        ):
+            mask = values.isin(criterion)
+        else:
+            mask = values == criterion
+        selected &= pd.Series(mask, index=results.index).fillna(False).astype(bool)
+    return results.loc[selected].copy()
+
+
+def aggregate_metric(
+    results: pd.DataFrame,
+    value: str,
+    groupby: str | Sequence[str],
+    *,
+    mean_column: str | None = None,
+    error: str | None = "sem",
+    error_column: str | None = None,
+    count_column: str = "replicates",
+) -> pd.DataFrame:
+    """Aggregate any numeric metric over explicitly chosen dimensions.
+
+    Keeping ``groupby`` explicit prevents optional experiment attributes from
+    being silently pooled. For example, include both ``approximation`` and
+    ``asymptotic_null`` when those define distinct procedures.
+    """
+    groups = [groupby] if isinstance(groupby, str) else list(groupby)
+    groups = list(dict.fromkeys(groups))
+    required = [*groups, value]
+    missing = [column for column in required if column not in results]
+    if missing:
+        raise ValueError(f"Cannot aggregate missing columns: {missing}")
+    if error not in {None, "sem", "std"}:
+        raise ValueError("error must be None, 'sem', or 'std'.")
+
+    mean_column = mean_column or f"{value}_mean"
+    error_column = error_column or (f"{value}_{error}" if error else None)
+    data = results[required].copy()
+    data[value] = pd.to_numeric(data[value], errors="coerce")
+    if data[value].notna().sum() == 0:
+        raise ValueError(f"Metric column contains no numeric values: {value}")
+
+    aggregations: dict[str, str] = {
+        mean_column: "mean",
+        count_column: "count",
+    }
+    if error is not None and error_column is not None:
+        aggregations[error_column] = error
+
+    if groups:
+        aggregated = (
+            data.groupby(groups, dropna=False)[value].agg(**aggregations).reset_index()
+        )
+    else:
+        values = data[value]
+        record = {
+            mean_column: values.mean(),
+            count_column: values.count(),
+        }
+        if error is not None and error_column is not None:
+            record[error_column] = getattr(values, error)()
+        aggregated = pd.DataFrame([record])
+    if error_column is not None and error_column in aggregated:
+        aggregated[error_column] = aggregated[error_column].fillna(0.0)
+    return aggregated
+
+
+def _column_list(columns: str | Sequence[str] | None) -> list[str]:
+    if columns is None:
+        return []
+    return [columns] if isinstance(columns, str) else list(columns)
+
+
+def _ordered_values(values: pd.Series, requested: Sequence[Any] | None) -> list[Any]:
+    if requested is not None:
+        return list(requested)
+    unique = values.drop_duplicates().tolist()
+    try:
+        return sorted(unique)
+    except TypeError:
+        return unique
+
+
+def plot_metric_grid(
+    results: pd.DataFrame,
+    *,
+    value: str = "Rejection",
+    x: str = "n",
+    series: str | Sequence[str] = "method",
+    row: str | None = None,
+    col: str | None = "p",
+    filters: Mapping[str, Any] | None = None,
+    row_order: Sequence[Any] | None = None,
+    col_order: Sequence[Any] | None = None,
+    series_order: Sequence[Any] | None = None,
+    error: str | None = "sem",
+    labels: Mapping[Any, str] | None = None,
+    colors: Mapping[Any, str] | None = None,
+    markers: Mapping[Any, str] | None = None,
+    linestyles: Mapping[Any, str] | None = None,
+    title: str | None = None,
+    xlabel: str | None = None,
+    ylabel: str | None = None,
+    reference_y: float | None = None,
+    reference_label: str | None = None,
+    ylim: tuple[float, float] | None = None,
+    figsize: tuple[float, float] | None = None,
+    sharex: bool = True,
+    sharey: bool = True,
+    output_path: str | Path | None = None,
+) -> tuple[Figure, np.ndarray, pd.DataFrame]:
+    """Aggregate and plot a reusable faceted line grid.
+
+    ``series`` may contain several columns, so method variants can be drawn as
+    distinct lines without modifying the input. The returned tuple contains
+    the figure, the two-dimensional axes array, and the aggregated data used
+    by the plot.
+    """
+    data = filter_results(results, filters)
+    series_columns = _column_list(series)
+    facet_columns = [column for column in (row, col) if column is not None]
+    group_columns = list(dict.fromkeys([*facet_columns, *series_columns, x]))
+    summary = aggregate_metric(
+        data,
+        value,
+        group_columns,
+        error=error,
+    )
+    mean_column = f"{value}_mean"
+    error_column = f"{value}_{error}" if error is not None else None
+
+    row_values = [None] if row is None else _ordered_values(summary[row], row_order)
+    col_values = [None] if col is None else _ordered_values(summary[col], col_order)
+    if not row_values or not col_values:
+        raise ValueError("No rows remain after applying the plot filters.")
+
+    series_frame = summary[series_columns].drop_duplicates()
+    keys = [tuple(record) for record in series_frame.itertuples(index=False, name=None)]
+    if series_order is not None:
+        normalized_order = [
+            item if isinstance(item, tuple) else (item,) for item in series_order
+        ]
+        available = set(keys)
+        ordered = [key for key in normalized_order if key in available]
+        keys = ordered + [key for key in keys if key not in ordered]
+
+    labels = {} if labels is None else dict(labels)
+    colors = {} if colors is None else dict(colors)
+    markers = {} if markers is None else dict(markers)
+    linestyles = {} if linestyles is None else dict(linestyles)
+    palette = cycle(plt.rcParams["axes.prop_cycle"].by_key()["color"])
+    marker_cycle = cycle(("o", "s", "^", "v", "D", "P", "X", "*"))
+    style_by_key = {}
+    for key in keys:
+        lookup = key[0] if len(key) == 1 else key
+        default_color = COLORS.get(lookup, next(palette))
+        default_marker = MARKERS.get(lookup, next(marker_cycle))
+        default_linestyle = LINESTYLES.get(lookup, "-")
+        if lookup in labels:
+            display = labels[lookup]
+        elif len(key) == 1:
+            display = METHOD_LABELS.get(lookup, str(lookup))
+        else:
+            display = " | ".join(
+                f"{column}={'NA' if _is_missing_value(value_) else value_}"
+                for column, value_ in zip(series_columns, key)
+            )
+        style_by_key[key] = {
+            "label": display,
+            "color": colors.get(lookup, default_color),
+            "marker": markers.get(lookup, default_marker),
+            "linestyle": linestyles.get(lookup, default_linestyle),
+        }
+
+    if figsize is None:
+        figsize = (3.0 * len(col_values), 2.5 * len(row_values) + 0.5)
+    fig, axes = plt.subplots(
+        len(row_values),
+        len(col_values),
+        figsize=figsize,
+        sharex=sharex,
+        sharey=sharey,
+        squeeze=False,
+        layout="constrained",
+    )
+    for row_index, row_value in enumerate(row_values):
+        for col_index, col_value in enumerate(col_values):
+            ax = axes[row_index, col_index]
+            panel = summary
+            if row is not None:
+                if _is_missing_value(row_value):
+                    panel = panel[panel[row].map(_is_missing_value)]
+                else:
+                    panel = panel[panel[row] == row_value]
+            if col is not None:
+                if _is_missing_value(col_value):
+                    panel = panel[panel[col].map(_is_missing_value)]
+                else:
+                    panel = panel[panel[col] == col_value]
+            for key in keys:
+                line = panel
+                for column, series_value in zip(series_columns, key):
+                    if _is_missing_value(series_value):
+                        line = line[line[column].map(_is_missing_value)]
+                    else:
+                        line = line[line[column] == series_value]
+                line = line.sort_values(x)
+                if line.empty:
+                    continue
+                style = style_by_key[key]
+                x_values = pd.to_numeric(line[x], errors="coerce").to_numpy()
+                means = line[mean_column].to_numpy(dtype=float)
+                ax.plot(
+                    x_values,
+                    means,
+                    label=style["label"],
+                    color=style["color"],
+                    marker=style["marker"],
+                    linestyle=style["linestyle"],
+                    markerfacecolor="none",
+                )
+                if error_column is not None:
+                    errors = line[error_column].to_numpy(dtype=float)
+                    ax.fill_between(
+                        x_values,
+                        means - errors,
+                        means + errors,
+                        color=style["color"],
+                        alpha=0.12,
+                        linewidth=0,
+                    )
+            if reference_y is not None:
+                ax.axhline(
+                    reference_y,
+                    color="#555555",
+                    linestyle="--",
+                    linewidth=1,
+                    label=reference_label,
+                )
+            if ylim is not None:
+                ax.set_ylim(*ylim)
+            ax.set_xticks(
+                sorted(pd.to_numeric(panel[x], errors="coerce").dropna().unique())
+            )
+            ax.grid(axis="y", color="#E2E2E2", linewidth=0.45)
+            title_parts = []
+            if row is not None:
+                title_parts.append(f"{row} = {row_value}")
+            if col is not None:
+                title_parts.append(f"{col} = {col_value}")
+            if title_parts:
+                ax.set_title(" — ".join(title_parts))
+
+    fig.supxlabel(xlabel or x)
+    fig.supylabel(ylabel or value)
+    if title:
+        fig.suptitle(title)
+    unique_handles = {}
+    for ax in axes.flat:
+        handles, legend_labels = ax.get_legend_handles_labels()
+        unique_handles.update(zip(legend_labels, handles))
+    if unique_handles:
+        fig.legend(
+            unique_handles.values(),
+            unique_handles.keys(),
+            loc="upper center",
+            bbox_to_anchor=(0.5, 0.99 if title is None else 0.95),
+            ncols=max(1, len(unique_handles)),
+            frameon=False,
+        )
+    if output_path is not None:
+        path = Path(output_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(path, bbox_inches="tight")
+    return fig, axes, summary
+
+
+def _validate_linear_model_results(results: pd.DataFrame) -> None:
     required = (
         "n",
         "p",
@@ -279,6 +774,71 @@ def prepare_linear_model_results(
             f"{int(missing_frobenius.sum())} non-MRQAP rows have no Y Frobenius "
             "metric."
         )
+
+
+def preprocess_linear_model_results(
+    raw_results: pd.DataFrame,
+    *,
+    include_methods: Sequence[str] | None = None,
+    validate: bool = True,
+) -> pd.DataFrame:
+    """Apply study-specific normalization after generic preprocessing."""
+    results = preprocess_results(
+        raw_results,
+        config_fields=LINEAR_MODEL_CONFIG_FIELDS,
+        metric_fields=LINEAR_MODEL_METRIC_FIELDS,
+        numeric_columns=(
+            *DEFAULT_NUMERIC_COLUMNS,
+            "x_network_correlation",
+            "RelativeFrobeniusNorm_Y",
+        ),
+        method_labeler=linear_model_method_label,
+    )
+    results["x_network_correlation"] = results["x_network_correlation"].map(
+        _network_correlation
+    )
+    results["eps_distribution"] = results["eps_distribution"].map(_error_distribution)
+    results["use_true_latent"] = results["use_true_latent"].map(_parse_latent_mode)
+    results["dgp_name"] = results["dgp_name"].map(
+        lambda value: _clean_text(value).split("_")[0]
+    )
+    if include_methods is not None:
+        results = results[results["method"].isin(include_methods)].copy()
+    results = results.reset_index(drop=True)
+    if validate and not results.empty:
+        _validate_linear_model_results(results)
+    return results
+
+
+def prepare_linear_model_results(
+    results_dir: Path,
+    filenames: Sequence[str],
+    include_methods: Sequence[str] | None = None,
+) -> pd.DataFrame:
+    """Stream, preprocess, and concatenate linear-model shard rows.
+
+    For a staged notebook workflow, call :func:`merge_result_shards` followed
+    by :func:`preprocess_linear_model_results` instead.
+    """
+    frames = []
+    for chunk in iter_shard_outputs(
+        results_dir,
+        filenames,
+        chunksize=PLOT_CHUNKSIZE,
+        usecols=("args", "ComputeAll"),
+    ):
+        processed = preprocess_linear_model_results(
+            chunk,
+            include_methods=include_methods,
+            validate=False,
+        )
+        if not processed.empty:
+            frames.append(processed)
+    if not frames:
+        detail = " matching the method filter" if include_methods is not None else ""
+        raise ValueError(f"The shard files contain no result rows{detail}.")
+    results = pd.concat(frames, ignore_index=True)
+    _validate_linear_model_results(results)
     return results
 
 
@@ -340,7 +900,8 @@ def expand_adjacency_results_across_latent_modes(
     )
 
 
-def _method_label(config: dict) -> str:
+def linear_model_method_label(config: Mapping[str, Any]) -> str:
+    """Return the compact method label used by the linear-model figures."""
     method = _clean_text(config.get("method"))
     if method == "RVTest":
         approximation = _clean_text(config.get("approximation"))
@@ -352,56 +913,54 @@ def _method_label(config: dict) -> str:
     return method
 
 
+def _method_label(config: Mapping[str, Any]) -> str:
+    """Backward-compatible private alias for older notebook imports."""
+    return linear_model_method_label(config)
+
+
 def _aggregate_metric(
     results: pd.DataFrame,
     value_column: str,
     mean_column: str,
     sem_column: str,
 ) -> pd.DataFrame:
-    grouping = [
-        "dgp_name",
-        "p",
-        "snr",
-        "n",
-        "method",
-        "alpha",
-        "use_true_latent",
-        "x_network_correlation",
-        "eps_distribution",
-    ]
-    aggregated = (
-        results.groupby(grouping, dropna=False)[value_column]
-        .agg(["mean", "sem", "count"])
-        .reset_index()
-        .rename(
-            columns={
-                "mean": mean_column,
-                "sem": sem_column,
-                "count": "replicates",
-            }
-        )
+    return aggregate_metric(
+        results,
+        value_column,
+        LINEAR_MODEL_GROUP_COLUMNS,
+        mean_column=mean_column,
+        error="sem",
+        error_column=sem_column,
     )
-    aggregated[sem_column] = aggregated[sem_column].fillna(0.0)
-    return aggregated
 
 
-def aggregate_rejection_rates(results: pd.DataFrame) -> pd.DataFrame:
-    """Compute rejection-rate means, SEMs, and replicate counts."""
-    return _aggregate_metric(
+def aggregate_rejection_rates(
+    results: pd.DataFrame,
+    groupby: Sequence[str] | None = None,
+) -> pd.DataFrame:
+    """Compute rejection-rate means, optionally retaining extra variants."""
+    return aggregate_metric(
         results,
         "Rejection",
-        "rejection_rate",
-        "rejection_sem",
+        LINEAR_MODEL_GROUP_COLUMNS if groupby is None else groupby,
+        mean_column="rejection_rate",
+        error="sem",
+        error_column="rejection_sem",
     )
 
 
-def aggregate_frobenius_errors(results: pd.DataFrame) -> pd.DataFrame:
+def aggregate_frobenius_errors(
+    results: pd.DataFrame,
+    groupby: Sequence[str] | None = None,
+) -> pd.DataFrame:
     """Compute mean Y relative-Frobenius errors and their SEMs."""
-    return _aggregate_metric(
+    return aggregate_metric(
         results,
         "RelativeFrobeniusNorm_Y",
-        "frobenius_error",
-        "frobenius_sem",
+        LINEAR_MODEL_GROUP_COLUMNS if groupby is None else groupby,
+        mean_column="frobenius_error",
+        error="sem",
+        error_column="frobenius_sem",
     )
 
 
@@ -505,11 +1064,16 @@ def _select_setting(
     use_true_latent: bool,
     eps_distribution: str,
     x_network_correlation: float,
+    asymptotic_null: list[bool] | None = None,
 ) -> pd.DataFrame:
+    if asymptotic_null is None:
+        asymptotic_null = [None]
+        
     return aggregated[
         (aggregated["dgp_name"] == network)
         & (aggregated["use_true_latent"] == use_true_latent)
         & (aggregated["eps_distribution"] == eps_distribution)
+        & (aggregated["asymptotic_null"].isin(asymptotic_null))
         & np.isclose(
             aggregated["x_network_correlation"],
             x_network_correlation,
@@ -543,6 +1107,7 @@ def plot_power_grid(
     eps_distribution: str,
     x_network_correlation: float,
     show_setting: bool = True,
+    asymptotic_null: list[bool] | None = None,
 ) -> Path:
     """Plot rows of positive-SNR facets and columns of p facets."""
     data = _select_setting(
@@ -551,6 +1116,7 @@ def plot_power_grid(
         use_true_latent,
         eps_distribution,
         x_network_correlation,
+        asymptotic_null=asymptotic_null
     )
     data = data[data["snr"] > 0].copy()
     if data.empty:
@@ -637,6 +1203,7 @@ def plot_type_i_error_by_p(
     eps_distribution: str,
     x_network_correlation: float,
     show_setting: bool = True,
+    asymptotic_null: list[bool] | None = None, 
 ) -> Path:
     """Create one row of SNR-zero type-I-error facets over p."""
     data = _select_setting(
@@ -645,6 +1212,7 @@ def plot_type_i_error_by_p(
         use_true_latent,
         eps_distribution,
         x_network_correlation,
+        asymptotic_null=asymptotic_null
     )
     data = data[data["snr"] == 0].copy()
     if data.empty:
@@ -737,6 +1305,7 @@ def plot_type_i_error_two_row(
     eps_distribution: str,
     x_network_correlation: float,
     show_setting: bool = True,
+    asymptotic_null: list[bool] | None = None,
 ) -> Path:
     """Create a centered three-over-two type-I-error facet layout."""
     data = _select_setting(
@@ -745,6 +1314,7 @@ def plot_type_i_error_two_row(
         use_true_latent,
         eps_distribution,
         x_network_correlation,
+        asymptotic_null=asymptotic_null
     )
     data = data[data["snr"] == 0].copy()
     if data.empty:
@@ -849,6 +1419,7 @@ def plot_frobenius_grid(
     eps_distribution: str,
     x_network_correlation: float,
     show_setting: bool = True,
+    asymptotic_null: list[bool] | None = None,
 ) -> Path:
     """Plot Y errors with SNR rows and p columns over n."""
     data = _select_setting(
@@ -857,6 +1428,7 @@ def plot_frobenius_grid(
         use_true_latent,
         eps_distribution,
         x_network_correlation,
+        asymptotic_null=asymptotic_null
     )
     data = data[data["snr"] > 0].copy()
     if data.empty:
@@ -942,6 +1514,7 @@ def plot_null_frobenius_by_p(
     eps_distribution: str,
     x_network_correlation: float,
     show_setting: bool = True,
+    asymptotic_null: list[bool] | None = None,
 ) -> Path:
     """Plot SNR-zero Y relative-Frobenius error in one row of p facets."""
     data = _select_setting(
@@ -950,6 +1523,7 @@ def plot_null_frobenius_by_p(
         use_true_latent,
         eps_distribution,
         x_network_correlation,
+        asymptotic_null=asymptotic_null
     )
     data = data[data["snr"] == 0].copy()
     if data.empty:
@@ -1014,6 +1588,111 @@ def plot_null_frobenius_by_p(
     )
 
 
+def generate_linear_model_figures(
+    results: pd.DataFrame,
+    output_dir: str | Path,
+    *,
+    testing_only: bool = False,
+    apply_style: bool = True,
+) -> list[Path]:
+    """Generate the complete legacy figure suite from preprocessed rows."""
+    _validate_linear_model_results(results)
+    if apply_style:
+        configure_plot_style()
+    output_dir = Path(output_dir)
+    results = expand_adjacency_results_across_latent_modes(results)
+    rejection_rates = aggregate_rejection_rates(results)
+    frobenius_errors = (
+        None
+        if testing_only
+        else aggregate_frobenius_errors(
+            results[results["RelativeFrobeniusNorm_Y"].notna()]
+        )
+    )
+    
+    # asymptotic_null = ["'independence'", "'zero_covariance'", None]
+    
+    # print(f"hardcoring asymptotic approximation to: {asymptotic_null}")
+    
+    outputs = []
+    available_networks = results["dgp_name"].drop_duplicates().tolist()
+    networks = [name for name in NETWORK_LABELS if name in available_networks]
+    networks.extend(name for name in available_networks if name not in networks)
+    for network in networks:
+        network_results = results[results["dgp_name"] == network]
+        settings = (
+            network_results[["eps_distribution", "x_network_correlation"]]
+            .drop_duplicates()
+            .sort_values(["eps_distribution", "x_network_correlation"])
+        )
+        show_setting = len(settings) > 1
+        latent_modes = [
+            mode
+            for mode in LATENT_MODE_LABELS
+            if mode in set(network_results["use_true_latent"].dropna())
+        ]
+        for setting in settings.itertuples(index=False):
+            for use_true_latent in latent_modes:
+                outputs.append(
+                    plot_power_grid(
+                        rejection_rates,
+                        output_dir,
+                        network,
+                        use_true_latent,
+                        setting.eps_distribution,
+                        setting.x_network_correlation,
+                        asymptotic_null,
+                        show_setting,
+                    )
+                )
+                outputs.append(
+                    plot_type_i_error_by_p(
+                        rejection_rates,
+                        output_dir,
+                        network,
+                        use_true_latent,
+                        setting.eps_distribution,
+                        setting.x_network_correlation,
+                        show_setting,
+                    )
+                )
+                outputs.append(
+                    plot_type_i_error_two_row(
+                        rejection_rates,
+                        output_dir,
+                        network,
+                        use_true_latent,
+                        setting.eps_distribution,
+                        setting.x_network_correlation,
+                        show_setting,
+                    )
+                )
+                if frobenius_errors is not None:
+                    outputs.append(
+                        plot_frobenius_grid(
+                            frobenius_errors,
+                            output_dir,
+                            network,
+                            use_true_latent,
+                            setting.eps_distribution,
+                            setting.x_network_correlation,
+                            show_setting,
+                        )
+                    )
+                    outputs.append(
+                        plot_null_frobenius_by_p(
+                            frobenius_errors,
+                            output_dir,
+                            network,
+                            use_true_latent,
+                            setting.eps_distribution,
+                            setting.x_network_correlation,
+                            show_setting,
+                        )
+                    )
+    return outputs
+
+
 def main(argv=None) -> list[Path]:
     args = parse_args(argv)
     filenames = tuple(args.files) if args.files is not None else RESULT_FILES
@@ -1029,7 +1708,7 @@ def main(argv=None) -> list[Path]:
         raise ValueError(
             "No shard files configured. Populate RESULT_FILES or pass --files."
         )
-    configure_plot_style()
+
     primary_results = prepare_linear_model_results(args.results_dir, filenames)
     result_frames = [primary_results]
     if mrqap_filenames:
@@ -1048,84 +1727,12 @@ def main(argv=None) -> list[Path]:
                 include_methods=("RVTest_asymptotic",),
             )
         )
-    results = expand_adjacency_results_across_latent_modes(
-        pd.concat(result_frames, ignore_index=True)
+    results = pd.concat(result_frames, ignore_index=True)
+    outputs = generate_linear_model_figures(
+        results,
+        args.output_dir,
+        testing_only=args.testing_only,
     )
-    rejection_rates = aggregate_rejection_rates(results)
-    frobenius_errors = (
-        None
-        if args.testing_only
-        else aggregate_frobenius_errors(
-            results[results["RelativeFrobeniusNorm_Y"].notna()]
-        )
-    )
-    outputs = []
-    for network in NETWORK_LABELS:
-        network_results = results[results["dgp_name"] == network]
-        settings = (
-            network_results[["eps_distribution", "x_network_correlation"]]
-            .drop_duplicates()
-            .sort_values(["eps_distribution", "x_network_correlation"])
-        )
-        show_setting = len(settings) > 1
-        for setting in settings.itertuples(index=False):
-            for use_true_latent in LATENT_MODE_LABELS:
-                outputs.append(
-                    plot_power_grid(
-                        rejection_rates,
-                        args.output_dir,
-                        network,
-                        use_true_latent,
-                        setting.eps_distribution,
-                        setting.x_network_correlation,
-                        show_setting,
-                    )
-                )
-                outputs.append(
-                    plot_type_i_error_by_p(
-                        rejection_rates,
-                        args.output_dir,
-                        network,
-                        use_true_latent,
-                        setting.eps_distribution,
-                        setting.x_network_correlation,
-                        show_setting,
-                    )
-                )
-                outputs.append(
-                    plot_type_i_error_two_row(
-                        rejection_rates,
-                        args.output_dir,
-                        network,
-                        use_true_latent,
-                        setting.eps_distribution,
-                        setting.x_network_correlation,
-                        show_setting,
-                    )
-                )
-                if frobenius_errors is not None:
-                    outputs.append(
-                        plot_frobenius_grid(
-                            frobenius_errors,
-                            args.output_dir,
-                            network,
-                            use_true_latent,
-                            setting.eps_distribution,
-                            setting.x_network_correlation,
-                            show_setting,
-                        )
-                    )
-                    outputs.append(
-                        plot_null_frobenius_by_p(
-                            frobenius_errors,
-                            args.output_dir,
-                            network,
-                            use_true_latent,
-                            setting.eps_distribution,
-                            setting.x_network_correlation,
-                            show_setting,
-                        )
-                    )
     print(f"Saved {len(outputs)} figures to {args.output_dir}")
     return outputs
 

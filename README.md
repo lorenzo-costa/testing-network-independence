@@ -282,6 +282,74 @@ receives a positive-SNR power grid, an SNR-zero type-I-error row, and, unless
 `--testing-only` is used, matching figures for the relative Frobenius error
 between Y and its estimate, under `results/linear_model_figures`.
 
+The same pipeline can be used interactively from a notebook. Loading,
+preprocessing, aggregation, and plotting are independent operations:
+
+```python
+from pathlib import Path
+
+from results.visualise_linear_model import (
+    aggregate_metric,
+    linear_model_method_label,
+    merge_result_shards,
+    plot_metric_grid,
+    preprocess_results,
+)
+
+result_files = [
+    "my_run_shard-000-of-003.csv",
+    "my_run_shard-001-of-003.csv",
+    "my_run_shard-002-of-003.csv",
+]
+
+# 1. Validate and merge the raw shards.
+raw = merge_result_shards(
+    Path("results"),
+    result_files,
+    usecols=("args", "ComputeAll"),
+)
+
+# 2. Expand every configuration and metric key. Extra attributes such as
+# approximation and asymptotic_null are retained automatically.
+data = preprocess_results(
+    raw,
+    method_labeler=linear_model_method_label,
+    required_columns=("method", "Rejection", "n", "p", "d_x", "d_y"),
+)
+
+# Aggregation is optional and uses explicit grouping columns so variants are
+# never pooled accidentally.
+summary = aggregate_metric(
+    data,
+    value="Rejection",
+    groupby=(
+        "method",
+        "approximation",
+        "asymptotic_null",
+        "p",
+        "n",
+    ),
+)
+
+# 3. Plot directly from the preprocessed simulation rows.
+figure, axes, plotted_data = plot_metric_grid(
+    data,
+    value="Rejection",
+    x="n",
+    col="p",
+    series=("method", "approximation", "asymptotic_null"),
+    filters={"snr": 0},
+    reference_y=0.05,
+    reference_label="Nominal alpha = 0.05",
+    ylabel="Type I error rate",
+)
+```
+
+Use `merge_result_shard_sets` when primary, asymptotic, MRQAP, or other
+families come from different complete shard runs. For the original paper
+figures, pass the preprocessed combined dataframe to
+`generate_linear_model_figures`.
+
 Edit the `n`, `p`, `d_x`, `d_y`, and `snr` lists in
 `linear_model_config.yaml` to define the factorial sweep. The supplied config
 runs `n` in `(50, 100, 200)`, `p` in `(5, 10, 25, 50, 100)`, and SNR in

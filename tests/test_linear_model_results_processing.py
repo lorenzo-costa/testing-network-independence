@@ -12,10 +12,15 @@ from results.results_processing import (
 from results.visualise_linear_model import (
     METHOD_LABELS,
     _available_methods,
+    aggregate_metric,
     aggregate_frobenius_errors,
     aggregate_rejection_rates,
     expand_adjacency_results_across_latent_modes,
+    linear_model_method_label,
+    merge_result_shards,
+    plot_metric_grid,
     plot_type_i_error_two_row,
+    preprocess_results,
     prepare_linear_model_results,
 )
 
@@ -139,6 +144,109 @@ def test_chunked_shard_reader_retains_shard_metadata(tmp_path):
     assert len(chunks) == 3
     assert [chunk["shard_index"].iloc[0] for chunk in chunks] == [0, 1, 2]
     assert all(chunk["num_shards"].iloc[0] == 3 for chunk in chunks)
+
+
+def test_notebook_pipeline_merges_then_preprocesses_dynamic_fields(tmp_path):
+    names = _write_shards(tmp_path)
+    raw = merge_result_shards(
+        tmp_path,
+        names,
+        chunksize=1,
+        usecols=("args", "ComputeAll"),
+    )
+    first_row = _row(50, 5, 0, False)
+    first_row["args"]["asymptotic_null"] = "independence"
+    first_row["args"]["custom_design"] = "variant_a"
+    first_row["ComputeAll"]["CustomMetric"] = 1.25
+    raw.at[0, "args"] = first_row["args"]
+    raw.at[0, "ComputeAll"] = first_row["ComputeAll"]
+
+    processed = preprocess_results(
+        raw,
+        method_labeler=linear_model_method_label,
+        required_columns=("method", "Rejection", "n", "p", "d_x", "d_y"),
+    )
+
+    assert processed["source_file"].tolist() == names
+    assert processed["shard_index"].tolist() == [0, 1, 2]
+    assert processed.loc[0, "asymptotic_null"] == "independence"
+    assert processed.loc[0, "custom_design"] == "variant_a"
+    assert processed.loc[0, "CustomMetric"] == pytest.approx(1.25)
+    assert processed["method"].tolist() == [
+        "RVTest_permutation",
+        "CCA",
+        "DC",
+    ]
+
+
+def test_generic_preprocessing_accepts_tidy_alias_columns():
+    tidy = pd.DataFrame(
+        {
+            "method": ["new_test"],
+            "rejection": [True],
+            "n": [50],
+            "p": [10],
+            "dx": [3],
+            "dy": [2],
+            "approximation": ["custom"],
+        }
+    )
+
+    processed = preprocess_results(
+        tidy,
+        required_columns=("method", "Rejection", "n", "p", "d_x", "d_y"),
+    )
+
+    assert processed.loc[0, "d_x"] == 3
+    assert processed.loc[0, "d_y"] == 2
+    assert processed.loc[0, "Rejection"] == 1
+    assert processed.loc[0, "approximation"] == "custom"
+
+
+def test_generic_aggregation_and_plot_keep_method_variants_separate():
+    rows = []
+    for asymptotic_null, rate in (("independence", 0.04), ("zero_covariance", 0.0)):
+        for n in (50, 100):
+            for rejection in (0, 1):
+                rows.append(
+                    {
+                        "method": "RVTest",
+                        "approximation": "asymptotic",
+                        "asymptotic_null": asymptotic_null,
+                        "Rejection": rejection if rate else 0,
+                        "n": n,
+                        "p": 25,
+                    }
+                )
+    for n in (50, 100):
+        rows.append(
+            {
+                "method": "CCA",
+                "Rejection": 0,
+                "n": n,
+                "p": 25,
+            }
+        )
+    data = pd.DataFrame(rows)
+    groups = ("method", "approximation", "asymptotic_null", "p", "n")
+
+    aggregated = aggregate_metric(data, "Rejection", groups)
+    figure, axes, plotted = plot_metric_grid(
+        data,
+        value="Rejection",
+        x="n",
+        col="p",
+        series=("method", "approximation", "asymptotic_null"),
+    )
+
+    assert len(aggregated) == 6
+    assert set(aggregated["asymptotic_null"].dropna()) == {
+        "independence",
+        "zero_covariance",
+    }
+    assert len(plotted) == 6
+    assert len(axes[0, 0].lines) == 3
+    figure.clear()
 
 
 def test_plot_aggregations_separate_latent_modes_and_y_frobenius_error():
