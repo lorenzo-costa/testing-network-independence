@@ -47,35 +47,25 @@ methods:
         test_method: mgc
         permutation_type: latent
         n_jobs: 1
+    
+    - name: RVTest
+      kwargs:
+        approximation: asymptotic
+        asymptotic_null: independence
+    
+    - name: MRQAP
+      kwargs:
+        permutation_strategy: y_permutation
+        batch_size: 32
 
 setups:
   - dgp: GaussianNetwork
     solver: ASE
-    dgp_kwargs:
-      eps_distribution: student_t_3
-      x_network_correlation: 0
-
-  - dgp: GaussianNetwork
-    solver: ASE
-    dgp_kwargs:
-      eps_distribution: student_t_3
-      x_network_correlation: 0.5
 
   - dgp: BernoulliNetwork
     solver: pgd_fit_wrapper
     dgp_kwargs:
       rdpg: false
-      eps_distribution: student_t_3
-      x_network_correlation: 0
-    solver_kwargs:
-      backend: numpy
-
-  - dgp: BernoulliNetwork
-    solver: pgd_fit_wrapper
-    dgp_kwargs:
-      rdpg: false
-      eps_distribution: student_t_3
-      x_network_correlation: 0.5
     solver_kwargs:
       backend: numpy
 

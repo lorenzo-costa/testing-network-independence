@@ -1,5 +1,8 @@
-# Multiple-network linear-model experiment using the adjacency-level global
-# MRQAP permutation test.
+# Multiple-network linear-model experiment comparing the adjacency-level global
+# MRQAP permutation test with both RV asymptotic null models.
+#
+# Warning: the RV asymptotic approximation is poorly calibrated when p*d_x is
+# large relative to n. Use this config for comparison, not as the primary result.
 
 experiment_type: linear_model
 
@@ -30,6 +33,16 @@ methods:
         permutation_strategy: y_permutation
         batch_size: 32
 
+    - name: RVTest
+      kwargs:
+        approximation: asymptotic
+        asymptotic_null: independence
+
+    - name: RVTest
+      kwargs:
+        approximation: asymptotic
+        asymptotic_null: zero_covariance
+
 setups:
   - dgp: GaussianNetwork
     solver: ASE
@@ -46,4 +59,4 @@ metrics:
 
 output:
   results_dir: results
-  file_prefix: linear_model_mrqap_results
+  file_prefix: linear_model_asymptotic_results

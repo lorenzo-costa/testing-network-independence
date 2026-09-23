@@ -153,23 +153,33 @@ def test_every_linear_model_network_and_method_combination_runs():
             assert result["args"]["cca_gamma"] == pytest.approx(np.sqrt(12))
 
 
-def test_asymptotic_linear_model_config_uses_global_mrqap_permutations():
+def test_asymptotic_linear_model_config_includes_mrqap_and_both_rv_nulls():
     config = load_config(ROOT / "linear_model_asymptotic_config.yaml")
     design = build_factorial_design(config)
 
-    assert len(design) == 2 * 3 * 5 * 5
+    assert len(design) == 2 * 3 * 5 * 5 * 3
     assert config["methods"]["npermutations"] == [400]
     assert config["methods"]["use_true_latent"] is None
-    assert config["output"]["file_prefix"] == "linear_model_mrqap_results"
-    assert {row["method"].func for row in design} == {MRQAP}
+    assert config["output"]["file_prefix"] == "linear_model_asymptotic_results"
+    assert {row["method"].func for row in design} == {MRQAP, RVTest}
 
-    mrqap_methods = [row["method"] for row in design]
+    mrqap_methods = [row["method"] for row in design if row["method"].func is MRQAP]
     assert all(
         method.keywords["permutation_strategy"] == "y_permutation"
         for method in mrqap_methods
     )
     assert all(method.keywords["batch_size"] == 32 for method in mrqap_methods)
     assert all("use_true_latent" not in row for row in design)
+
+    rv_methods = {
+        (method.keywords["approximation"], method.keywords["asymptotic_null"])
+        for method in (row["method"] for row in design)
+        if method.func is RVTest
+    }
+    assert rv_methods == {
+        ("asymptotic", "independence"),
+        ("asymptotic", "zero_covariance"),
+    }
 
 
 def test_asymptotic_linear_model_config_runs_global_mrqap_scenario():

@@ -1729,55 +1729,55 @@ def generate_linear_model_figures(
                         filename_suffix=filename_suffix,
                     )
                 )
-                outputs.append(
-                    plot_type_i_error_by_p(
-                        rejection_rates,
-                        output_dir,
-                        network,
-                        use_true_latent,
-                        setting.eps_distribution,
-                        setting.x_network_correlation,
-                        show_setting,
-                        filename_suffix=filename_suffix,
-                    )
-                )
-                outputs.append(
-                    plot_type_i_error_two_row(
-                        rejection_rates,
-                        output_dir,
-                        network,
-                        use_true_latent,
-                        setting.eps_distribution,
-                        setting.x_network_correlation,
-                        show_setting,
-                        filename_suffix=filename_suffix,
-                    )
-                )
-                if frobenius_errors is not None:
-                    outputs.append(
-                        plot_frobenius_grid(
-                            frobenius_errors,
-                            output_dir,
-                            network,
-                            use_true_latent,
-                            setting.eps_distribution,
-                            setting.x_network_correlation,
-                            show_setting,
-                            filename_suffix=filename_suffix,
-                        )
-                    )
-                    outputs.append(
-                        plot_null_frobenius_by_p(
-                            frobenius_errors,
-                            output_dir,
-                            network,
-                            use_true_latent,
-                            setting.eps_distribution,
-                            setting.x_network_correlation,
-                            show_setting,
-                            filename_suffix=filename_suffix,
-                        )
-                    )
+                # outputs.append(
+                #     plot_type_i_error_by_p(
+                #         rejection_rates,
+                #         output_dir,
+                #         network,
+                #         use_true_latent,
+                #         setting.eps_distribution,
+                #         setting.x_network_correlation,
+                #         show_setting,
+                #         filename_suffix=filename_suffix,
+                #     )
+                # )
+                # outputs.append(
+                #     plot_type_i_error_two_row(
+                #         rejection_rates,
+                #         output_dir,
+                #         network,
+                #         use_true_latent,
+                #         setting.eps_distribution,
+                #         setting.x_network_correlation,
+                #         show_setting,
+                #         filename_suffix=filename_suffix,
+                #     )
+                # )
+                # if frobenius_errors is not None:
+                #     outputs.append(
+                #         plot_frobenius_grid(
+                #             frobenius_errors,
+                #             output_dir,
+                #             network,
+                #             use_true_latent,
+                #             setting.eps_distribution,
+                #             setting.x_network_correlation,
+                #             show_setting,
+                #             filename_suffix=filename_suffix,
+                #         )
+                #     )
+                #     outputs.append(
+                #         plot_null_frobenius_by_p(
+                #             frobenius_errors,
+                #             output_dir,
+                #             network,
+                #             use_true_latent,
+                #             setting.eps_distribution,
+                #             setting.x_network_correlation,
+                #             show_setting,
+                #             filename_suffix=filename_suffix,
+                #         )
+                #     )
     return outputs
 
 
