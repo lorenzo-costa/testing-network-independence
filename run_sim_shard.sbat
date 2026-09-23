@@ -3,7 +3,7 @@
 #SBATCH --job-name=sim_shard
 #SBATCH --output=/dev/null
 #SBATCH --error=/dev/null
-#SBATCH --array=0-2
+#SBATCH --array=0-3
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=32
