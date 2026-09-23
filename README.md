@@ -264,7 +264,8 @@ After all shards finish, add their filenames to `RESULT_FILES` in
 
 ```bash
 python results/visualise_linear_model.py --files \
-  <shard-000.csv> <shard-001.csv> <shard-002.csv>
+  <shard-000.csv> <shard-001.csv> <shard-002.csv> \
+  --asymptotic-null split
 ```
 
 Supply a separate global-MRQAP shard set with `--mrqap-files`. MRQAP is an
@@ -272,7 +273,11 @@ adjacency-level test, so its testing-performance curve is included in both the
 true-latent and estimated-latent comparison plots and labeled accordingly. It
 is not included in latent-recovery plots.
 
-To generate only the testing-performance plots, use `--testing-only`.
+`--asymptotic-null` is required. Use `split` to draw separate independence and
+zero-covariance asymptotic RV lines, or use `independence` or
+`zero_covariance` to retain only the selected asymptotic reference model. There
+is no pooled asymptotic mode. To generate only the testing-performance plots,
+use `--testing-only`.
 
 The processor verifies that the files form one complete, non-duplicated shard
 set and streams large shards in bounded-memory chunks. The visualization writes
@@ -348,7 +353,17 @@ figure, axes, plotted_data = plot_metric_grid(
 Use `merge_result_shard_sets` when primary, asymptotic, MRQAP, or other
 families come from different complete shard runs. For the original paper
 figures, pass the preprocessed combined dataframe to
-`generate_linear_model_figures`.
+`generate_linear_model_figures`, explicitly selecting how asymptotic null
+models should be handled:
+
+```python
+paths = generate_linear_model_figures(
+    data,
+    Path("results/linear_model_figures"),
+    asymptotic_null="split",  # or "independence" / "zero_covariance"
+    testing_only=True,
+)
+```
 
 Edit the `n`, `p`, `d_x`, `d_y`, and `snr` lists in
 `linear_model_config.yaml` to define the factorial sweep. The supplied config

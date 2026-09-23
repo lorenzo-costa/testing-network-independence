@@ -27,8 +27,6 @@ if __name__ == "__main__":
     matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
-
-import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
@@ -77,38 +75,54 @@ ERROR_DISTRIBUTION_LABELS = {
     "multivariate_gaussian": "Gaussian errors",
     "student_t_3": r"Student-$t_3$ errors",
 }
-METHOD_ORDER = ("RVTest_permutation", "RVTest_asymptotic", "CCA", "DC", "MRQAP")
+METHOD_ORDER = (
+    "RVTest_permutation",
+    "RVTest_asymptotic_independence",
+    "RVTest_asymptotic_zero_covariance",
+    "CCA",
+    "DC",
+    "MRQAP",
+)
 
 METHOD_LABELS = {
     "RVTest_permutation": "RV (permutation)",
-    "RVTest_asymptotic": "RV (asymptotic)",
+    "RVTest_asymptotic_independence": "RV (asymptotic — independence)",
+    "RVTest_asymptotic_zero_covariance": ("RV (asymptotic — zero covariance)"),
     "CCA": "CCA",
     "DC": "MGC",
     "MRQAP": "MRQAP (adjacency)",
 }
 COLORS = {
     "RVTest_permutation": "#E69F00",
-    "RVTest_asymptotic": "#E69F00",
+    "RVTest_asymptotic_independence": "#E69F00",
+    "RVTest_asymptotic_zero_covariance": "#D55E00",
     "CCA": "#0072B2",
     "DC": "#009E73",
     "MRQAP": "#CC79A7",
 }
 MARKERS = {
     "RVTest_permutation": "o",
-    "RVTest_asymptotic": "D",
+    "RVTest_asymptotic_independence": "D",
+    "RVTest_asymptotic_zero_covariance": "X",
     "CCA": "s",
     "DC": "^",
     "MRQAP": "v",
 }
 LINESTYLES = {
     "RVTest_permutation": "-",
-    "RVTest_asymptotic": "--",
+    "RVTest_asymptotic_independence": "--",
+    "RVTest_asymptotic_zero_covariance": ":",
     "CCA": "-",
     "DC": "-",
     "MRQAP": "-",
 }
 PNG_DPI = 600
 PLOT_CHUNKSIZE = 5_000
+ASYMPTOTIC_NULL_OPTIONS = ("split", "independence", "zero_covariance")
+ASYMPTOTIC_METHODS = {
+    "independence": "RVTest_asymptotic_independence",
+    "zero_covariance": "RVTest_asymptotic_zero_covariance",
+}
 
 DEFAULT_COLUMN_ALIASES = {
     "dx": "d_x",
@@ -169,6 +183,7 @@ __all__ = [
     "prepare_linear_model_results",
     "preprocess_linear_model_results",
     "preprocess_results",
+    "select_asymptotic_null_results",
 ]
 
 
@@ -211,6 +226,15 @@ def parse_args(argv=None) -> argparse.Namespace:
             "Global MRQAP shard filenames; overrides MRQAP_RESULT_FILES. "
             "Their adjacency-level rejection curves are added to both latent-mode "
             "testing plots."
+        ),
+    )
+    parser.add_argument(
+        "--asymptotic-null",
+        choices=ASYMPTOTIC_NULL_OPTIONS,
+        required=True,
+        help=(
+            "How to handle asymptotic RV results: 'split' draws independence "
+            "and zero-covariance lines; either null name retains only that line."
         ),
     )
     parser.add_argument(
@@ -900,6 +924,65 @@ def expand_adjacency_results_across_latent_modes(
     )
 
 
+def select_asymptotic_null_results(
+    results: pd.DataFrame,
+    asymptotic_null: str,
+) -> pd.DataFrame:
+    """Split asymptotic RV rows by null model or retain one requested model.
+
+    Parameters
+    ----------
+    results
+        Preprocessed simulation rows.
+    asymptotic_null
+        One of ``"split"``, ``"independence"``, or ``"zero_covariance"``.
+        Split mode relabels both variants as distinct methods. A specific null
+        filters out the other variant. There is intentionally no pooled mode.
+    """
+    if asymptotic_null not in ASYMPTOTIC_NULL_OPTIONS:
+        choices = ", ".join(repr(value) for value in ASYMPTOTIC_NULL_OPTIONS)
+        raise ValueError(f"asymptotic_null must be one of: {choices}.")
+    if "method" not in results:
+        raise ValueError("Processed results are missing column: method")
+
+    selected = results.copy()
+    asymptotic_methods = {"RVTest_asymptotic", *ASYMPTOTIC_METHODS.values()}
+    asymptotic_rows = selected["method"].isin(asymptotic_methods)
+    if not asymptotic_rows.any():
+        return selected
+
+    if "asymptotic_null" not in selected:
+        selected["asymptotic_null"] = None
+    null_models = selected["asymptotic_null"].map(_clean_text)
+    for null_model, method in ASYMPTOTIC_METHODS.items():
+        inferred = selected["method"] == method
+        null_models.loc[inferred] = null_model
+
+    invalid = asymptotic_rows & ~null_models.isin(ASYMPTOTIC_METHODS)
+    if invalid.any():
+        invalid_values = sorted(set(null_models.loc[invalid]))
+        raise ValueError(
+            "Asymptotic RV rows have missing or unsupported asymptotic_null "
+            f"values: {invalid_values}."
+        )
+
+    selected.loc[asymptotic_rows, "asymptotic_null"] = null_models.loc[asymptotic_rows]
+    if asymptotic_null != "split":
+        keep = ~asymptotic_rows | (null_models == asymptotic_null)
+        selected = selected.loc[keep].copy()
+        asymptotic_rows = selected["method"].isin(asymptotic_methods)
+        if not asymptotic_rows.any():
+            raise ValueError(
+                "No asymptotic RV rows found for "
+                f"asymptotic_null={asymptotic_null!r}."
+            )
+
+    selected.loc[asymptotic_rows, "method"] = selected.loc[
+        asymptotic_rows, "asymptotic_null"
+    ].map(ASYMPTOTIC_METHODS)
+    return selected.reset_index(drop=True)
+
+
 def linear_model_method_label(config: Mapping[str, Any]) -> str:
     """Return the compact method label used by the linear-model figures."""
     method = _clean_text(config.get("method"))
@@ -1064,16 +1147,11 @@ def _select_setting(
     use_true_latent: bool,
     eps_distribution: str,
     x_network_correlation: float,
-    asymptotic_null: list[bool] | None = None,
 ) -> pd.DataFrame:
-    if asymptotic_null is None:
-        asymptotic_null = [None]
-        
     return aggregated[
         (aggregated["dgp_name"] == network)
         & (aggregated["use_true_latent"] == use_true_latent)
         & (aggregated["eps_distribution"] == eps_distribution)
-        & (aggregated["asymptotic_null"].isin(asymptotic_null))
         & np.isclose(
             aggregated["x_network_correlation"],
             x_network_correlation,
@@ -1107,7 +1185,7 @@ def plot_power_grid(
     eps_distribution: str,
     x_network_correlation: float,
     show_setting: bool = True,
-    asymptotic_null: list[bool] | None = None,
+    filename_suffix: str | None = None,
 ) -> Path:
     """Plot rows of positive-SNR facets and columns of p facets."""
     data = _select_setting(
@@ -1116,7 +1194,6 @@ def plot_power_grid(
         use_true_latent,
         eps_distribution,
         x_network_correlation,
-        asymptotic_null=asymptotic_null
     )
     data = data[data["snr"] > 0].copy()
     if data.empty:
@@ -1188,6 +1265,8 @@ def plot_power_grid(
     filename = f"power_{slug}_{mode_slug}"
     if show_setting:
         filename += f"_{_setting_slug(eps_distribution, x_network_correlation)}"
+    if filename_suffix:
+        filename += f"_{filename_suffix}"
     return _save_figure(
         fig,
         output_dir,
@@ -1203,7 +1282,7 @@ def plot_type_i_error_by_p(
     eps_distribution: str,
     x_network_correlation: float,
     show_setting: bool = True,
-    asymptotic_null: list[bool] | None = None, 
+    filename_suffix: str | None = None,
 ) -> Path:
     """Create one row of SNR-zero type-I-error facets over p."""
     data = _select_setting(
@@ -1212,7 +1291,6 @@ def plot_type_i_error_by_p(
         use_true_latent,
         eps_distribution,
         x_network_correlation,
-        asymptotic_null=asymptotic_null
     )
     data = data[data["snr"] == 0].copy()
     if data.empty:
@@ -1290,6 +1368,8 @@ def plot_type_i_error_by_p(
     filename = f"type_i_error_{slug}_{mode_slug}"
     if show_setting:
         filename += f"_{_setting_slug(eps_distribution, x_network_correlation)}"
+    if filename_suffix:
+        filename += f"_{filename_suffix}"
     return _save_figure(
         fig,
         output_dir,
@@ -1305,7 +1385,7 @@ def plot_type_i_error_two_row(
     eps_distribution: str,
     x_network_correlation: float,
     show_setting: bool = True,
-    asymptotic_null: list[bool] | None = None,
+    filename_suffix: str | None = None,
 ) -> Path:
     """Create a centered three-over-two type-I-error facet layout."""
     data = _select_setting(
@@ -1314,7 +1394,6 @@ def plot_type_i_error_two_row(
         use_true_latent,
         eps_distribution,
         x_network_correlation,
-        asymptotic_null=asymptotic_null
     )
     data = data[data["snr"] == 0].copy()
     if data.empty:
@@ -1397,17 +1476,20 @@ def plot_type_i_error_two_row(
         loc="upper center",
         bbox_to_anchor=(0.5, 0.94),
         frameon=False,
-        ncols=len(handles),
+        ncols=min(4, len(handles)),
     )
     layout_engine = fig.get_layout_engine()
     if layout_engine is not None:
-        layout_engine.set(rect=(0.0, 0.0, 1.0, 0.82))
+        legend_top = 0.78 if len(handles) > 4 else 0.82
+        layout_engine.set(rect=(0.0, 0.0, 1.0, legend_top))
 
     slug = network.removesuffix("Network").lower()
     mode_slug = _latent_mode_slug(use_true_latent)
     filename = f"type_i_error_two_row_{slug}_{mode_slug}"
     if show_setting:
         filename += f"_{_setting_slug(eps_distribution, x_network_correlation)}"
+    if filename_suffix:
+        filename += f"_{filename_suffix}"
     return _save_figure(fig, output_dir, filename)
 
 
@@ -1419,7 +1501,7 @@ def plot_frobenius_grid(
     eps_distribution: str,
     x_network_correlation: float,
     show_setting: bool = True,
-    asymptotic_null: list[bool] | None = None,
+    filename_suffix: str | None = None,
 ) -> Path:
     """Plot Y errors with SNR rows and p columns over n."""
     data = _select_setting(
@@ -1428,7 +1510,6 @@ def plot_frobenius_grid(
         use_true_latent,
         eps_distribution,
         x_network_correlation,
-        asymptotic_null=asymptotic_null
     )
     data = data[data["snr"] > 0].copy()
     if data.empty:
@@ -1499,6 +1580,8 @@ def plot_frobenius_grid(
     filename = f"frobenius_y_{slug}_{mode_slug}"
     if show_setting:
         filename += f"_{_setting_slug(eps_distribution, x_network_correlation)}"
+    if filename_suffix:
+        filename += f"_{filename_suffix}"
     return _save_figure(
         fig,
         output_dir,
@@ -1514,7 +1597,7 @@ def plot_null_frobenius_by_p(
     eps_distribution: str,
     x_network_correlation: float,
     show_setting: bool = True,
-    asymptotic_null: list[bool] | None = None,
+    filename_suffix: str | None = None,
 ) -> Path:
     """Plot SNR-zero Y relative-Frobenius error in one row of p facets."""
     data = _select_setting(
@@ -1523,7 +1606,6 @@ def plot_null_frobenius_by_p(
         use_true_latent,
         eps_distribution,
         x_network_correlation,
-        asymptotic_null=asymptotic_null
     )
     data = data[data["snr"] == 0].copy()
     if data.empty:
@@ -1581,6 +1663,8 @@ def plot_null_frobenius_by_p(
     filename = f"frobenius_y_null_{slug}_{mode_slug}"
     if show_setting:
         filename += f"_{_setting_slug(eps_distribution, x_network_correlation)}"
+    if filename_suffix:
+        filename += f"_{filename_suffix}"
     return _save_figure(
         fig,
         output_dir,
@@ -1592,10 +1676,14 @@ def generate_linear_model_figures(
     results: pd.DataFrame,
     output_dir: str | Path,
     *,
+    asymptotic_null: str,
     testing_only: bool = False,
     apply_style: bool = True,
 ) -> list[Path]:
-    """Generate the complete legacy figure suite from preprocessed rows."""
+    """Generate figures with split or selected asymptotic RV null models."""
+    results = select_asymptotic_null_results(results, asymptotic_null)
+    results = results[results["p"] != 25].copy()
+    results = results[results["snr"] != 0.5].copy()
     _validate_linear_model_results(results)
     if apply_style:
         configure_plot_style()
@@ -1609,11 +1697,7 @@ def generate_linear_model_figures(
             results[results["RelativeFrobeniusNorm_Y"].notna()]
         )
     )
-    
-    # asymptotic_null = ["'independence'", "'zero_covariance'", None]
-    
-    # print(f"hardcoring asymptotic approximation to: {asymptotic_null}")
-    
+    filename_suffix = f"asymptotic_{asymptotic_null}"
     outputs = []
     available_networks = results["dgp_name"].drop_duplicates().tolist()
     networks = [name for name in NETWORK_LABELS if name in available_networks]
@@ -1641,8 +1725,8 @@ def generate_linear_model_figures(
                         use_true_latent,
                         setting.eps_distribution,
                         setting.x_network_correlation,
-                        asymptotic_null,
                         show_setting,
+                        filename_suffix=filename_suffix,
                     )
                 )
                 outputs.append(
@@ -1654,6 +1738,7 @@ def generate_linear_model_figures(
                         setting.eps_distribution,
                         setting.x_network_correlation,
                         show_setting,
+                        filename_suffix=filename_suffix,
                     )
                 )
                 outputs.append(
@@ -1665,6 +1750,7 @@ def generate_linear_model_figures(
                         setting.eps_distribution,
                         setting.x_network_correlation,
                         show_setting,
+                        filename_suffix=filename_suffix,
                     )
                 )
                 if frobenius_errors is not None:
@@ -1677,6 +1763,7 @@ def generate_linear_model_figures(
                             setting.eps_distribution,
                             setting.x_network_correlation,
                             show_setting,
+                            filename_suffix=filename_suffix,
                         )
                     )
                     outputs.append(
@@ -1688,6 +1775,7 @@ def generate_linear_model_figures(
                             setting.eps_distribution,
                             setting.x_network_correlation,
                             show_setting,
+                            filename_suffix=filename_suffix,
                         )
                     )
     return outputs
@@ -1731,6 +1819,7 @@ def main(argv=None) -> list[Path]:
     outputs = generate_linear_model_figures(
         results,
         args.output_dir,
+        asymptotic_null=args.asymptotic_null,
         testing_only=args.testing_only,
     )
     print(f"Saved {len(outputs)} figures to {args.output_dir}")

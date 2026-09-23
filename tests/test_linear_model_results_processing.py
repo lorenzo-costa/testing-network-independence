@@ -16,12 +16,14 @@ from results.visualise_linear_model import (
     aggregate_frobenius_errors,
     aggregate_rejection_rates,
     expand_adjacency_results_across_latent_modes,
+    generate_linear_model_figures,
     linear_model_method_label,
     merge_result_shards,
     plot_metric_grid,
     plot_type_i_error_two_row,
     preprocess_results,
     prepare_linear_model_results,
+    select_asymptotic_null_results,
 )
 
 
@@ -358,6 +360,123 @@ def test_asymptotic_shards_keep_only_rv_rows(tmp_path):
     assert len(results) == 1
     assert results["method"].tolist() == ["RVTest_asymptotic"]
     assert results["Rejection"].tolist() == [1]
+
+
+def test_select_asymptotic_null_results_splits_or_filters_variants():
+    results = pd.DataFrame(
+        [
+            {
+                "id": "permutation",
+                "method": "RVTest_permutation",
+                "asymptotic_null": None,
+            },
+            {
+                "id": "independence",
+                "method": "RVTest_asymptotic",
+                "asymptotic_null": "independence",
+            },
+            {
+                "id": "zero_covariance",
+                "method": "RVTest_asymptotic",
+                "asymptotic_null": "zero_covariance",
+            },
+        ]
+    )
+
+    split = select_asymptotic_null_results(results, "split")
+    independence = select_asymptotic_null_results(results, "independence")
+    zero_covariance = select_asymptotic_null_results(results, "zero_covariance")
+
+    assert split["method"].tolist() == [
+        "RVTest_permutation",
+        "RVTest_asymptotic_independence",
+        "RVTest_asymptotic_zero_covariance",
+    ]
+    assert independence["id"].tolist() == ["permutation", "independence"]
+    assert independence["method"].tolist() == [
+        "RVTest_permutation",
+        "RVTest_asymptotic_independence",
+    ]
+    assert zero_covariance["id"].tolist() == ["permutation", "zero_covariance"]
+    assert zero_covariance["method"].tolist() == [
+        "RVTest_permutation",
+        "RVTest_asymptotic_zero_covariance",
+    ]
+
+    with pytest.raises(ValueError, match="asymptotic_null must be one of"):
+        select_asymptotic_null_results(results, "pooled")
+
+
+@pytest.mark.parametrize(
+    ("asymptotic_null", "expected_methods"),
+    [
+        (
+            "split",
+            {
+                "RVTest_asymptotic_independence",
+                "RVTest_asymptotic_zero_covariance",
+            },
+        ),
+        ("independence", {"RVTest_asymptotic_independence"}),
+        ("zero_covariance", {"RVTest_asymptotic_zero_covariance"}),
+    ],
+)
+def test_generate_figures_applies_asymptotic_null_option(
+    tmp_path,
+    monkeypatch,
+    asymptotic_null,
+    expected_methods,
+):
+    rows = []
+    for null_model in ("independence", "zero_covariance"):
+        for snr in (0, 0.1):
+            rows.append(
+                {
+                    "dgp_name": "GaussianNetwork",
+                    "p": 5,
+                    "snr": snr,
+                    "n": 50,
+                    "d_x": 5,
+                    "d_y": 5,
+                    "method": "RVTest_asymptotic",
+                    "approximation": "asymptotic",
+                    "asymptotic_null": null_model,
+                    "alpha": 0.05,
+                    "use_true_latent": False,
+                    "x_network_correlation": 0.0,
+                    "eps_distribution": "multivariate_gaussian",
+                    "Rejection": snr > 0,
+                    "RelativeFrobeniusNorm_Y": 0.2,
+                }
+            )
+    captured = []
+
+    def capture_plot(aggregated, output_dir, *args, **kwargs):
+        captured.append((set(aggregated["method"]), kwargs.get("filename_suffix")))
+        return Path(output_dir) / f"figure-{len(captured)}.png"
+
+    monkeypatch.setattr(visualise_linear_model, "plot_power_grid", capture_plot)
+    monkeypatch.setattr(
+        visualise_linear_model,
+        "plot_type_i_error_by_p",
+        capture_plot,
+    )
+    monkeypatch.setattr(
+        visualise_linear_model,
+        "plot_type_i_error_two_row",
+        capture_plot,
+    )
+
+    outputs = generate_linear_model_figures(
+        pd.DataFrame(rows),
+        tmp_path,
+        asymptotic_null=asymptotic_null,
+        testing_only=True,
+        apply_style=False,
+    )
+
+    assert len(outputs) == 3
+    assert captured == [(expected_methods, f"asymptotic_{asymptotic_null}")] * 3
 
 
 def test_mrqap_shards_are_added_to_both_latent_mode_panels(tmp_path):

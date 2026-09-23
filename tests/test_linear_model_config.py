@@ -7,6 +7,7 @@ import pytest
 from src.dgp import BernoulliNetwork, GaussianNetwork
 from src.helper_functions.simulation_functions import run_scenario
 from src.load_config import (
+    _resolve_linear_model_simulation,
     build_factorial_design,
     flatten_args_columns,
     load_config,
@@ -64,6 +65,59 @@ def test_linear_model_config_builds_requested_factorial_sweep():
     ]
     assert mgc_methods
     assert all(method.keywords["test_method"] == "mgc" for method in mgc_methods)
+
+
+def test_active_fraction_config_builds_requested_factorial_sweep():
+    config = load_config(ROOT / "linear_model_active_fraction_config.yaml")
+    design = build_factorial_design(config)
+
+    assert "snr" not in config["simulation"]
+    assert config["simulation"]["b_active_network_fraction"] == [
+        0,
+        0.1,
+        0.25,
+        0.5,
+        1,
+    ]
+    assert len(design) == 4 * 3 * 3 * 5 * 5 * 2
+    assert all("snr" not in row for row in design)
+    for row in design:
+        fraction = row["b_active_network_fraction"]
+        assert row["B"] == (0 if fraction == 0 else None)
+        assert row["hypothesis"] == ("H0" if fraction == 0 else "H1")
+
+    row = next(
+        row
+        for row in design
+        if row["setup"][0].args[0] is GaussianNetwork
+        and row["b_active_network_fraction"] == 0.5
+        and row["p"] == 5
+    )
+    network = row["setup"][0](**row, rng=np.random.default_rng(900))
+    blocks = np.split(network.generate()["B"], row["p"], axis=1)
+    assert sum(np.any(block) for block in blocks) == 3
+    assert network.snr is None
+
+
+def test_linear_model_signal_sweeps_are_mutually_exclusive_and_validated():
+    base = {
+        "nsim": 1,
+        "seed": 1,
+        "n": [10],
+        "p": [5],
+        "d_x": [1],
+        "d_y": [1],
+    }
+    with pytest.raises(ValueError, match="exactly one"):
+        _resolve_linear_model_simulation(base)
+    with pytest.raises(ValueError, match="exactly one"):
+        _resolve_linear_model_simulation(
+            {**base, "snr": [1], "b_active_network_fraction": [0.5]}
+        )
+    with pytest.raises(ValueError, match=r"\[0, 1\]"):
+        _resolve_linear_model_simulation(
+            {**base, "b_active_network_fraction": [1.1]}
+        )
 
 
 def test_every_linear_model_network_and_method_combination_runs():

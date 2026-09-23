@@ -1,0 +1,87 @@
+# Multiple-network latent linear-model experiment varying the fraction of X
+# networks that contribute to Y. Every list-valued field is crossed into the
+# factorial design.
+
+experiment_type: linear_model
+
+simulation:
+  nsim: 200
+  seed: 2
+
+  # User-controlled network and latent dimensions.
+  n: [50, 100, 200]
+  p: [5, 10, 25, 50, 100]
+  d_x: [5]
+  d_y: [5]
+
+  # On each draw, round(fraction * p) uniformly selected X-network blocks in B
+  # are active. Fraction zero is the null; positive fractions are alternatives.
+  # Coefficients are not SNR-calibrated in this experiment.
+  b_active_network_fraction: [0, 0.1, 0.25, 0.5, 1]
+  alpha: [0.05]
+  edge_var: [2]
+
+  # Parallelize independent simulation scenarios. Each worker uses one BLAS thread.
+  parallel: true
+  n_jobs: -1
+  batch_size: 32
+  blas_threads: 1
+
+methods:
+  npermutations: [400]
+  use_true_latent: [false, true]
+  list:
+    - name: RVTest
+      kwargs:
+        approximation: permutation
+        permutation_type: latent
+        n_jobs: 1
+
+    - name: CanonicalCorrelationTest
+      kwargs:
+        permutation_type: latent
+        n_jobs: 1
+
+    - name: DistanceCorrelationTest
+      kwargs:
+        test_method: mgc
+        permutation_type: latent
+        n_jobs: 1
+
+setups:
+  - dgp: GaussianNetwork
+    solver: ASE
+    dgp_kwargs:
+      eps_distribution: student_t_3
+      x_network_correlation: 0
+
+  - dgp: GaussianNetwork
+    solver: ASE
+    dgp_kwargs:
+      eps_distribution: student_t_3
+      x_network_correlation: 0.5
+
+  - dgp: BernoulliNetwork
+    solver: pgd_fit_wrapper
+    dgp_kwargs:
+      rdpg: false
+      eps_distribution: student_t_3
+      x_network_correlation: 0
+    solver_kwargs:
+      backend: numpy
+
+  - dgp: BernoulliNetwork
+    solver: pgd_fit_wrapper
+    dgp_kwargs:
+      rdpg: false
+      eps_distribution: student_t_3
+      x_network_correlation: 0.5
+    solver_kwargs:
+      backend: numpy
+
+metrics:
+  compute_all: true
+
+output:
+  results_dir: results
+  file_prefix: linear_model_active_fraction_results

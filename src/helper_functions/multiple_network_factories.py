@@ -14,6 +14,7 @@ def make_network(
     rng,
     edge_var=1,
     snr=None,
+    b_active_network_fraction=None,
     rdpg=False,
     network_kwargs=None,
     **_,
@@ -29,7 +30,15 @@ def make_network(
     else:
         options.setdefault("rdpg", rdpg)
     network = network_class(
-        n=n, p=p, d_x=d_x, d_y=d_y, B=B, snr=snr, rng=rng, **options
+        n=n,
+        p=p,
+        d_x=d_x,
+        d_y=d_y,
+        B=B,
+        snr=snr,
+        b_active_network_fraction=b_active_network_fraction,
+        rng=rng,
+        **options,
     )
     # The example supplies only B=0 or B=None; snr=0 also forces zero B.
     network.is_null = B == 0 or network.snr == 0
