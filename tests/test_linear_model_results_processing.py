@@ -21,6 +21,7 @@ from results.visualise_linear_model import (
     merge_result_shards,
     plot_metric_grid,
     plot_type_i_error_two_row,
+    prepare_active_fraction_results,
     prepare_p_one_testing_results,
     preprocess_results,
     prepare_linear_model_results,
@@ -382,6 +383,24 @@ def test_prepare_p_one_testing_results_selects_power_and_null_rows(tmp_path):
     assert results["hypothesis"].tolist() == ["H0", "H1"]
     assert results["p"].tolist() == [1, 1]
     assert results["source_file"].tolist() == [filename, filename]
+
+
+def test_prepare_active_fraction_results_uses_fraction_as_effect_size(tmp_path):
+    names = [
+        "active_results_123_shard-000-of-002.csv",
+        "active_results_123_shard-001-of-002.csv",
+    ]
+    rows = [_row(50, 5, 0, False), _row(50, 5, 0.5, True)]
+    for name, row, fraction in zip(names, rows, (0.0, 0.5)):
+        row["args"].pop("snr")
+        row["args"]["b_active_network_fraction"] = fraction
+        pd.DataFrame([row]).to_csv(tmp_path / name, index=False)
+
+    results = prepare_active_fraction_results(tmp_path, names).sort_values("snr")
+
+    assert results["snr"].tolist() == [0.0, 0.5]
+    assert results["b_active_network_fraction"].tolist() == [0.0, 0.5]
+    assert results["hypothesis"].tolist() == ["H0", "H1"]
 
 
 def test_reduced_grid_excludes_requested_p_and_snr_values():

@@ -186,6 +186,7 @@ __all__ = [
     "merge_result_shard_sets",
     "merge_result_shards",
     "plot_metric_grid",
+    "prepare_active_fraction_results",
     "prepare_p_one_testing_results",
     "prepare_linear_model_results",
     "preprocess_linear_model_results",
@@ -923,6 +924,43 @@ def prepare_p_one_testing_results(
     return results
 
 
+def prepare_active_fraction_results(
+    results_dir: Path,
+    filenames: Sequence[str],
+) -> pd.DataFrame:
+    """Load active-fraction shards for the shared testing-plot pipeline.
+
+    The plotting internals use ``snr`` as their effect-size coordinate. Active
+    fractions are copied into that column after preprocessing; the rendered
+    figure labels still identify the coordinate as active fraction.
+    """
+    frames = []
+    for chunk in iter_shard_outputs(
+        results_dir,
+        filenames,
+        chunksize=PLOT_CHUNKSIZE,
+        usecols=("args", "ComputeAll"),
+    ):
+        processed = preprocess_linear_model_results(chunk, validate=False)
+        fractions = pd.to_numeric(
+            processed["b_active_network_fraction"],
+            errors="coerce",
+        )
+        if fractions.isna().any():
+            raise ValueError(
+                "Active-fraction result rows have missing "
+                "b_active_network_fraction values."
+            )
+        processed["snr"] = fractions
+        frames.append(processed)
+
+    if not frames:
+        raise ValueError("The active-fraction shard files contain no result rows.")
+    results = pd.concat(frames, ignore_index=True)
+    _validate_linear_model_results(results)
+    return results
+
+
 def _clean_text(value) -> str:
     if value is None:
         return ""
@@ -1243,8 +1281,9 @@ def plot_power_grid(
     x_network_correlation: float,
     show_setting: bool = True,
     filename_suffix: str | None = None,
+    effect_label: str = "SNR",
 ) -> Path:
-    """Plot rows of positive-SNR facets and columns of p facets."""
+    """Plot rows of positive effect sizes and columns of p facets."""
     data = _select_setting(
         aggregated,
         network,
@@ -1291,7 +1330,7 @@ def plot_power_grid(
                 ax.set_title(f"p = {int(p_value)}")
             if column == len(p_values) - 1:
                 ax.annotate(
-                    f"SNR = {snr:g}",
+                    f"{effect_label} = {snr:g}",
                     xy=(1.04, 0.5),
                     xycoords="axes fraction",
                     rotation=270,
@@ -1763,6 +1802,7 @@ def generate_linear_model_figures(
     *,
     asymptotic_null: str,
     additional_testing_results: pd.DataFrame | None = None,
+    effect_label: str = "SNR",
     reduced_grid: bool = False,
     testing_only: bool = False,
     apply_style: bool = True,
@@ -1834,6 +1874,7 @@ def generate_linear_model_figures(
                         setting.x_network_correlation,
                         show_setting,
                         filename_suffix=filename_suffix,
+                        effect_label=effect_label,
                     )
                 )
                 outputs.append(
