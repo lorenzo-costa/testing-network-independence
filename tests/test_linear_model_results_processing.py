@@ -21,6 +21,7 @@ from results.visualise_linear_model import (
     merge_result_shards,
     plot_metric_grid,
     plot_type_i_error_two_row,
+    prepare_p_one_testing_results,
     preprocess_results,
     prepare_linear_model_results,
     select_asymptotic_null_results,
@@ -362,6 +363,27 @@ def test_asymptotic_shards_keep_only_rv_rows(tmp_path):
     assert results["Rejection"].tolist() == [1]
 
 
+def test_prepare_p_one_testing_results_selects_power_and_null_rows(tmp_path):
+    filename = "p_one_results.csv"
+    pd.DataFrame(
+        [
+            _row(50, 1, 0, False),
+            _row(50, 1, 0.5, True),
+            _row(50, 5, 0.5, True),
+        ]
+    ).to_csv(tmp_path / filename, index=False)
+
+    results = prepare_p_one_testing_results(
+        tmp_path,
+        filename,
+    ).sort_values("snr")
+
+    assert results["snr"].tolist() == [0.0, 0.5]
+    assert results["hypothesis"].tolist() == ["H0", "H1"]
+    assert results["p"].tolist() == [1, 1]
+    assert results["source_file"].tolist() == [filename, filename]
+
+
 def test_select_asymptotic_null_results_splits_or_filters_variants():
     results = pd.DataFrame(
         [
@@ -521,9 +543,18 @@ def test_mrqap_shards_are_added_to_both_latent_mode_panels(tmp_path):
 
 
 @pytest.mark.parametrize("use_true_latent", [False, True])
-def test_two_row_type_i_plot_includes_mrqap(tmp_path, monkeypatch, use_true_latent):
+@pytest.mark.parametrize(
+    "p_values",
+    [(1, 5, 25, 50), (1, 5, 10, 25, 50, 100)],
+)
+def test_two_row_type_i_plot_includes_mrqap(
+    tmp_path,
+    monkeypatch,
+    use_true_latent,
+    p_values,
+):
     rows = []
-    for p in (5, 10, 25, 50, 100):
+    for p in p_values:
         for n in (50, 100, 200):
             for method, rate in (("CCA", 0.05), ("MRQAP", 0.06)):
                 rows.append(

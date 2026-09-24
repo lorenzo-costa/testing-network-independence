@@ -63,6 +63,8 @@ ASYMPTOTIC_RESULT_FILES: tuple[str, ...] = (
     "linear_model_asymptotic_results_61636044_shard-002-of-003.csv",
 )
 
+P_ONE_RESULT_FILE = "linear_model_results_20260924_1130.csv"
+
 NETWORK_LABELS = {
     "GaussianNetwork": "Gaussian weighted network",
     "BernoulliNetwork": "Bernoulli binary network",
@@ -144,6 +146,8 @@ LINEAR_MODEL_CONFIG_FIELDS = (
     "d_x",
     "d_y",
     "snr",
+    "b_active_network_fraction",
+    "hypothesis",
     "alpha",
     "x_network_correlation",
     "eps_distribution",
@@ -180,6 +184,7 @@ __all__ = [
     "merge_result_shard_sets",
     "merge_result_shards",
     "plot_metric_grid",
+    "prepare_p_one_testing_results",
     "prepare_linear_model_results",
     "preprocess_linear_model_results",
     "preprocess_results",
@@ -242,6 +247,11 @@ def parse_args(argv=None) -> argparse.Namespace:
         action="store_true",
         help="Save only power and type-I-error figures.",
     )
+    parser.add_argument(
+        "--p-one-file",
+        default=P_ONE_RESULT_FILE,
+        help="Unsharded result file providing the p=1 null and alternative rows.",
+    )
     return parser.parse_args(argv)
 
 
@@ -252,7 +262,7 @@ def configure_plot_style() -> None:
             "savefig.dpi": PNG_DPI,
             "font.family": "sans-serif",
             "font.sans-serif": ["DejaVu Sans"],
-            "font.size": 8.5,
+            "font.size": 10,
             "axes.labelsize": 9,
             "axes.titlesize": 9,
             "figure.titlesize": 10,
@@ -813,6 +823,7 @@ def preprocess_linear_model_results(
         metric_fields=LINEAR_MODEL_METRIC_FIELDS,
         numeric_columns=(
             *DEFAULT_NUMERIC_COLUMNS,
+            "b_active_network_fraction",
             "x_network_correlation",
             "RelativeFrobeniusNorm_Y",
         ),
@@ -822,6 +833,7 @@ def preprocess_linear_model_results(
         _network_correlation
     )
     results["eps_distribution"] = results["eps_distribution"].map(_error_distribution)
+    results["hypothesis"] = results["hypothesis"].map(_clean_text)
     results["use_true_latent"] = results["use_true_latent"].map(_parse_latent_mode)
     results["dgp_name"] = results["dgp_name"].map(
         lambda value: _clean_text(value).split("_")[0]
@@ -863,6 +875,42 @@ def prepare_linear_model_results(
         raise ValueError(f"The shard files contain no result rows{detail}.")
     results = pd.concat(frames, ignore_index=True)
     _validate_linear_model_results(results)
+    return results
+
+
+def prepare_p_one_testing_results(
+    results_dir: Path,
+    filename: str | Path,
+) -> pd.DataFrame:
+    """Load an unsharded p=1 file containing null and alternative rows."""
+    frames = []
+    root = Path(results_dir).expanduser().resolve()
+    path = Path(filename)
+    if not path.is_absolute():
+        path = root / path
+    if not path.is_file():
+        raise FileNotFoundError(f"Missing p=1 result file: {path}")
+
+    for chunk in pd.read_csv(
+        path,
+        chunksize=PLOT_CHUNKSIZE,
+        usecols=("args", "ComputeAll"),
+    ):
+        chunk["source_file"] = path.name
+        processed = preprocess_linear_model_results(chunk, validate=False)
+        selected = processed[processed["p"] == 1].copy()
+        if not selected.empty:
+            frames.append(selected)
+
+    if not frames:
+        raise ValueError(f"The p=1 result file has no p=1 rows: {path}")
+
+    results = pd.concat(frames, ignore_index=True)
+    _validate_linear_model_results(results)
+    if not (results["snr"] == 0).any() or not (results["snr"] > 0).any():
+        raise ValueError(
+            f"The p=1 result file must contain null and alternative rows: {path}"
+        )
     return results
 
 
@@ -1210,7 +1258,7 @@ def plot_power_grid(
     fig, axes = plt.subplots(
         len(snr_values),
         len(p_values),
-        figsize=(2.15 * len(p_values), 1.8 * len(snr_values) + 0.8),
+        figsize=(max(12.9, 2.15 * len(p_values)), 1.8 * len(snr_values) + 0.8),
         sharex=True,
         sharey=True,
         squeeze=False,
@@ -1309,7 +1357,7 @@ def plot_type_i_error_by_p(
     fig, axes = plt.subplots(
         1,
         len(p_values),
-        figsize=(2.6 * len(p_values), 3.3),
+        figsize=(max(15.6, 2.6 * len(p_values)), 3.3),
         sharex=True,
         sharey=True,
         squeeze=False,
@@ -1387,7 +1435,7 @@ def plot_type_i_error_two_row(
     show_setting: bool = True,
     filename_suffix: str | None = None,
 ) -> Path:
-    """Create a centered three-over-two type-I-error facet layout."""
+    """Create a two-row type-I-error facet layout for four to six p values."""
     data = _select_setting(
         aggregated,
         network,
@@ -1405,9 +1453,9 @@ def plot_type_i_error_two_row(
         )
 
     p_values = tuple(sorted(data["p"].unique()))
-    if len(p_values) != 5:
+    if len(p_values) not in {4, 5, 6}:
         raise ValueError(
-            "The two-row type-I-error layout requires exactly five p values; "
+            "The two-row type-I-error layout requires four to six p values; "
             f"found {len(p_values)}."
         )
 
@@ -1418,13 +1466,32 @@ def plot_type_i_error_two_row(
 
     fig = plt.figure(figsize=(9.2, 5.8), layout="constrained")
     grid = fig.add_gridspec(2, 6)
-    spans = (
-        (0, slice(0, 2)),
-        (0, slice(2, 4)),
-        (0, slice(4, 6)),
-        (1, slice(1, 3)),
-        (1, slice(3, 5)),
-    )
+    if len(p_values) == 4:
+        first_row = (
+            (0, slice(1, 3)),
+            (0, slice(3, 5)),
+        )
+        second_row = (
+            (1, slice(1, 3)),
+            (1, slice(3, 5)),
+        )
+    else:
+        first_row = (
+            (0, slice(0, 2)),
+            (0, slice(2, 4)),
+            (0, slice(4, 6)),
+        )
+        second_row = (
+            (1, slice(1, 3)),
+            (1, slice(3, 5)),
+        )
+        if len(p_values) == 6:
+            second_row = (
+                (1, slice(0, 2)),
+                (1, slice(2, 4)),
+                (1, slice(4, 6)),
+            )
+    spans = (*first_row, *second_row)
     axes = []
     for index, (row, columns) in enumerate(spans):
         shared = axes[0] if axes else None
@@ -1449,8 +1516,9 @@ def plot_type_i_error_two_row(
         )
         ax.set_ylim(0, upper_limit)
         ax.set_title(f"p = {int(p_value)}")
-        ax.tick_params(labelleft=index in {0, 3})
-        if index in {0, 3}:
+        first_in_row = index == 0 or spans[index - 1][0] != row
+        ax.tick_params(labelleft=first_in_row)
+        if first_in_row:
             ax.set_ylabel("Type I error rate")
 
     label = NETWORK_LABELS.get(network, network)
@@ -1677,33 +1745,46 @@ def generate_linear_model_figures(
     output_dir: str | Path,
     *,
     asymptotic_null: str,
+    additional_testing_results: pd.DataFrame | None = None,
     testing_only: bool = False,
     apply_style: bool = True,
 ) -> list[Path]:
     """Generate figures with split or selected asymptotic RV null models."""
     results = select_asymptotic_null_results(results, asymptotic_null)
-    results = results[results["p"] != 25].copy()
-    results = results[results["snr"] != 0.5].copy()
     _validate_linear_model_results(results)
     if apply_style:
         configure_plot_style()
     output_dir = Path(output_dir)
-    results = expand_adjacency_results_across_latent_modes(results)
-    rejection_rates = aggregate_rejection_rates(results)
+    frobenius_results = expand_adjacency_results_across_latent_modes(results)
+    testing_results = results
+    if additional_testing_results is not None:
+        additional_testing_results = select_asymptotic_null_results(
+            additional_testing_results,
+            asymptotic_null,
+        )
+        _validate_linear_model_results(additional_testing_results)
+        testing_results = pd.concat(
+            [testing_results, additional_testing_results],
+            ignore_index=True,
+        )
+    testing_results = expand_adjacency_results_across_latent_modes(testing_results)
+    rejection_rates = aggregate_rejection_rates(testing_results)
     frobenius_errors = (
         None
         if testing_only
         else aggregate_frobenius_errors(
-            results[results["RelativeFrobeniusNorm_Y"].notna()]
+            frobenius_results[
+                frobenius_results["RelativeFrobeniusNorm_Y"].notna()
+            ]
         )
     )
     filename_suffix = f"asymptotic_{asymptotic_null}"
     outputs = []
-    available_networks = results["dgp_name"].drop_duplicates().tolist()
+    available_networks = testing_results["dgp_name"].drop_duplicates().tolist()
     networks = [name for name in NETWORK_LABELS if name in available_networks]
     networks.extend(name for name in available_networks if name not in networks)
     for network in networks:
-        network_results = results[results["dgp_name"] == network]
+        network_results = testing_results[testing_results["dgp_name"] == network]
         settings = (
             network_results[["eps_distribution", "x_network_correlation"]]
             .drop_duplicates()
@@ -1729,55 +1810,55 @@ def generate_linear_model_figures(
                         filename_suffix=filename_suffix,
                     )
                 )
-                # outputs.append(
-                #     plot_type_i_error_by_p(
-                #         rejection_rates,
-                #         output_dir,
-                #         network,
-                #         use_true_latent,
-                #         setting.eps_distribution,
-                #         setting.x_network_correlation,
-                #         show_setting,
-                #         filename_suffix=filename_suffix,
-                #     )
-                # )
-                # outputs.append(
-                #     plot_type_i_error_two_row(
-                #         rejection_rates,
-                #         output_dir,
-                #         network,
-                #         use_true_latent,
-                #         setting.eps_distribution,
-                #         setting.x_network_correlation,
-                #         show_setting,
-                #         filename_suffix=filename_suffix,
-                #     )
-                # )
-                # if frobenius_errors is not None:
-                #     outputs.append(
-                #         plot_frobenius_grid(
-                #             frobenius_errors,
-                #             output_dir,
-                #             network,
-                #             use_true_latent,
-                #             setting.eps_distribution,
-                #             setting.x_network_correlation,
-                #             show_setting,
-                #             filename_suffix=filename_suffix,
-                #         )
-                #     )
-                #     outputs.append(
-                #         plot_null_frobenius_by_p(
-                #             frobenius_errors,
-                #             output_dir,
-                #             network,
-                #             use_true_latent,
-                #             setting.eps_distribution,
-                #             setting.x_network_correlation,
-                #             show_setting,
-                #             filename_suffix=filename_suffix,
-                #         )
-                #     )
+                outputs.append(
+                    plot_type_i_error_by_p(
+                        rejection_rates,
+                        output_dir,
+                        network,
+                        use_true_latent,
+                        setting.eps_distribution,
+                        setting.x_network_correlation,
+                        show_setting,
+                        filename_suffix=filename_suffix,
+                    )
+                )
+                outputs.append(
+                    plot_type_i_error_two_row(
+                        rejection_rates,
+                        output_dir,
+                        network,
+                        use_true_latent,
+                        setting.eps_distribution,
+                        setting.x_network_correlation,
+                        show_setting,
+                        filename_suffix=filename_suffix,
+                    )
+                )
+                if frobenius_errors is not None:
+                    outputs.append(
+                        plot_frobenius_grid(
+                            frobenius_errors,
+                            output_dir,
+                            network,
+                            use_true_latent,
+                            setting.eps_distribution,
+                            setting.x_network_correlation,
+                            show_setting,
+                            filename_suffix=filename_suffix,
+                        )
+                    )
+                    outputs.append(
+                        plot_null_frobenius_by_p(
+                            frobenius_errors,
+                            output_dir,
+                            network,
+                            use_true_latent,
+                            setting.eps_distribution,
+                            setting.x_network_correlation,
+                            show_setting,
+                            filename_suffix=filename_suffix,
+                        )
+                    )
     return outputs
 
 
@@ -1816,10 +1897,15 @@ def main(argv=None) -> list[Path]:
             )
         )
     results = pd.concat(result_frames, ignore_index=True)
+    p_one_testing_results = prepare_p_one_testing_results(
+        args.results_dir,
+        args.p_one_file,
+    )
     outputs = generate_linear_model_figures(
         results,
         args.output_dir,
         asymptotic_null=args.asymptotic_null,
+        additional_testing_results=p_one_testing_results,
         testing_only=args.testing_only,
     )
     print(f"Saved {len(outputs)} figures to {args.output_dir}")
