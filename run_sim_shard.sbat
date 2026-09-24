@@ -3,12 +3,12 @@
 #SBATCH --job-name=sim_shard
 #SBATCH --output=/dev/null
 #SBATCH --error=/dev/null
-#SBATCH --array=0-3
+#SBATCH --array=0-4
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=32
 #SBATCH --exclusive
-#SBATCH --mem=64G
+#SBATCH --mem=32G
 #SBATCH --time=3:00:00
 
 #SBATCH --account=stats_dept1
