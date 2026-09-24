@@ -64,6 +64,8 @@ ASYMPTOTIC_RESULT_FILES: tuple[str, ...] = (
 )
 
 P_ONE_RESULT_FILE = "linear_model_results_20260924_1130.csv"
+REDUCED_GRID_P_VALUES = (10, 100)
+REDUCED_GRID_SNR_VALUES = (1,)
 
 NETWORK_LABELS = {
     "GaussianNetwork": "Gaussian weighted network",
@@ -248,6 +250,11 @@ def parse_args(argv=None) -> argparse.Namespace:
         help="Save only power and type-I-error figures.",
     )
     parser.add_argument(
+        "--reduced-grid",
+        action="store_true",
+        help="Exclude p=10, p=100, and SNR=1 and save separate reduced-grid files.",
+    )
+    parser.add_argument(
         "--p-one-file",
         default=P_ONE_RESULT_FILE,
         help="Unsharded result file providing the p=1 null and alternative rows.",
@@ -262,11 +269,13 @@ def configure_plot_style() -> None:
             "savefig.dpi": PNG_DPI,
             "font.family": "sans-serif",
             "font.sans-serif": ["DejaVu Sans"],
-            "font.size": 10,
-            "axes.labelsize": 9,
-            "axes.titlesize": 9,
-            "figure.titlesize": 10,
-            "legend.fontsize": 8,
+            "font.size": 12,
+            "axes.labelsize": 12,
+            "axes.titlesize": 12,
+            "figure.titlesize": 14,
+            "legend.fontsize": 10,
+            "xtick.labelsize": 10,
+            "ytick.labelsize": 10,
             "lines.linewidth": 1.3,
             "lines.markersize": 4.5,
             "axes.linewidth": 0.6,
@@ -1293,7 +1302,7 @@ def plot_power_grid(
     label = NETWORK_LABELS.get(network, network)
     layout_engine = fig.get_layout_engine()
     if layout_engine is not None:
-        layout_engine.set(rect=(0.0, 0.0, 1.0, 0.88))
+        layout_engine.set(rect=(0.0, 0.0, 1.0, 0.82))
     mode_label = _latent_mode_label(use_true_latent)
     title = f"Power — {label} — {mode_label}"
     if show_setting:
@@ -1305,7 +1314,7 @@ def plot_power_grid(
         handles=_method_handles(methods),
         loc="upper center",
         bbox_to_anchor=(0.5, 0.955),
-        ncols=len(methods),
+        ncols=min(3, len(methods)),
         frameon=False,
     )
     slug = network.removesuffix("Network").lower()
@@ -1357,7 +1366,7 @@ def plot_type_i_error_by_p(
     fig, axes = plt.subplots(
         1,
         len(p_values),
-        figsize=(max(15.6, 2.6 * len(p_values)), 3.3),
+        figsize=(max(15.6, 2.6 * len(p_values)), 4.2),
         sharex=True,
         sharey=True,
         squeeze=False,
@@ -1387,7 +1396,7 @@ def plot_type_i_error_by_p(
 
     layout_engine = fig.get_layout_engine()
     if layout_engine is not None:
-        layout_engine.set(rect=(0.0, 0.0, 1.0, 0.82))
+        layout_engine.set(rect=(0.0, 0.0, 1.0, 0.72))
     mode_label = _latent_mode_label(use_true_latent)
     title = f"Type I error — {label} — {mode_label}"
     if show_setting:
@@ -1410,7 +1419,7 @@ def plot_type_i_error_by_p(
         loc="upper center",
         bbox_to_anchor=(0.5, 0.94),
         frameon=False,
-        ncols=len(handles),
+        ncols=min(4, len(handles)),
     )
     mode_slug = _latent_mode_slug(use_true_latent)
     filename = f"type_i_error_{slug}_{mode_slug}"
@@ -1464,7 +1473,7 @@ def plot_type_i_error_two_row(
     alpha = 0.05 if alpha_values.isna().all() else float(alpha_values.dropna().iloc[0])
     upper_limit = max(0.15, float(data["rejection_rate"].max()) + 0.04)
 
-    fig = plt.figure(figsize=(9.2, 5.8), layout="constrained")
+    fig = plt.figure(figsize=(11.5, 6.5), layout="constrained")
     grid = fig.add_gridspec(2, 6)
     if len(p_values) == 4:
         first_row = (
@@ -1548,7 +1557,7 @@ def plot_type_i_error_two_row(
     )
     layout_engine = fig.get_layout_engine()
     if layout_engine is not None:
-        legend_top = 0.78 if len(handles) > 4 else 0.82
+        legend_top = 0.76 if len(handles) > 4 else 0.82
         layout_engine.set(rect=(0.0, 0.0, 1.0, legend_top))
 
     slug = network.removesuffix("Network").lower()
@@ -1740,17 +1749,28 @@ def plot_null_frobenius_by_p(
     )
 
 
+def _select_reduced_grid(results: pd.DataFrame) -> pd.DataFrame:
+    """Return the optional plot subset with selected p and SNR values removed."""
+    return results[
+        ~results["p"].isin(REDUCED_GRID_P_VALUES)
+        & ~results["snr"].isin(REDUCED_GRID_SNR_VALUES)
+    ].copy()
+
+
 def generate_linear_model_figures(
     results: pd.DataFrame,
     output_dir: str | Path,
     *,
     asymptotic_null: str,
     additional_testing_results: pd.DataFrame | None = None,
+    reduced_grid: bool = False,
     testing_only: bool = False,
     apply_style: bool = True,
 ) -> list[Path]:
     """Generate figures with split or selected asymptotic RV null models."""
     results = select_asymptotic_null_results(results, asymptotic_null)
+    if reduced_grid:
+        results = _select_reduced_grid(results)
     _validate_linear_model_results(results)
     if apply_style:
         configure_plot_style()
@@ -1762,6 +1782,10 @@ def generate_linear_model_figures(
             additional_testing_results,
             asymptotic_null,
         )
+        if reduced_grid:
+            additional_testing_results = _select_reduced_grid(
+                additional_testing_results
+            )
         _validate_linear_model_results(additional_testing_results)
         testing_results = pd.concat(
             [testing_results, additional_testing_results],
@@ -1779,6 +1803,8 @@ def generate_linear_model_figures(
         )
     )
     filename_suffix = f"asymptotic_{asymptotic_null}"
+    if reduced_grid:
+        filename_suffix += "_reduced_grid"
     outputs = []
     available_networks = testing_results["dgp_name"].drop_duplicates().tolist()
     networks = [name for name in NETWORK_LABELS if name in available_networks]
@@ -1906,6 +1932,7 @@ def main(argv=None) -> list[Path]:
         args.output_dir,
         asymptotic_null=args.asymptotic_null,
         additional_testing_results=p_one_testing_results,
+        reduced_grid=args.reduced_grid,
         testing_only=args.testing_only,
     )
     print(f"Saved {len(outputs)} figures to {args.output_dir}")

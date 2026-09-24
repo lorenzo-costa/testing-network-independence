@@ -384,6 +384,22 @@ def test_prepare_p_one_testing_results_selects_power_and_null_rows(tmp_path):
     assert results["source_file"].tolist() == [filename, filename]
 
 
+def test_reduced_grid_excludes_requested_p_and_snr_values():
+    results = pd.DataFrame(
+        {
+            "p": [1, 1, 5, 10, 100],
+            "snr": [0, 1, 0.5, 0.5, 0],
+        }
+    )
+
+    reduced = visualise_linear_model._select_reduced_grid(results)
+
+    assert reduced.to_dict("records") == [
+        {"p": 1, "snr": 0.0},
+        {"p": 5, "snr": 0.5},
+    ]
+
+
 def test_select_asymptotic_null_results_splits_or_filters_variants():
     results = pd.DataFrame(
         [
