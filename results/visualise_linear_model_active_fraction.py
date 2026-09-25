@@ -18,11 +18,11 @@ from results.visualise_linear_model import (  # noqa: E402
 
 
 RESULT_FILES = (
-    "linear_model_active_fraction_results_61820010_shard-000-of-005.csv",
-    "linear_model_active_fraction_results_61820010_shard-001-of-005.csv",
-    "linear_model_active_fraction_results_61820010_shard-002-of-005.csv",
-    "linear_model_active_fraction_results_61820010_shard-003-of-005.csv",
-    "linear_model_active_fraction_results_61820010_shard-004-of-005.csv",
+    "linear_model_active_fraction_results_61834176_shard-000-of-005.csv",
+    "linear_model_active_fraction_results_61834176_shard-001-of-005.csv",
+    "linear_model_active_fraction_results_61834176_shard-002-of-005.csv",
+    "linear_model_active_fraction_results_61834176_shard-003-of-005.csv",
+    "linear_model_active_fraction_results_61834176_shard-004-of-005.csv",
 )
 
 
@@ -46,12 +46,20 @@ def parse_args(argv=None) -> argparse.Namespace:
         nargs="+",
         default=RESULT_FILES,
     )
+    parser.add_argument(
+        "--exclude-n",
+        nargs="*",
+        type=int,
+        default=(500,),
+        help="Network sizes to exclude from the figures (default: 500).",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv=None) -> list[Path]:
     args = parse_args(argv)
     results = prepare_active_fraction_results(args.results_dir, args.files)
+    results = results[~results["n"].isin(args.exclude_n)].copy()
     outputs = generate_linear_model_figures(
         results,
         args.output_dir,
