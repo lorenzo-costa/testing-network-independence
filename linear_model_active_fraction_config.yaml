@@ -21,6 +21,7 @@ simulation:
   # snr: [0.1, 0.25, 0.5]
   alpha: [0.05]
   edge_var: [2]
+  b_variance: [1]
 
   # Parallelize independent simulation scenarios. Each worker uses one BLAS thread.
   parallel: true
