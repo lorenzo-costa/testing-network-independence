@@ -18,7 +18,7 @@ simulation:
   # are active. Fraction zero is the null; positive fractions are alternatives.
   # Coefficients are not SNR-calibrated in this experiment.
   b_active_network_fraction: [0, 0.1, 0.25, 0.5, 1.0]
-  snr: [0.1, 0.25, 0.5]
+  # snr: [0.1, 0.25, 0.5]
   alpha: [0.05]
   edge_var: [2]
 
@@ -66,10 +66,10 @@ setups:
     dgp_kwargs:
       x_network_correlation: 0
   
-  - dgp: GaussianNetwork
-    solver: ASE
-    dgp_kwargs:
-      x_network_correlation: 0.25
+  # - dgp: GaussianNetwork
+  #   solver: ASE
+  #   dgp_kwargs:
+  #     x_network_correlation: 0.25
   
   - dgp: BernoulliNetwork
     solver: pgd_fit_wrapper
@@ -79,13 +79,13 @@ setups:
     solver_kwargs:
       backend: numpy
 
-  - dgp: BernoulliNetwork
-    solver: pgd_fit_wrapper
-    dgp_kwargs:
-      rdpg: false
-      x_network_correlation: 0.5
-    solver_kwargs:
-      backend: numpy
+  # - dgp: BernoulliNetwork
+  #   solver: pgd_fit_wrapper
+  #   dgp_kwargs:
+  #     rdpg: false
+  #     x_network_correlation: 0.5
+  #   solver_kwargs:
+  #     backend: numpy
 
 metrics:
   compute_all: true
