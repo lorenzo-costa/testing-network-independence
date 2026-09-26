@@ -71,7 +71,7 @@ def test_active_fraction_config_builds_requested_factorial_sweep():
     config = load_config(ROOT / "linear_model_active_fraction_config.yaml")
     design = build_factorial_design(config)
 
-    assert "snr" not in config["simulation"]
+    assert config["simulation"]["snr"] == [0.1, 0.25, 0.5]
     assert config["simulation"]["b_active_network_fraction"] == [
         0,
         0.1,
@@ -79,12 +79,13 @@ def test_active_fraction_config_builds_requested_factorial_sweep():
         0.5,
         1,
     ]
-    assert len(design) == 4 * 3 * 3 * 5 * 5 * 2
-    assert all("snr" not in row for row in design)
+    assert len(design) == len(config["setups"]) * 5 * 3 * 4 * 3 * 5 * 2
     for row in design:
         fraction = row["b_active_network_fraction"]
-        assert row["B"] == (0 if fraction == 0 else None)
-        assert row["hypothesis"] == ("H0" if fraction == 0 else "H1")
+        is_null = int(np.floor(fraction * row["p"] + 0.5)) == 0
+        assert row["B"] == (0 if is_null else None)
+        assert row["hypothesis"] == ("H0" if is_null else "H1")
+        assert row["snr"] == (0 if is_null else row["requested_snr"])
 
     row = next(
         row
@@ -96,10 +97,10 @@ def test_active_fraction_config_builds_requested_factorial_sweep():
     network = row["setup"][0](**row, rng=np.random.default_rng(900))
     blocks = np.split(network.generate()["B"], row["p"], axis=1)
     assert sum(np.any(block) for block in blocks) == 3
-    assert network.snr is None
+    assert network.snr == row["requested_snr"]
 
 
-def test_linear_model_signal_sweeps_are_mutually_exclusive_and_validated():
+def test_linear_model_signal_sweeps_accept_both_and_require_at_least_one():
     base = {
         "nsim": 1,
         "seed": 1,
@@ -108,16 +109,112 @@ def test_linear_model_signal_sweeps_are_mutually_exclusive_and_validated():
         "d_x": [1],
         "d_y": [1],
     }
-    with pytest.raises(ValueError, match="exactly one"):
+    with pytest.raises(ValueError, match="at least one"):
         _resolve_linear_model_simulation(base)
-    with pytest.raises(ValueError, match="exactly one"):
-        _resolve_linear_model_simulation(
-            {**base, "snr": [1], "b_active_network_fraction": [0.5]}
-        )
+    resolved = _resolve_linear_model_simulation(
+        {**base, "snr": 1, "b_active_network_fraction": 0.5}
+    )
+    assert resolved["snr"] == [1]
+    assert resolved["b_active_network_fraction"] == [0.5]
     with pytest.raises(ValueError, match=r"\[0, 1\]"):
         _resolve_linear_model_simulation(
             {**base, "b_active_network_fraction": [1.1]}
         )
+
+
+@pytest.mark.parametrize(
+    "parameter,invalid",
+    [
+        ("snr", -1),
+        ("snr", np.inf),
+        ("snr", True),
+        ("b_active_network_fraction", -0.1),
+        ("b_active_network_fraction", 1.1),
+        ("b_active_network_fraction", np.nan),
+        ("b_active_network_fraction", True),
+    ],
+)
+def test_joint_signal_sweep_validates_each_parameter(parameter, invalid):
+    simulation = dict(
+        nsim=1, seed=1, n=10, p=5, d_x=1, d_y=1,
+        snr=[0.5], b_active_network_fraction=[0.5],
+    )
+    simulation[parameter] = [invalid]
+    with pytest.raises(ValueError, match=f"simulation.{parameter}"):
+        _resolve_linear_model_simulation(simulation)
+
+
+@pytest.mark.parametrize("mode", ["snr", "fraction", "joint"])
+def test_signal_sweeps_generate_calibrated_alternatives_and_correct_nulls(mode):
+    config = load_config(ROOT / "linear_model_active_fraction_config.yaml")
+    for factory, _ in config["setups"]:
+        factory.keywords["network_kwargs"].update(
+            x_network_correlation=0.25, eps_variance=2
+        )
+    simulation = dict(nsim=1, seed=1, n=8, p=[1, 5], d_x=2, d_y=3)
+    if mode != "fraction":
+        simulation["snr"] = [0, 0.25, 1]
+    if mode != "snr":
+        simulation["b_active_network_fraction"] = [0, 0.1, 0.5, 1]
+    config["simulation"] = _resolve_linear_model_simulation(simulation)
+    config["methods"]["list"] = config["methods"]["list"][:1]
+    config["methods"]["use_true_latent"] = [True]
+    design = build_factorial_design(config)
+    setup_count = len(config["setups"])
+    assert len(design) == setup_count * 2 * (3 if mode != "fraction" else 1) * (
+        4 if mode != "snr" else 1
+    )
+
+    coordinates = set()
+    for index, row in enumerate(design):
+        fraction = row.get("b_active_network_fraction", 1)
+        count = int(np.floor(fraction * row["p"] + 0.5))
+        target = row.get("requested_snr", row.get("snr"))
+        is_null = count == 0 or target == 0
+        coordinates.add((row["p"], target, fraction))
+        assert row["hypothesis"] == ("H0" if is_null else "H1")
+        network = row["setup"][0](**row, rng=np.random.default_rng(910 + index))
+        assert network.is_null == is_null
+        sampler = network.latent_sampler
+        coefficients = sampler.sample_latent()["B"]
+        blocks = np.split(coefficients, row["p"], axis=1)
+        assert sum(np.any(block) for block in blocks) == (0 if is_null else count)
+        ratio = np.trace(coefficients @ sampler.x_covariance @ coefficients.T) / np.trace(
+            sampler.eps_covariance
+        )
+        if mode == "fraction":
+            assert "snr" not in row
+            assert network.snr is None
+        else:
+            assert ratio == pytest.approx(0 if is_null else target)
+            assert network.snr == row["snr"]
+        assert ("requested_snr" in row) == (mode == "joint")
+
+    assert len(coordinates) == len(design) // setup_count
+
+
+@pytest.mark.parametrize("fraction", [0, 0.1, 0.5])
+def test_joint_sweep_scenario_preserves_signal_coordinates_and_null_metrics(fraction):
+    config = load_config(ROOT / "linear_model_active_fraction_config.yaml")
+    config["simulation"] = _resolve_linear_model_simulation(
+        dict(
+            nsim=1, seed=1, n=12, p=1, d_x=1, d_y=1,
+            snr=0.25, b_active_network_fraction=fraction,
+        )
+    )
+    config["methods"]["npermutations"] = [2]
+    config["methods"]["use_true_latent"] = [True]
+    row = build_factorial_design(config)[0]
+    result = run_scenario(config["metrics"], row, seed=np.random.SeedSequence(999))
+    frame = flatten_args_columns(pd.DataFrame([result]))
+    assert frame.loc[0, "requested_snr"] == 0.25
+    assert frame.loc[0, "snr"] == (0 if fraction < 0.5 else 0.25)
+    assert frame.loc[0, "b_active_network_fraction"] == fraction
+    assert frame.loc[0, "hypothesis"] == ("H0" if fraction < 0.5 else "H1")
+    outcome = result["ComputeAll"]
+    rejection = bool(outcome["Rejection"])
+    assert outcome["FalseRejection"] == (fraction < 0.5 and rejection)
+    assert outcome["TrueRejection"] == (fraction >= 0.5 and rejection)
 
 
 def test_every_linear_model_network_and_method_combination_runs():

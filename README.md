@@ -178,6 +178,7 @@ generate one Y network and p X networks. Key constructor arguments:
 | `x_network_correlation` | `float` or `None` | Equicorrelation between matching dimensions in different X networks; requires scalar `x_variance` |
 | `eps_variance` | scalar or covariance matrix | Error covariance for Y; a scalar multiplies the identity |
 | `b_mean`, `b_variance` | `float` | Mean/variance of coefficient draws before optional SNR scaling |
+| `b_active_network_fraction` | `float` in `[0, 1]` or `None` | Fraction of sampled X-network coefficient blocks retained; selects `floor(fraction*p + 0.5)` blocks uniformly per draw |
 | `x_distribution`, `eps_distribution`, `b_distribution` | `str` | Registered latent/error/coefficient distributions |
 | `edge_var` | `float` | Edge noise variance (Gaussian network only) |
 | `rdpg` | `bool` | Bernoulli link: `False` uses sigmoid of latent inner products; `True` uses the inner products directly and requires valid probabilities |
@@ -372,6 +373,31 @@ runs `n` in `(50, 100, 200)`, `p` in `(5, 10, 25, 50, 100)`, and SNR in
 CCA, and MGC, using both true and estimated latent positions. It also configures
 simulation-level multiprocessing, one BLAS thread per worker, and latent
 permutations within each method.
+
+Linear-model YAML experiments accept `snr`, `b_active_network_fraction`, or
+both. For example, these fields inside `simulation` cross three SNR targets
+with five active fractions:
+
+```yaml
+snr: [0.1, 0.25, 0.5]
+b_active_network_fraction: [0, 0.1, 0.25, 0.5, 1.0]
+```
+
+The sampler selects active network blocks before calibrating their combined
+signal strength. If rounding the fraction times `p` selects no networks, the
+experiment uses `B=0`, `hypothesis=H0`, and effective `snr=0`. An SNR target
+of zero also gives the null. Joint sweeps retain the original target in
+`requested_snr`, including separate null rows for each requested target.
+Fraction-only sweeps leave coefficients uncalibrated. See
+`linear_model_active_fraction_config.yaml` for a complete joint configuration.
+With zero-mean Gaussian coefficients and a positive SNR target, changing
+`b_variance` alone does not change their final overall scale: calibration
+cancels that scaling.
+
+For joint-sweep analysis, keep both `requested_snr` and
+`b_active_network_fraction` as grouping coordinates. The existing active-fraction
+plotting script groups by fraction alone; it needs filtering or additional
+grouping before plotting a joint sweep to avoid pooling different SNR targets.
 
 ### Solvers (`src/solvers/`)
 

@@ -411,12 +411,11 @@ def _resolve_linear_model_simulation(simulation_cfg: dict) -> dict:
         for name in ("snr", "b_active_network_fraction")
         if name in simulation_cfg
     ]
-    if len(signal_parameters) != 1:
+    if not signal_parameters:
         raise ValueError(
-            "linear_model simulation must specify exactly one of snr or "
+            "linear_model simulation must specify at least one of snr or "
             "b_active_network_fraction"
         )
-    signal_parameter = signal_parameters[0]
 
     resolved = dict(simulation_cfg)
     for name in (
@@ -424,7 +423,7 @@ def _resolve_linear_model_simulation(simulation_cfg: dict) -> dict:
         "p",
         "d_x",
         "d_y",
-        signal_parameter,
+        *signal_parameters,
         "alpha",
         "edge_var",
     ):
@@ -446,22 +445,21 @@ def _resolve_linear_model_simulation(simulation_cfg: dict) -> dict:
             for value in resolved[name]
         ):
             raise ValueError(f"simulation.{name} must contain positive integer values")
-    signal_values = resolved[signal_parameter]
-    if signal_parameter == "snr":
+    if "snr" in resolved:
         if any(
             isinstance(value, bool)
             or not isinstance(value, (int, float))
             or not np.isfinite(value)
             or value < 0
-            for value in signal_values
+            for value in resolved["snr"]
         ):
             raise ValueError("simulation.snr must contain nonnegative finite values")
-    elif any(
+    if "b_active_network_fraction" in resolved and any(
         isinstance(value, bool)
         or not isinstance(value, (int, float))
         or not np.isfinite(value)
         or not 0 <= value <= 1
-        for value in signal_values
+        for value in resolved["b_active_network_fraction"]
     ):
         raise ValueError(
             "simulation.b_active_network_fraction must contain finite values in "
@@ -549,7 +547,7 @@ def load_config(path: str = "config.yaml") -> dict:
         "sbm", "multiness", "functionals", or "asymptotic".
     simulation : dict
         Normalised simulation block. Linear-model experiments carry nsim, seed,
-        n, p, d_x, d_y, either snr or b_active_network_fraction, alpha, and
+        n, p, d_x, d_y, snr and/or b_active_network_fraction, alpha, and
         edge_var; other experiments use their corresponding legacy fields.
     rng : np.random.Generator
         Seeded RNG ready for use.
@@ -735,9 +733,9 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
 
     # -- Multiple-network latent linear model --------------------------------
     if exp == "linear_model":
-        signal_parameter = (
-            "snr" if "snr" in sim else "b_active_network_fraction"
-        )
+        signal_parameters = [
+            name for name in ("snr", "b_active_network_fraction") if name in sim
+        ]
         names = [
             "setup",
             "method",
@@ -745,7 +743,7 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             "p",
             "d_x",
             "d_y",
-            signal_parameter,
+            *signal_parameters,
             "alpha",
             "edge_var",
             "npermutations",
@@ -757,7 +755,7 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             sim["p"],
             sim["d_x"],
             sim["d_y"],
-            sim[signal_parameter],
+            *(sim[name] for name in signal_parameters),
             sim["alpha"],
             sim["edge_var"],
             mth["npermutations"],
@@ -768,9 +766,17 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
 
         rows = [dict(zip(names, values)) for values in iproduct(*vals)]
         for row in rows:
-            signal_value = row[signal_parameter]
-            row["B"] = 0 if signal_value == 0 else None
-            row["hypothesis"] = "H0" if signal_value == 0 else "H1"
+            fraction = row.get("b_active_network_fraction", 1)
+            active_count = int(np.floor(fraction * row["p"] + 0.5))
+            is_null = active_count == 0 or row.get("snr") == 0
+            if len(signal_parameters) == 2:
+                # Preserve the requested sweep coordinate when no active block
+                # remains: its attainable SNR is zero, regardless of the target.
+                row["requested_snr"] = row["snr"]
+                if is_null:
+                    row["snr"] = 0
+            row["B"] = 0 if is_null else None
+            row["hypothesis"] = "H0" if is_null else "H1"
         return rows
 
     # -- Multiness ------------------------------------------------------------
@@ -1008,6 +1014,7 @@ def flatten_args_columns(df, extra_cols: dict = None):
     df["d_x"] = df["args"].apply(lambda x: x.get("d_x", "NA"))
     df["d_y"] = df["args"].apply(lambda x: x.get("d_y", "NA"))
     df["snr"] = df["args"].apply(lambda x: x.get("snr", "NA"))
+    df["requested_snr"] = df["args"].apply(lambda x: x.get("requested_snr", "NA"))
     df["b_active_network_fraction"] = df["args"].apply(
         lambda x: x.get("b_active_network_fraction", "NA")
     )

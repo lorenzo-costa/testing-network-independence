@@ -15,10 +15,11 @@ simulation:
   d_y: [5]
 
   # On each draw, round(fraction * p) uniformly selected X-network blocks in B
-  # are active. Fraction zero is the null; positive fractions are alternatives.
-  # Coefficients are not SNR-calibrated in this experiment.
-  b_active_network_fraction: [0, 0.1, 0.25, 0.5, 1.0]
-  # snr: [0.1, 0.25, 0.5]
+  # are active (half-integers round up). Zero active networks give the null,
+  # with effective SNR 0. Otherwise, calibrate the active coefficients to snr.
+  # Both lists are crossed; omit snr to disable coefficient calibration.
+  b_active_network_fraction: [0, 0.1, 0.5, 1.0]
+  snr: [0.1, 0.25, 0.5]
   alpha: [0.05]
   edge_var: [2]
   b_variance: [1]
