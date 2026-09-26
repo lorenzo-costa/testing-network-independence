@@ -60,8 +60,12 @@ def results():
 
 
 def single_value(metric, estimated, truth):
-    value = metric({"estimated_latent": estimated, "true_latent": truth})
-    return value[0] if isinstance(value, list) else value
+    return metric(
+        {
+            "estimated_latent": {"Y": estimated},
+            "true_latent": {"Y": truth},
+        }
+    )["Y"]
 
 
 @pytest.mark.parametrize("metric", METRICS)

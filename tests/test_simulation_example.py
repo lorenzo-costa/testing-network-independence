@@ -40,7 +40,7 @@ def test_worker_count_uses_runner_convention_without_nested_pools(
 
 
 @pytest.mark.parametrize("snr_values", [(0, 0.1, 0.25, 0.5, 1), (0, 1)])
-def test_example_runs_with_spawn_from_nonimportable_notebook_namespace(snr_values):
+def test_example_runs_with_spawn_from_ephemeral_namespace(snr_values):
     # runpy removes this temporary namespace before the pool starts. A factory
     # defined there cannot be unpickled; an imported factory can.
     code = f"""
@@ -48,7 +48,7 @@ import multiprocessing as mp
 import runpy
 
 mp.set_start_method("spawn", force=True)
-namespace = runpy.run_path("run_multiple_networks_example.py", run_name="notebook_cell")
+namespace = runpy.run_path("run_multiple_networks_example.py", run_name="temporary_namespace")
 assert namespace["make_network"].__module__ == "src.helper_functions.multiple_network_factories"
 results = namespace["run_experiment"](nsim=1, n=12, npermutations=2, n_jobs=2, snr_values={snr_values!r})
 assert len(results) == {6 * len(snr_values)}
@@ -59,7 +59,7 @@ assert results.loc[results["snr"] == 0, "hypothesis"].eq("H0").all()
 assert results.loc[results["snr"] > 0, "hypothesis"].eq("H1").all()
 assert results.notna().all().all()
 assert results["p-value"].between(1 / 3, 1).all()
-print("Notebook-style spawn smoke test passed")
+print("Spawn smoke test passed")
 """
     completed = subprocess.run(
         [sys.executable, "-c", code],
@@ -69,7 +69,7 @@ print("Notebook-style spawn smoke test passed")
         timeout=60,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
-    assert "Notebook-style spawn smoke test passed" in completed.stdout
+    assert "Spawn smoke test passed" in completed.stdout
 
 
 @pytest.mark.parametrize("snr_values", [(0,), (0.1, 1.0), (0, 0.1, 0.25, 0.5, 1)])
@@ -104,7 +104,7 @@ def test_example_has_one_case_per_network_method_and_snr(monkeypatch, snr_values
     assert all(count == 6 for count in counts.values())
 
 
-def test_default_sweep_has_1500_runs_and_reports_each_method_and_snr(monkeypatch):
+def test_default_sweep_has_2400_runs_and_reports_each_method_and_snr(monkeypatch):
     captured = {}
 
     def capture_simulation(**kwargs):
@@ -120,13 +120,13 @@ def test_default_sweep_has_1500_runs_and_reports_each_method_and_snr(monkeypatch
 
     monkeypatch.setattr(example, "run_simulation", capture_simulation)
     results = example.run_experiment()
-    assert captured["nsim"] == 50
-    assert captured["nsim"] * len(captured["factorial_design"]) == 1_500
-    assert len(results.groupby(["network", "method", "snr", "hypothesis"])) == 30
+    assert captured["nsim"] == 100
+    assert captured["nsim"] * len(captured["factorial_design"]) == 2_400
+    assert len(results.groupby(["network", "method", "snr", "hypothesis"])) == 24
     assert set(results["method"]) == {"RV", "CCA", "MGC"}
     for _, rows in results.groupby(["network", "method"]):
-        assert rows["snr"].tolist() == [0, 0.1, 0.25, 0.5, 1]
-        assert rows["hypothesis"].tolist() == ["H0", "H1", "H1", "H1", "H1"]
+        assert rows["snr"].tolist() == [0, 0.01, 0.05, 0.1]
+        assert rows["hypothesis"].tolist() == ["H0", "H1", "H1", "H1"]
 
 
 def test_empty_snr_sweep_is_rejected_before_starting_workers(monkeypatch):

@@ -30,15 +30,15 @@ def run_experiment(
     """Run repetitions for every network, method, and SNR combination.
 
     SNR zero uses B=0; positive SNR values use newly sampled, calibrated B.
-    With the defaults, 2 networks x 3 methods x 5 SNRs x 50 repetitions
-    produces 1,500 simulation runs.
+    With the defaults, 2 networks x 3 methods x 4 SNRs x 100 repetitions
+    produces 2,400 simulation runs.
     """
     snr_values = tuple(snr_values)
     if not snr_values:
         raise ValueError("snr_values must contain at least one setting.")
     setup = [
         (partial(make_network, GaussianNetwork), ASE),
-        # Explicit NumPy backend avoids starting JAX runtimes in every worker.
+        # PGD uses its default automatic backend selection.
         (
             partial(make_network, BernoulliNetwork),
             partial(pgd_fit_wrapper),

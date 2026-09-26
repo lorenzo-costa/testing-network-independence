@@ -7,6 +7,8 @@ from src.load_config import (
 )
 from src.helper_functions.simulation_functions import run_simulation
 
+from src.helper_functions.simulation_settings import execution_options
+
 import os
 import pandas as pd
 from datetime import datetime
@@ -30,40 +32,16 @@ def main(argv=None):
     cfgs = [load_config(p) for p in args.config]
     factorial = build_factorial_design_multi(cfgs)
     print(f"Factorial design has {len(factorial)} rows → {factorial[0]}")
-    sim = cfgs[0]["simulation"]
 
     start = datetime.now()
 
-    # -- H1 run ---------------------------------------------------------------
     out = run_simulation(
-        nsim=sim["nsim"],
-        metrics=cfgs[0]["metrics"],
         factorial_design=factorial,
-        rng=cfgs[0]["rng"],
-        parallel=sim.get("parallel", True),
-        n_jobs=None if sim.get("n_jobs") == -1 else sim.get("n_jobs"),
-        batch_size=sim.get("batch_size", 32),
-        blas_threads=sim.get("blas_threads", 1),
+        **execution_options(cfgs[0]),
     )
 
     out = pd.DataFrame(out)
-    print(f"Completed H1 simulations in: {datetime.now() - start}")
-
-    # # -- H0 run ---------------------------------------------------------------
-    # rng_null = __import__("numpy").random.default_rng(sim["seed"])
-    # out0 = run_simulation(
-    #     nsim=sim["nsim"],
-    #     metrics=cfg["metrics"],
-    #     factorial_design=factorial_h0,
-    #     rng=rng_null,
-    #     parallel=True,
-    # )
-
-    # out0 = pd.DataFrame(out0)
-
-    # print(f"Total simulation time: {datetime.now() - start}")
-
-    # results = pd.concat([out, out0], ignore_index=True)
+    print(f"Completed simulations in: {datetime.now() - start}")
 
     # -- Save raw first (guard against column-extraction errors) --------------
     os.makedirs(cfgs[0]["output"]["results_dir"], exist_ok=True)

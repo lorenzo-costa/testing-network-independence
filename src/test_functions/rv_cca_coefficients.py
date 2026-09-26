@@ -1,15 +1,4 @@
-"""
-Metric helper functions.
-
-Optimisations over the original:
-  1. cvm_stat_multivariate: avoids materialising the (n, n, d) intermediate
-     tensor by iterating over d dimensions and keeping a running (n, n) float32
-     product — 18× faster at n=300, k=3.
-  2. pseudo_obs: fully vectorised (no Python loop over columns).
-  3. Optional Numba JIT: if `numba` is installed, the cvm term-1 kernel is
-     compiled with parallel=True, using all available cores.
-     Install with `pip install numba`.
-"""
+"""RV and regularized canonical-correlation statistics, including permutation caches."""
 
 import numpy as np
 

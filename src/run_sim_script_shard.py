@@ -5,51 +5,17 @@ from datetime import datetime
 import os
 from pathlib import Path
 
-import pandas as pd
-
 from src.helper_functions.simulation_functions import run_simulation
 from src.load_config import (
     build_factorial_design_multi,
-    flatten_args_columns,
+    flatten_args_columns as flatten_args_columns,
     load_config,
 )
-
-
-CSV_BATCH_SIZE = 1000
-
-
-class _CsvResultWriter:
-    """Write simulation results in bounded batches while preserving CSV shape."""
-
-    def __init__(self, output_path, batch_size=CSV_BATCH_SIZE):
-        self.output_path = Path(output_path)
-        self.batch_size = batch_size
-        self.buffer = []
-        self.rows_written = 0
-        self._wrote_header = False
-
-    def add(self, result):
-        self.buffer.append(result)
-        if len(self.buffer) >= self.batch_size:
-            self.flush()
-
-    def flush(self):
-        if not self.buffer:
-            return
-        frame = pd.DataFrame(self.buffer)
-        flatten_args_columns(frame)
-        frame.to_csv(
-            self.output_path,
-            mode="a" if self._wrote_header else "w",
-            header=not self._wrote_header,
-            index=False,
-        )
-        self.rows_written += len(frame)
-        self._wrote_header = True
-        self.buffer.clear()
-
-    def close(self):
-        self.flush()
+from src.helper_functions.simulation_output import (
+    CSV_BATCH_SIZE as CSV_BATCH_SIZE,
+    CsvResultWriter,
+)
+from src.helper_functions.simulation_settings import execution_options
 
 
 def _environment_int(name, default=None):
@@ -122,10 +88,10 @@ def main(argv=None):
     simulation = configs[0]["simulation"]
     global_total = simulation["nsim"] * len(factorial)
     local_total = len(range(args.shard_index, global_total, args.num_shards))
-    configured_n_jobs = simulation.get("n_jobs")
-    n_jobs = args.n_jobs
-    if n_jobs is None:
-        n_jobs = None if configured_n_jobs == -1 else configured_n_jobs
+    options = execution_options(configs[0])
+    if args.n_jobs is not None:
+        options["n_jobs"] = args.n_jobs
+    n_jobs = options["n_jobs"]
 
     print(
         f"Shard {args.shard_index + 1}/{args.num_shards}: "
@@ -133,16 +99,10 @@ def main(argv=None):
     )
     started = datetime.now()
     output_path = _output_path(configs[0], args.shard_index, args.num_shards)
-    writer = _CsvResultWriter(output_path)
+    writer = CsvResultWriter(output_path)
     run_simulation(
-        nsim=simulation["nsim"],
-        metrics=configs[0]["metrics"],
         factorial_design=factorial,
-        rng=configs[0]["rng"],
-        parallel=simulation.get("parallel", True),
-        n_jobs=n_jobs,
-        batch_size=simulation.get("batch_size", 32),
-        blas_threads=simulation.get("blas_threads", 1),
+        **options,
         shard_index=args.shard_index,
         num_shards=args.num_shards,
         result_callback=writer.add,

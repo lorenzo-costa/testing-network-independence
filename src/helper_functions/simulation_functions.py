@@ -1,13 +1,9 @@
+"""Seed assignment, scenario execution, and serial/process-pool scheduling."""
+
 import numpy as np
 from tqdm import tqdm
 from multiprocessing import Pool, cpu_count
 from threadpoolctl import threadpool_limits
-
-# TODO:
-# - this could be sped up by having dpg run once and then feed data to each arg combination
-# (it has a specific name i don't remember not)
-# - add intermediate save
-
 
 _worker_blas_limiter = None
 
@@ -18,47 +14,30 @@ def _initialize_parallel_worker(blas_threads):
     _worker_blas_limiter = threadpool_limits(limits=blas_threads, user_api="blas")
 
 
-def run_scenario(metrics, args, seed, method_params=None):
-    """Run a single scenario of the simulation.
+def _generate_scenario_data(args):
+    """Generate data and record resolved DGP metadata in the shared scenario row."""
+    dgp, solver = args["setup"]
+    args["solver"] = solver
+    dgp = dgp(**args)
+    data = dgp.generate()
+    args["dgp_name"] = dgp.get_name()
+    latent_sampler = getattr(dgp, "latent_sampler", None)
+    if latent_sampler is not None:
+        args["x_network_correlation"] = getattr(
+            latent_sampler,
+            "x_network_correlation",
+            None,
+        )
+        args["eps_distribution"] = getattr(
+            latent_sampler,
+            "eps_distribution",
+            None,
+        )
+    return dgp, data
 
-    Parameters
-    ----------
-    metrics : list of BaseMetric
-        list of metrics to compute
-    args : dict
-        arguments for the simulation scenario. Should contain 'setup' key with
-        (dgp, method) tuple.
 
-    Returns
-    -------
-    dict
-        Dictionary containing the computed metrics.
-    """
-    rng = np.random.default_rng(seed)
-    args["rng"] = rng
-
-    if args.get("data") is None:
-        dgp, solver = args["setup"]
-        args["solver"] = solver
-        dgp = dgp(**args)
-        data = dgp.generate()
-        args["dgp_name"] = dgp.get_name()
-        latent_sampler = getattr(dgp, "latent_sampler", None)
-        if latent_sampler is not None:
-            args["x_network_correlation"] = getattr(
-                latent_sampler,
-                "x_network_correlation",
-                None,
-            )
-            args["eps_distribution"] = getattr(
-                latent_sampler,
-                "eps_distribution",
-                None,
-            )
-    else:
-        data = args["data"]
-        solver = ...  # i don't which placeholder value to use
-
+def _create_scenario_method(args):
+    """Construct the method and record its resolved inference mode."""
     method = args["method"]
     force_k = args.get("force_k", None)
     if force_k is not None:
@@ -71,6 +50,36 @@ def run_scenario(metrics, args, seed, method_params=None):
     args["method_name"] = method.get_name()
     if getattr(method, "approximation", None) == "asymptotic":
         args["asymptotic_null"] = method.asymptotic_null
+
+    return method
+
+
+def run_scenario(metrics, args, seed, method_params=None):
+    """Run a single scenario of the simulation.
+
+    Parameters
+    ----------
+    metrics : list of BaseMetric
+        list of metrics to compute
+    args : dict
+        arguments for the simulation scenario. Should contain 'setup' key with
+        (dgp_factory, solver) tuple. This dictionary is intentionally mutated
+        with runtime metadata and returned by identity in the result's args field.
+
+    Returns
+    -------
+    dict
+        Dictionary containing the computed metrics.
+    """
+    rng = np.random.default_rng(seed)
+    args["rng"] = rng
+
+    if args.get("data") is None:
+        dgp, data = _generate_scenario_data(args)
+    else:
+        data = args["data"]
+
+    method = _create_scenario_method(args)
 
     method.fit(data, **(method_params if method_params else {}))
     if getattr(method, "effective_gamma", None) is not None:
@@ -174,7 +183,6 @@ def run_simulation_parallel(
 
     # Better chunk size: balance between overhead and load distribution
     chunk_size = max(1, total_scenarios // (n_jobs * batch_size))
-    # chunk_size = max(1, total_scenarios // (n_jobs * 32))
 
     results = [] if result_callback is None else None
     with Pool(

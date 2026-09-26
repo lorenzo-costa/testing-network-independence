@@ -21,8 +21,8 @@ def make_network(
 ):
     """Adapt runner arguments for multiple-network linear-model scenarios.
 
-    Keep this factory in a module, rather than defining it in a notebook:
-    multiprocessing workers must be able to import it when unpickling tasks.
+    The factory must stay in an importable module so spawned workers can
+    unpickle it.
     """
     options = dict(network_kwargs or {})
     if network_class is GaussianNetwork:

@@ -7,7 +7,7 @@ with ``--mrqap-files`` and ``--asymptotic-files``. Networks, true/estimated
 latent modes, error distributions, and X-network correlations are plotted
 separately. Adjacency-level MRQAP results are shown in both latent-mode panels.
 
-For notebooks, the reusable pipeline is ``merge_result_shards`` followed by
+The reusable pipeline is ``merge_result_shards`` followed by
 ``preprocess_results`` and ``plot_metric_grid``. The study-specific
 ``generate_linear_model_figures`` wrapper preserves the command-line output.
 """
@@ -15,8 +15,7 @@ For notebooks, the reusable pipeline is ``merge_result_shards`` followed by
 from __future__ import annotations
 
 import argparse
-from collections.abc import Callable, Mapping, Sequence
-from itertools import cycle
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 import sys
 from typing import Any
@@ -37,12 +36,26 @@ import pandas as pd
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPOSITORY_ROOT))
 
-from results.results_processing import (  # noqa: E402
-    iter_shard_outputs,
-    parse_config_string,
-    parse_result_string,
+from src.analysis.processing import (  # noqa: E402
+    PLOT_CHUNKSIZE,
+    DEFAULT_COLUMN_ALIASES as DEFAULT_COLUMN_ALIASES,
+    DEFAULT_NUMERIC_COLUMNS,
+    merge_result_shards,
+    merge_result_shard_sets,
+    _is_missing_value as _is_missing_value,
+    _expand_mapping_column as _expand_mapping_column,
+    _overlay_expanded_columns as _overlay_expanded_columns,
+    preprocess_results,
+    filter_results,
+    aggregate_metric,
 )
-
+from src.analysis.plotting import (  # noqa: E402
+    _column_list as _column_list,
+    _ordered_values as _ordered_values,
+    plot_metric_grid,
+)
+from src.analysis.styles import METHOD_LABELS, COLORS, MARKERS, LINESTYLES  # noqa: E402
+from src.analysis.io import iter_shard_outputs  # noqa: E402
 
 # Fill these after the three cluster shards have completed. Paths are resolved
 # relative to --results-dir.
@@ -88,60 +101,16 @@ METHOD_ORDER = (
     "MRQAP",
 )
 
-METHOD_LABELS = {
-    "RVTest_permutation": "RV (permutation)",
-    "RVTest_asymptotic_independence": "RV (asymptotic — independence)",
-    "RVTest_asymptotic_zero_covariance": ("RV (asymptotic — zero covariance)"),
-    "CCA": "CCA",
-    "DC": "MGC",
-    "MRQAP": "MRQAP (adjacency)",
-}
-COLORS = {
-    "RVTest_permutation": "#E69F00",
-    "RVTest_asymptotic_independence": "#E69F00",
-    "RVTest_asymptotic_zero_covariance": "#D55E00",
-    "CCA": "#0072B2",
-    "DC": "#009E73",
-    "MRQAP": "#CC79A7",
-}
-MARKERS = {
-    "RVTest_permutation": "o",
-    "RVTest_asymptotic_independence": "D",
-    "RVTest_asymptotic_zero_covariance": "X",
-    "CCA": "s",
-    "DC": "^",
-    "MRQAP": "v",
-}
-LINESTYLES = {
-    "RVTest_permutation": "-",
-    "RVTest_asymptotic_independence": "--",
-    "RVTest_asymptotic_zero_covariance": ":",
-    "CCA": "-",
-    "DC": "-",
-    "MRQAP": "-",
-}
+
 PNG_DPI = 600
-PLOT_CHUNKSIZE = 5_000
+
 ASYMPTOTIC_NULL_OPTIONS = ("split", "independence", "zero_covariance")
 ASYMPTOTIC_METHODS = {
     "independence": "RVTest_asymptotic_independence",
     "zero_covariance": "RVTest_asymptotic_zero_covariance",
 }
 
-DEFAULT_COLUMN_ALIASES = {
-    "dx": "d_x",
-    "dy": "d_y",
-    "rejection": "Rejection",
-}
-DEFAULT_NUMERIC_COLUMNS = (
-    "n",
-    "p",
-    "d_x",
-    "d_y",
-    "snr",
-    "alpha",
-    "Rejection",
-)
+
 LINEAR_MODEL_CONFIG_FIELDS = (
     "n",
     "p",
@@ -289,504 +258,6 @@ def configure_plot_style() -> None:
     )
 
 
-def merge_result_shards(
-    results_dir: str | Path,
-    filenames: Sequence[str | Path],
-    *,
-    chunksize: int = PLOT_CHUNKSIZE,
-    usecols: Sequence[str] | None = None,
-) -> pd.DataFrame:
-    """Validate, read, and concatenate one complete simulation shard set.
-
-    This is the notebook-friendly loading stage. The returned dataframe is
-    deliberately raw: serialized configuration and metric columns are left
-    untouched for :func:`preprocess_results` to expand in a separate step.
-    ``source_file``, ``shard_index``, and ``num_shards`` identify each row's
-    origin.
-    """
-    chunks = list(
-        iter_shard_outputs(
-            results_dir,
-            filenames,
-            chunksize=chunksize,
-            usecols=usecols,
-        )
-    )
-    if not chunks:
-        raise ValueError("The shard files contain no result rows.")
-    return pd.concat(chunks, ignore_index=True)
-
-
-def merge_result_shard_sets(
-    results_dir: str | Path,
-    shard_sets: Mapping[str, Sequence[str | Path]],
-    *,
-    chunksize: int = PLOT_CHUNKSIZE,
-    usecols: Sequence[str] | None = None,
-    set_column: str = "result_set",
-) -> pd.DataFrame:
-    """Merge several independently validated shard sets into one dataframe.
-
-    Each mapping value must be a complete shard run. The mapping key is added
-    in ``set_column``, which makes it possible to filter primary, asymptotic,
-    MRQAP, or other result families after preprocessing.
-    """
-    frames = []
-    for name, filenames in shard_sets.items():
-        if not filenames:
-            continue
-        frame = merge_result_shards(
-            results_dir,
-            filenames,
-            chunksize=chunksize,
-            usecols=usecols,
-        )
-        frame[set_column] = name
-        frames.append(frame)
-    if not frames:
-        raise ValueError("At least one non-empty shard set must be provided.")
-    return pd.concat(frames, ignore_index=True)
-
-
-def _is_missing_value(value: Any) -> bool:
-    if value is None:
-        return True
-    if isinstance(value, str):
-        return value.strip().lower() in {"", "na", "nan", "none"}
-    try:
-        missing = pd.isna(value)
-    except (TypeError, ValueError):
-        return False
-    return bool(missing) if np.isscalar(missing) else False
-
-
-def _expand_mapping_column(
-    values: pd.Series,
-    parser: Callable[[Any], Mapping[str, Any]],
-    fields: Sequence[str] | None,
-) -> pd.DataFrame:
-    records = values.map(parser)
-    if fields is None:
-        keys = sorted(
-            {key for record in records if isinstance(record, Mapping) for key in record}
-        )
-    else:
-        keys = list(dict.fromkeys(fields))
-    return pd.DataFrame(
-        [
-            {
-                key: record.get(key) if isinstance(record, Mapping) else None
-                for key in keys
-            }
-            for record in records
-        ],
-        index=values.index,
-    )
-
-
-def _overlay_expanded_columns(
-    base: pd.DataFrame,
-    expanded: pd.DataFrame,
-) -> pd.DataFrame:
-    result = base.copy()
-    for column in expanded:
-        parsed = expanded[column]
-        available = ~parsed.map(_is_missing_value)
-        if column not in result:
-            result[column] = parsed
-            continue
-        original = result[column].astype(object)
-        original.loc[available] = parsed.loc[available]
-        result[column] = original
-    return result
-
-
-def preprocess_results(
-    raw_results: pd.DataFrame,
-    *,
-    config_column: str | None = "args",
-    metric_column: str | None = "ComputeAll",
-    config_fields: Sequence[str] | None = None,
-    metric_fields: Sequence[str] | None = None,
-    column_aliases: Mapping[str, str] | None = None,
-    numeric_columns: Sequence[str] = DEFAULT_NUMERIC_COLUMNS,
-    method_labeler: Callable[[Mapping[str, Any]], Any] | None = None,
-    required_columns: Sequence[str] = (),
-    keep_serialized: bool = False,
-) -> pd.DataFrame:
-    """Expand raw simulation rows into a tidy, analysis-ready dataframe.
-
-    The function also accepts an already-tabular dataframe without serialized
-    columns. With ``config_fields=None`` and ``metric_fields=None`` every
-    discovered key is retained, so experiment-specific attributes such as
-    ``approximation`` or ``asymptotic_null`` remain available for filtering,
-    faceting, or defining separate plotted series.
-
-    Parameters
-    ----------
-    raw_results
-        Raw merged shard rows or a similarly structured dataframe.
-    config_column, metric_column
-        Columns containing serialized dictionaries. Pass ``None`` when that
-        source is absent.
-    config_fields, metric_fields
-        Keys to extract. ``None`` discovers and retains every key.
-    column_aliases
-        Source-to-canonical column names. The defaults normalize ``dx``,
-        ``dy``, and lowercase ``rejection``.
-    method_labeler
-        Optional callable receiving the complete processed row as a mapping.
-    required_columns
-        Columns whose presence is required after preprocessing.
-    """
-    if not isinstance(raw_results, pd.DataFrame):
-        raise TypeError("raw_results must be a pandas DataFrame")
-
-    serialized = {
-        column
-        for column in (config_column, metric_column)
-        if column is not None and column in raw_results
-    }
-    result = raw_results.copy()
-    if not keep_serialized:
-        result = result.drop(columns=serialized)
-
-    if config_column is not None and config_column in raw_results:
-        config_values = _expand_mapping_column(
-            raw_results[config_column],
-            parse_config_string,
-            config_fields,
-        )
-        result = _overlay_expanded_columns(result, config_values)
-    if metric_column is not None and metric_column in raw_results:
-        metric_values = _expand_mapping_column(
-            raw_results[metric_column],
-            parse_result_string,
-            metric_fields,
-        )
-        result = _overlay_expanded_columns(result, metric_values)
-
-    aliases = DEFAULT_COLUMN_ALIASES if column_aliases is None else column_aliases
-    for source, target in aliases.items():
-        if source not in result or source == target:
-            continue
-        if target not in result:
-            result = result.rename(columns={source: target})
-            continue
-        missing = result[target].map(_is_missing_value)
-        result.loc[missing, target] = result.loc[missing, source]
-        result = result.drop(columns=source)
-
-    if method_labeler is not None:
-        result["method"] = result.apply(
-            lambda row: method_labeler(row.to_dict()),
-            axis=1,
-        )
-
-    for column in numeric_columns:
-        if column in result:
-            result[column] = pd.to_numeric(result[column], errors="coerce")
-
-    missing_columns = [column for column in required_columns if column not in result]
-    if missing_columns:
-        raise ValueError(f"Processed results are missing columns: {missing_columns}")
-    return result.reset_index(drop=True)
-
-
-def filter_results(
-    results: pd.DataFrame,
-    filters: Mapping[str, Any] | None = None,
-) -> pd.DataFrame:
-    """Return rows matching scalar, collection, or callable filters."""
-    if not filters:
-        return results.copy()
-    selected = pd.Series(True, index=results.index)
-    for column, criterion in filters.items():
-        if column not in results:
-            raise KeyError(f"Filter column is not present: {column}")
-        values = results[column]
-        if callable(criterion):
-            mask = criterion(values)
-        elif _is_missing_value(criterion):
-            mask = values.map(_is_missing_value)
-        elif isinstance(criterion, Sequence) and not isinstance(
-            criterion,
-            (str, bytes),
-        ):
-            mask = values.isin(criterion)
-        else:
-            mask = values == criterion
-        selected &= pd.Series(mask, index=results.index).fillna(False).astype(bool)
-    return results.loc[selected].copy()
-
-
-def aggregate_metric(
-    results: pd.DataFrame,
-    value: str,
-    groupby: str | Sequence[str],
-    *,
-    mean_column: str | None = None,
-    error: str | None = "sem",
-    error_column: str | None = None,
-    count_column: str = "replicates",
-) -> pd.DataFrame:
-    """Aggregate any numeric metric over explicitly chosen dimensions.
-
-    Keeping ``groupby`` explicit prevents optional experiment attributes from
-    being silently pooled. For example, include both ``approximation`` and
-    ``asymptotic_null`` when those define distinct procedures.
-    """
-    groups = [groupby] if isinstance(groupby, str) else list(groupby)
-    groups = list(dict.fromkeys(groups))
-    required = [*groups, value]
-    missing = [column for column in required if column not in results]
-    if missing:
-        raise ValueError(f"Cannot aggregate missing columns: {missing}")
-    if error not in {None, "sem", "std"}:
-        raise ValueError("error must be None, 'sem', or 'std'.")
-
-    mean_column = mean_column or f"{value}_mean"
-    error_column = error_column or (f"{value}_{error}" if error else None)
-    data = results[required].copy()
-    data[value] = pd.to_numeric(data[value], errors="coerce")
-    if data[value].notna().sum() == 0:
-        raise ValueError(f"Metric column contains no numeric values: {value}")
-
-    aggregations: dict[str, str] = {
-        mean_column: "mean",
-        count_column: "count",
-    }
-    if error is not None and error_column is not None:
-        aggregations[error_column] = error
-
-    if groups:
-        aggregated = (
-            data.groupby(groups, dropna=False)[value].agg(**aggregations).reset_index()
-        )
-    else:
-        values = data[value]
-        record = {
-            mean_column: values.mean(),
-            count_column: values.count(),
-        }
-        if error is not None and error_column is not None:
-            record[error_column] = getattr(values, error)()
-        aggregated = pd.DataFrame([record])
-    if error_column is not None and error_column in aggregated:
-        aggregated[error_column] = aggregated[error_column].fillna(0.0)
-    return aggregated
-
-
-def _column_list(columns: str | Sequence[str] | None) -> list[str]:
-    if columns is None:
-        return []
-    return [columns] if isinstance(columns, str) else list(columns)
-
-
-def _ordered_values(values: pd.Series, requested: Sequence[Any] | None) -> list[Any]:
-    if requested is not None:
-        return list(requested)
-    unique = values.drop_duplicates().tolist()
-    try:
-        return sorted(unique)
-    except TypeError:
-        return unique
-
-
-def plot_metric_grid(
-    results: pd.DataFrame,
-    *,
-    value: str = "Rejection",
-    x: str = "n",
-    series: str | Sequence[str] = "method",
-    row: str | None = None,
-    col: str | None = "p",
-    filters: Mapping[str, Any] | None = None,
-    row_order: Sequence[Any] | None = None,
-    col_order: Sequence[Any] | None = None,
-    series_order: Sequence[Any] | None = None,
-    error: str | None = "sem",
-    labels: Mapping[Any, str] | None = None,
-    colors: Mapping[Any, str] | None = None,
-    markers: Mapping[Any, str] | None = None,
-    linestyles: Mapping[Any, str] | None = None,
-    title: str | None = None,
-    xlabel: str | None = None,
-    ylabel: str | None = None,
-    reference_y: float | None = None,
-    reference_label: str | None = None,
-    ylim: tuple[float, float] | None = None,
-    figsize: tuple[float, float] | None = None,
-    sharex: bool = True,
-    sharey: bool = True,
-    output_path: str | Path | None = None,
-) -> tuple[Figure, np.ndarray, pd.DataFrame]:
-    """Aggregate and plot a reusable faceted line grid.
-
-    ``series`` may contain several columns, so method variants can be drawn as
-    distinct lines without modifying the input. The returned tuple contains
-    the figure, the two-dimensional axes array, and the aggregated data used
-    by the plot.
-    """
-    data = filter_results(results, filters)
-    series_columns = _column_list(series)
-    facet_columns = [column for column in (row, col) if column is not None]
-    group_columns = list(dict.fromkeys([*facet_columns, *series_columns, x]))
-    summary = aggregate_metric(
-        data,
-        value,
-        group_columns,
-        error=error,
-    )
-    mean_column = f"{value}_mean"
-    error_column = f"{value}_{error}" if error is not None else None
-
-    row_values = [None] if row is None else _ordered_values(summary[row], row_order)
-    col_values = [None] if col is None else _ordered_values(summary[col], col_order)
-    if not row_values or not col_values:
-        raise ValueError("No rows remain after applying the plot filters.")
-
-    series_frame = summary[series_columns].drop_duplicates()
-    keys = [tuple(record) for record in series_frame.itertuples(index=False, name=None)]
-    if series_order is not None:
-        normalized_order = [
-            item if isinstance(item, tuple) else (item,) for item in series_order
-        ]
-        available = set(keys)
-        ordered = [key for key in normalized_order if key in available]
-        keys = ordered + [key for key in keys if key not in ordered]
-
-    labels = {} if labels is None else dict(labels)
-    colors = {} if colors is None else dict(colors)
-    markers = {} if markers is None else dict(markers)
-    linestyles = {} if linestyles is None else dict(linestyles)
-    palette = cycle(plt.rcParams["axes.prop_cycle"].by_key()["color"])
-    marker_cycle = cycle(("o", "s", "^", "v", "D", "P", "X", "*"))
-    style_by_key = {}
-    for key in keys:
-        lookup = key[0] if len(key) == 1 else key
-        default_color = COLORS.get(lookup, next(palette))
-        default_marker = MARKERS.get(lookup, next(marker_cycle))
-        default_linestyle = LINESTYLES.get(lookup, "-")
-        if lookup in labels:
-            display = labels[lookup]
-        elif len(key) == 1:
-            display = METHOD_LABELS.get(lookup, str(lookup))
-        else:
-            display = " | ".join(
-                f"{column}={'NA' if _is_missing_value(value_) else value_}"
-                for column, value_ in zip(series_columns, key)
-            )
-        style_by_key[key] = {
-            "label": display,
-            "color": colors.get(lookup, default_color),
-            "marker": markers.get(lookup, default_marker),
-            "linestyle": linestyles.get(lookup, default_linestyle),
-        }
-
-    if figsize is None:
-        figsize = (3.0 * len(col_values), 2.5 * len(row_values) + 0.5)
-    fig, axes = plt.subplots(
-        len(row_values),
-        len(col_values),
-        figsize=figsize,
-        sharex=sharex,
-        sharey=sharey,
-        squeeze=False,
-        layout="constrained",
-    )
-    for row_index, row_value in enumerate(row_values):
-        for col_index, col_value in enumerate(col_values):
-            ax = axes[row_index, col_index]
-            panel = summary
-            if row is not None:
-                if _is_missing_value(row_value):
-                    panel = panel[panel[row].map(_is_missing_value)]
-                else:
-                    panel = panel[panel[row] == row_value]
-            if col is not None:
-                if _is_missing_value(col_value):
-                    panel = panel[panel[col].map(_is_missing_value)]
-                else:
-                    panel = panel[panel[col] == col_value]
-            for key in keys:
-                line = panel
-                for column, series_value in zip(series_columns, key):
-                    if _is_missing_value(series_value):
-                        line = line[line[column].map(_is_missing_value)]
-                    else:
-                        line = line[line[column] == series_value]
-                line = line.sort_values(x)
-                if line.empty:
-                    continue
-                style = style_by_key[key]
-                x_values = pd.to_numeric(line[x], errors="coerce").to_numpy()
-                means = line[mean_column].to_numpy(dtype=float)
-                ax.plot(
-                    x_values,
-                    means,
-                    label=style["label"],
-                    color=style["color"],
-                    marker=style["marker"],
-                    linestyle=style["linestyle"],
-                    markerfacecolor="none",
-                )
-                if error_column is not None:
-                    errors = line[error_column].to_numpy(dtype=float)
-                    ax.fill_between(
-                        x_values,
-                        means - errors,
-                        means + errors,
-                        color=style["color"],
-                        alpha=0.12,
-                        linewidth=0,
-                    )
-            if reference_y is not None:
-                ax.axhline(
-                    reference_y,
-                    color="#555555",
-                    linestyle="--",
-                    linewidth=1,
-                    label=reference_label,
-                )
-            if ylim is not None:
-                ax.set_ylim(*ylim)
-            ax.set_xticks(
-                sorted(pd.to_numeric(panel[x], errors="coerce").dropna().unique())
-            )
-            ax.grid(axis="y", color="#E2E2E2", linewidth=0.45)
-            title_parts = []
-            if row is not None:
-                title_parts.append(f"{row} = {row_value}")
-            if col is not None:
-                title_parts.append(f"{col} = {col_value}")
-            if title_parts:
-                ax.set_title(" — ".join(title_parts))
-
-    fig.supxlabel(xlabel or x)
-    fig.supylabel(ylabel or value)
-    if title:
-        fig.suptitle(title)
-    unique_handles = {}
-    for ax in axes.flat:
-        handles, legend_labels = ax.get_legend_handles_labels()
-        unique_handles.update(zip(legend_labels, handles))
-    if unique_handles:
-        fig.legend(
-            unique_handles.values(),
-            unique_handles.keys(),
-            loc="upper center",
-            bbox_to_anchor=(0.5, 0.99 if title is None else 0.95),
-            ncols=max(1, len(unique_handles)),
-            frameon=False,
-        )
-    if output_path is not None:
-        path = Path(output_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(path, bbox_inches="tight")
-    return fig, axes, summary
-
-
 def _validate_linear_model_results(results: pd.DataFrame) -> None:
     required = (
         "n",
@@ -863,7 +334,7 @@ def prepare_linear_model_results(
 ) -> pd.DataFrame:
     """Stream, preprocess, and concatenate linear-model shard rows.
 
-    For a staged notebook workflow, call :func:`merge_result_shards` followed
+    For staged processing, call :func:`merge_result_shards` followed
     by :func:`preprocess_linear_model_results` instead.
     """
     frames = []
@@ -1089,11 +560,6 @@ def linear_model_method_label(config: Mapping[str, Any]) -> str:
     if method == "DistanceCorrelationTest":
         return "DC"
     return method
-
-
-def _method_label(config: Mapping[str, Any]) -> str:
-    """Backward-compatible private alias for older notebook imports."""
-    return linear_model_method_label(config)
 
 
 def _aggregate_metric(
@@ -1837,9 +1303,7 @@ def generate_linear_model_figures(
         None
         if testing_only
         else aggregate_frobenius_errors(
-            frobenius_results[
-                frobenius_results["RelativeFrobeniusNorm_Y"].notna()
-            ]
+            frobenius_results[frobenius_results["RelativeFrobeniusNorm_Y"].notna()]
         )
     )
     filename_suffix = f"asymptotic_{asymptotic_null}"

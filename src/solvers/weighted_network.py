@@ -1,9 +1,5 @@
 import numpy as np
-import numba as nb
-from scipy.optimize import minimize
-from scipy.special import expit
 from scipy.sparse.linalg import eigsh
-from scipy.linalg import norm
 
 
 def ASE(A, k=2, rng=None, **kwargs):

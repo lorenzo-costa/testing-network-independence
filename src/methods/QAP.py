@@ -2,12 +2,6 @@ from ._base_class import BaseMethod
 import numpy as np
 
 
-import sys
-import os
-
-sys.path.append(os.path.abspath(os.path.join(os.getcwd(), "..")))
-
-
 class QAP(BaseMethod):
     """Quadratic Assignment Procedure
 
@@ -196,7 +190,7 @@ class MRQAP(BaseMethod):
         self.batch_size = None if batch_size is None else int(batch_size)
         self.rng = np.random.default_rng() if rng is None else rng
 
-        # BaseMethod.get_estimated compatibility
+        # Initialize the common result fields.
         self.X = None
         self.Z = None
         self.Zhat = None
@@ -388,8 +382,8 @@ class MRQAP(BaseMethod):
         self.outcome_network = outcome_network
         self.predictor_networks = np.stack(predictor_networks, axis=2)
 
-        # BaseMethod.get_estimated compatibility. In global mode there are no
-        # covariates: A_X contains only the jointly tested networks.
+        # In global mode there are no covariates: A_X contains only the jointly
+        # tested networks.
         self.A = None
         self.Y = outcome_network
         self.X = None

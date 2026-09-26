@@ -4,11 +4,7 @@ import pandas as pd
 import pytest
 
 import results.visualise_linear_model as visualise_linear_model
-from results.results_processing import (
-    combine_shard_outputs,
-    iter_shard_outputs,
-    process_shard_results,
-)
+from src.analysis.io import combine_shard_outputs, iter_shard_outputs
 from results.visualise_linear_model import (
     METHOD_LABELS,
     _available_methods,
@@ -95,7 +91,7 @@ def _write_shards(tmp_path: Path):
     return names
 
 
-def test_combine_and_process_linear_model_shards(tmp_path):
+def test_combine_and_preprocess_linear_model_shards(tmp_path):
     names = _write_shards(tmp_path)
 
     combined = combine_shard_outputs(tmp_path, names)
@@ -103,7 +99,7 @@ def test_combine_and_process_linear_model_shards(tmp_path):
     assert combined["shard_index"].tolist() == [0, 1, 2]
     assert combined["num_shards"].tolist() == [3, 3, 3]
 
-    processed = process_shard_results(tmp_path, names)
+    processed = visualise_linear_model.preprocess_linear_model_results(combined)
     assert processed["n"].tolist() == [50, 100, 200]
     assert processed["p"].tolist() == [5, 5, 10]
     assert processed["d_x"].tolist() == [5, 5, 5]
@@ -111,23 +107,12 @@ def test_combine_and_process_linear_model_shards(tmp_path):
     assert processed["snr"].tolist() == [0.0, 0.5, 1.0]
     assert processed["x_network_correlation"].tolist() == [0.5, 0.5, 0.5]
     assert processed["eps_distribution"].tolist() == ["student_t_3"] * 3
-    assert processed["npermutations"].tolist() == [400, 400, 400]
-    assert processed["permutation_type"].tolist() == ["latent"] * 3
     assert processed["method"].tolist() == [
         "RVTest_permutation",
         "CCA",
         "DC",
     ]
-    assert processed["cca_gamma"].tolist() == ["NA", 0.7, "NA"]
-    for column in (
-        "RelativeFrobeniusNorm_Y",
-        "RelativeFrobeniusNorm_X_1",
-        "RelativeFrobeniusNorm_X_global",
-        "ProcrustesDistance_Y",
-        "ProcrustesDistance_X_1",
-        "ProcrustesDistance_X_global",
-    ):
-        assert column in processed
+    assert "RelativeFrobeniusNorm_Y" in processed
 
     aggregate = aggregate_rejection_rates(processed)
     assert aggregate["replicates"].tolist() == [1, 1, 1]
@@ -150,7 +135,7 @@ def test_chunked_shard_reader_retains_shard_metadata(tmp_path):
     assert all(chunk["num_shards"].iloc[0] == 3 for chunk in chunks)
 
 
-def test_notebook_pipeline_merges_then_preprocesses_dynamic_fields(tmp_path):
+def test_staged_pipeline_merges_then_preprocesses_dynamic_fields(tmp_path):
     names = _write_shards(tmp_path)
     raw = merge_result_shards(
         tmp_path,

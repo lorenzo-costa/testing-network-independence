@@ -1,577 +1,148 @@
-# TODO update this (this is AI generated)
+# Network independence testing
 
-# Network Independence Testing via Latent Position Models
+This repository simulates a response network **Y** and **p predictor networks X**,
+then tests their dependence using latent positions or adjacency matrices. The
+current latent model is `Y = concatenate(X_blocks) @ B.T + epsilon`. Network
+observations are Gaussian weighted or Bernoulli binary.
 
-A simulation framework for testing statistical independence between two networks by exploiting their shared latent position structure. The project supports both **Gaussian (weighted)** and **Bernoulli (binary)** random dot product graph models, a range of copula dependency structures, and several test statistics — including a novel observed-graph Cramér–von Mises (CvM) test that avoids explicit latent-position estimation.
+## Start here
 
----
+Run commands from the repository root. The refactor was checked with Python
+3.13.11, NumPy 2.3.5, SciPy 1.16.0, pandas 2.3.1, matplotlib 3.10.8 and Numba
+0.63.1. These are tested versions, not a claim that every older version works.
+NumPy must provide `Generator.spawn` for simulation and permutation streams.
 
-## Table of Contents
-
-- [Overview](#overview)
-- [Project Structure](#project-structure)
-- [Installation](#installation)
-- [Quickstart](#quickstart)
-- [Running Simulations](#running-simulations)
-- [Core Components](#core-components)
-  - [Data Generating Processes (`dgp.py`)](#data-generating-processes-dgppy)
-  - [Solvers (`src/solvers/`)](#solvers-srcsolvers)
-  - [Methods (`methods.py`)](#methods-methodspy)
-  - [Metrics (`metrics.py`)](#metrics-metricspy)
-  - [Helper Functions (`src/helper_functions/`)](#helper-functions-srchelper_functions)
-- [Configuration (`load_config.py`)](#configuration-load_configpy)
-- [Results](#results)
-- [Dependencies](#dependencies)
-
----
-
-## Overview
-
-### Supported dependency structures (copulas)
-
-| Copula | Description |
-|--------|-------------|
-| `gaussian` | Gaussian copula with correlation `rho` |
-| `student_t` | Student-t copula, heavier tails |
-| `clayton` | Lower-tail dependent Archimedean copula |
-| `rotated_clayton` | 180° rotation of the Clayton copula (upper-tail dependence) |
-| `gumbel` | Upper-tail dependent Archimedean copula |
-| `frank` | Symmetric Archimedean copula |
-| `mixture_uniform` | Mixture of Gaussian copulas with per-component correlations |
-
-### Supported test methods
-
-| Method | Description |
-|--------|-------------|
-| `RVtest` | Permutation test using the (adjusted) RV coefficient on estimated latent positions; supports both permutation and asymptotic (Imhof) p-value approximations |
-| `ObservedCVM` | CvM statistic computed directly on shared-neighbour counts — **no embedding required** |
-| `LLKRatioTest` | Likelihood-ratio test |
-| `QAP` | Quadratic Assignment Procedure |
-| `DiffusionCorrelation` | Diffusion-map based correlation test |
-| `CanonicalCorrelationTest` | Permutation test based on canonical correlations between estimated latent positions |
-
----
-
-## Project Structure
-
-```
-.
-├── README.md
-├── Makefile
-├── config.yaml                     # Experiment configuration (YAML)
-├── requirements.txt
-├── results/                        # Output CSVs (git-ignored)
-└── src/
-    ├── dgp.py                      # Data generating processes (GaussianNetwork, BernoulliNetwork)
-    ├── methods.py                  # Statistical test methods
-    ├── metrics.py                  # Evaluation metrics (Rejection, FrobeniusNorm, …)
-    ├── load_config.py              # YAML config loader; builds factorial designs
-    ├── run_simulation_script.py    # Main entry point — loads config, runs H0/H1 simulations
-    ├── solvers/
-    │   ├── binary_network.py       # MLE for Bernoulli RDPG (logistic regression)
-    │   ├── weighted_network.py     # ASE and MLE for Gaussian RDPG
-    │   ├── MaMa_uuuuu.py           # Projected gradient descent solver (pgd_fit, pgd_fit_wrapper)
-    │   └── passtthrough.py         # Placeholder/pass-through solver
-    └── helper_functions/
-        ├── simulation_functions.py # run_simulation / run_simulation_parallel
-        ├── analyse_functions.py    # aggregate_results, analyse_function
-        ├── plot_functions.py       # plot_grid, plot_with_bands, plot_boxplot, …
-        ├── _metrics_helper.py      # RV coefficient, CvM kernels (Numba-accelerated)
-        ├── imhof.py                # Imhof method for asymptotic RV p-values
-        ├── simulation_timing.py    # Timing utilities for simulation runs
-        └── alternative_hp_functions.py  # Additional hypothesis-testing helpers
+```sh
+python -m pip install -r requirements.txt
+python -m pytest -q
 ```
 
----
+JAX is an optional PGD backend and was not exercised in the refactor
+environment. See [the refactor validation record](docs/simplification_refactor.md).
 
-## Installation
-
-**Python 3.9+ is required.**
-
-```bash
-# 1. Clone the repository
-git clone <repo-url>
-cd <repo-name>
-
-# 2. (Recommended) Create a virtual environment
-python -m venv .venv
-source .venv/bin/activate      # Windows: .venv\Scripts\activate
-
-# 3. Install dependencies
-pip install -r requirements.txt
-```
-
----
-
-## Quickstart
+A small experiment without a configuration file:
 
 ```python
 import numpy as np
-from functools import partial
 from src.dgp import GaussianNetwork
-from src.solvers.weighted_network import ASE
-from src.methods import RVtest
+from src.methods import RVTest
 from src.metrics import ComputeAll
-from src.helper_functions.simulation_functions import run_simulation
+from src.solvers.weighted_network import ASE
 
 rng = np.random.default_rng(42)
-
-factorial_design = [
-    {
-        "setup": (partial(GaussianNetwork, copula_model="gaussian"), ASE),
-        "method": partial(RVtest, approximation="permutation", permutation_type="latent"),
-        "n": 200,
-        "k": 3,
-        "rho": 0.2,
-        "alpha": 0.05,
-        "marginals": "gaussian",
-        "edge_var": 1,
-        "npermutations": 100,
-        "df": 3,
-    }
-]
-
-results = run_simulation(
-    nsim=10,
-    metrics=[ComputeAll()],
-    factorial_design=factorial_design,
-    rng=rng,
-    parallel=False,
-)
-print(results[0])
+data = GaussianNetwork(n=40, p=2, d_x=2, d_y=2, snr=0.5, rng=rng).generate()
+method = RVTest(solver=ASE, d_x=2, d_y=2, npermutations=19, rng=rng)
+method.fit(data)
+print(method.get_estimated()["p-value"])
+print(ComputeAll()(method.get_estimated(), is_null=False))
 ```
 
----
+For a larger worked example, read `run_multiple_networks_example.py`. Its defaults
+run 2,400 scenarios; pass smaller parameters when exploring it.
 
-## Running Simulations
+## Reading order
 
-The recommended workflow is YAML-driven. All experiment parameters — DGPs, solvers, methods, grid values, and output paths — are specified in `config.yaml`, and a single script runs both H0 and H1 simulations.
+| Stage | Read | Responsibility |
+|---|---|---|
+| Example | `run_multiple_networks_example.py` | An explicit experiment from design to results |
+| Data | `src/dgp.py`, `src/latent_samplers/multiple_networks.py` | Latent blocks, coefficients, noise, and network draws |
+| Method inputs | `src/methods/_network_input.py` | Validate Y/X shapes, embed each network, assemble results |
+| Inference | `src/methods/_base_class.py`, concrete method files | Permutation orchestration and test statistics |
+| Metrics | `src/metrics.py` | Testing outcomes and latent recovery errors |
+| Configuration | `src/load_config.py`, `src/configuration/` | Resolve registries, validate fields, build ordered grids |
+| Execution | `src/helper_functions/simulation_functions.py` | Scenario metadata, child seeds, workers and shards |
+| Analysis | `src/analysis/` | CSV parsing, shard loading, preprocessing and generic plots |
+| Figure recipes | `results/visualise_linear_model.py`, `results/visualise_linear_model_active_fraction.py` | Study-specific filters, labels, and output figures |
 
-```bash
-mkdir -p results
-python -m src.run_simulation_script --config config.yaml
-```
+`A_Y` is an `(n, n)` adjacency matrix; `A_X` is an ordered list of p such
+matrices. Truth is `Y` with shape `(n, d_y)` and `X`, a list of `(n, d_x)`
+blocks. Methods also accept `[A_Y, A_X1, ...]` with explicit embedding dimensions.
+Their result dictionaries contain `estimated_latent`, `true_latent`, `p-value`,
+`reject_null`, and `test_stat`. Latent dictionaries expose `Y`, concatenated `X`,
+and `X_blocks`. Missing truth is supported. Global X recovery errors compare
+concatenated matrices; they are not averages of block errors.
 
-Output: `results/<prefix>_<timestamp>.csv`
+RV and CCA cache invariant work across permutations. Distance correlation
+supports dcorr and MGC; MRQAP works on adjacency matrices. Their distinct
+statistical rules remain in the concrete implementations. PGD initialization and
+public entry points remain in `src/solvers/MaMa_uuuuu.py`; numerical loops live in
+`_pgd_backends.py`. Automatic backend selection prefers JAX, then Numba, then
+NumPy. NumPy runs a fixed iteration count; Numba/JAX can stop early.
 
-The script automatically detects the experiment type from the YAML structure (see [Configuration](#configuration-load_configpy)) and runs both the alternative-hypothesis sweep and the null-hypothesis baseline, then concatenates and saves the results.
+## Configured runs
 
----
-
-## Core Components
-
-### Data Generating Processes (`dgp.py`)
-
-`src/dgp.py` provides `GaussianNetwork` and `BernoulliNetwork`. Both use
-`MultipleNetworksSampler` to generate `Y = X_concat @ B.T + epsilon`, then
-generate one Y network and p X networks. Key constructor arguments:
-
-| Argument | Type | Description |
-|----------|------|-------------|
-| `n` | `int` | Number of nodes |
-| `p` | `int` | Number of X networks |
-| `d_x`, `d_y` | `int` | Latent dimensions of each X network and Y |
-| `B` | matrix, `0`, or `None` | Fixed `(d_y, p*d_x)` coefficients; `0` gives all zeros; `None` samples a new matrix per generation |
-| `snr` | nonnegative `float` or `None` | Population latent signal/noise variance ratio; rescales B while keeping noise fixed; `None` disables calibration |
-| `x_mean` | scalar or vector | Mean of concatenated X positions |
-| `x_variance` | scalar or covariance matrix | Covariance of concatenated X; a scalar multiplies the identity |
-| `x_network_correlation` | `float` or `None` | Equicorrelation between matching dimensions in different X networks; requires scalar `x_variance` |
-| `eps_variance` | scalar or covariance matrix | Error covariance for Y; a scalar multiplies the identity |
-| `b_mean`, `b_variance` | `float` | Mean/variance of coefficient draws before optional SNR scaling |
-| `b_active_network_fraction` | `float` in `[0, 1]` or `None` | Fraction of sampled X-network coefficient blocks retained; selects `floor(fraction*p + 0.5)` blocks uniformly per draw |
-| `x_distribution`, `eps_distribution`, `b_distribution` | `str` | Registered latent/error/coefficient distributions |
-| `edge_var` | `float` | Edge noise variance (Gaussian network only) |
-| `rdpg` | `bool` | Bernoulli link: `False` uses sigmoid of latent inner products; `True` uses the inner products directly and requires valid probabilities |
-
-`generate()` returns `A_Y`, a list `A_X`, true latent `Y`, a list `X`, and the
-effective coefficient matrix `B` (after SNR scaling, when enabled).
-
-With `snr=s`, the sampler calibrates the population ratio conditional on B:
-
-```text
-SNR = trace(B @ Sigma_X @ B.T) / trace(Sigma_epsilon)
-B_effective = B_raw * sqrt(s * trace(Sigma_epsilon)
-                            / trace(B_raw @ Sigma_X @ B_raw.T))
-```
-
-This is a variance ratio summed across Y dimensions, not a sample ratio or an
-R-squared value. Noise covariance is unchanged. For `B=None`, every new draw
-is calibrated separately; for a supplied matrix, its magnitude is rescaled
-without changing its direction. `snr=0` gives zero coefficients and `Y=epsilon`.
-Finite SNR requires positive noise variance; a positive target also requires
-positive signal variance before scaling (`B=0, snr>0` raises an error).
-Custom registered distributions must honor the configured X/error covariances
-for this population interpretation to hold. The ratio concerns the latent
-linear model, not Gaussian edge noise or Bernoulli edge probabilities.
-
-Set `eps_distribution="student_t_3"` for independent univariate Student-t
-errors with three degrees of freedom. These draws are standardized to unit
-population variance before applying `eps_variance`, so SNR calibration retains
-the same population-variance interpretation. To correlate the X networks, set
-`x_network_correlation=rho`; this gives correlation `rho` to matching latent
-dimensions in distinct X networks while different dimensions remain
-independent.
-
-```python
-data = GaussianNetwork(n=200, p=5, d_x=5, d_y=5, B=None, snr=2.0).generate()
-```
-
-The notebook-safe example compares RV, CCA, and MGC at
-`snr_values=(0, 0.1, 0.25, 0.5, 1)`. It uses B=0 for SNR zero and newly sampled,
-calibrated B for each positive setting. With two network models and 50
-repetitions per network/method/SNR combination, this gives 1,500 simulations,
-without duplicating null cases. The output includes `method` and `snr` columns;
-the printed rejection-rate summary groups by network, method, SNR, and
-hypothesis. Pass another sequence via `snr_values` to customize the sweep.
-Restart the notebook kernel before importing updated code. For the sampler and
-DGP constructors, `snr=None` still disables calibration.
-
-The same experiment can be run from the YAML-driven simulation runner:
-
-```bash
+```sh
 python -m src.run_simulation_script --config linear_model_config.yaml
+python -m src.run_sim_script_shard --config linear_model_config.yaml --shard-index 0 --num-shards 3 --n-jobs 4
 ```
 
-That configuration crosses both network models with independent X networks
-(`x_network_correlation: 0`) and correlated X networks
-(`x_network_correlation: 0.5`). Both cases use independent standardized t3
-errors. With the current grid it contains 1,800 design cells, or 360,000 runs
-at 200 repetitions per cell.
+The supplied YAMLs are research configurations and can be expensive. Inspect
+`nsim`, grid sizes, and `npermutations` before running them. Multiple files can
+follow `--config`; grids are concatenated in order, with execution settings,
+metrics, RNG, and output options taken from the first configuration.
 
-For the adjacency-level global MRQAP permutation experiment, use:
+`src/load_config.py` retains the public DGP, solver and method registries. Add a
+registered name there when extending YAML support. Builders use ordered field
+sweeps: changing their order changes which scenario receives each seed.
 
-```bash
-python -m src.run_simulation_script --config linear_model_asymptotic_config.yaml
-```
+The ordinary runner accumulates results, saves raw CSV first, then flattens
+metadata. The shard runner writes bounded batches. Every shard constructs the
+same global seed assignment and shuffle, then selects a disjoint strided slice.
+CLI shard defaults use the corresponding Slurm array variables. Worker BLAS
+threads default to one. Scenario argument dictionaries are intentionally shared
+and mutated with runtime metadata; changing that ownership changes behavior.
 
-This configuration tests `H0: beta_1 = ... = beta_p = 0` with 400 node-label
-permutations of `A_Y`. It operates on the observed networks and therefore has no
-`use_true_latent` sweep.
-
-On a Slurm cluster, submit the three-shard job array with:
-
-```bash
-sbatch run_sim_shard.sbat linear_model_config.yaml
-```
-
-Each of the three array jobs requests one node with 32 CPUs. The shard runner
-constructs the same deterministic global task and seed list in every job, then
-executes a disjoint strided third of it. Each shard writes a separate CSV whose
-name contains the Slurm array job ID and zero-based shard index; concatenate
-those three CSV files to obtain the complete result table.
-
-After all shards finish, add their filenames to `RESULT_FILES` in
-`results/visualise_linear_model.py`, or pass them directly:
-
-```bash
-python results/visualise_linear_model.py --files \
-  <shard-000.csv> <shard-001.csv> <shard-002.csv> \
-  --asymptotic-null split
-```
-
-Supply a separate global-MRQAP shard set with `--mrqap-files`. MRQAP is an
-adjacency-level test, so its testing-performance curve is included in both the
-true-latent and estimated-latent comparison plots and labeled accordingly. It
-is not included in latent-recovery plots.
-
-`--asymptotic-null` is required. Use `split` to draw separate independence and
-zero-covariance asymptotic RV lines, or use `independence` or
-`zero_covariance` to retain only the selected asymptotic reference model. There
-is no pooled asymptotic mode. To generate only the testing-performance plots,
-use `--testing-only`.
-
-The processor verifies that the files form one complete, non-duplicated shard
-set and streams large shards in bounded-memory chunks. The visualization writes
-separate figures for Gaussian/Bernoulli networks, true/estimated latent
-positions, error distributions, and X-network correlations. Each combination
-receives a positive-SNR power grid, an SNR-zero type-I-error row, and, unless
-`--testing-only` is used, matching figures for the relative Frobenius error
-between Y and its estimate, under `results/linear_model_figures`.
-
-The same pipeline can be used interactively from a notebook. Loading,
-preprocessing, aggregation, and plotting are independent operations:
-
-```python
-from pathlib import Path
-
-from results.visualise_linear_model import (
-    aggregate_metric,
-    linear_model_method_label,
-    merge_result_shards,
-    plot_metric_grid,
-    preprocess_results,
-)
-
-result_files = [
-    "my_run_shard-000-of-003.csv",
-    "my_run_shard-001-of-003.csv",
-    "my_run_shard-002-of-003.csv",
-]
-
-# 1. Validate and merge the raw shards.
-raw = merge_result_shards(
-    Path("results"),
-    result_files,
-    usecols=("args", "ComputeAll"),
-)
-
-# 2. Expand every configuration and metric key. Extra attributes such as
-# approximation and asymptotic_null are retained automatically.
-data = preprocess_results(
-    raw,
-    method_labeler=linear_model_method_label,
-    required_columns=("method", "Rejection", "n", "p", "d_x", "d_y"),
-)
-
-# Aggregation is optional and uses explicit grouping columns so variants are
-# never pooled accidentally.
-summary = aggregate_metric(
-    data,
-    value="Rejection",
-    groupby=(
-        "method",
-        "approximation",
-        "asymptotic_null",
-        "p",
-        "n",
-    ),
-)
-
-# 3. Plot directly from the preprocessed simulation rows.
-figure, axes, plotted_data = plot_metric_grid(
-    data,
-    value="Rejection",
-    x="n",
-    col="p",
-    series=("method", "approximation", "asymptotic_null"),
-    filters={"snr": 0},
-    reference_y=0.05,
-    reference_label="Nominal alpha = 0.05",
-    ylabel="Type I error rate",
-)
-```
-
-Use `merge_result_shard_sets` when primary, asymptotic, MRQAP, or other
-families come from different complete shard runs. For the original paper
-figures, pass the preprocessed combined dataframe to
-`generate_linear_model_figures`, explicitly selecting how asymptotic null
-models should be handled:
-
-```python
-paths = generate_linear_model_figures(
-    data,
-    Path("results/linear_model_figures"),
-    asymptotic_null="split",  # or "independence" / "zero_covariance"
-    testing_only=True,
-)
-```
-
-Edit the `n`, `p`, `d_x`, `d_y`, and `snr` lists in
-`linear_model_config.yaml` to define the factorial sweep. The supplied config
-runs `n` in `(50, 100, 200)`, `p` in `(5, 10, 25, 50, 100)`, and SNR in
-`(0, 0.1, 0.25, 0.5, 1)` for Gaussian and logistic-Bernoulli networks with RV,
-CCA, and MGC, using both true and estimated latent positions. It also configures
-simulation-level multiprocessing, one BLAS thread per worker, and latent
-permutations within each method.
-
-Linear-model YAML experiments accept `snr`, `b_active_network_fraction`, or
-both. For example, these fields inside `simulation` cross three SNR targets
-with five active fractions:
+Linear-model experiments accept `snr`, `b_active_network_fraction`, or both:
 
 ```yaml
 snr: [0.1, 0.25, 0.5]
 b_active_network_fraction: [0, 0.1, 0.25, 0.5, 1.0]
 ```
 
-The sampler selects active network blocks before calibrating their combined
-signal strength. If rounding the fraction times `p` selects no networks, the
-experiment uses `B=0`, `hypothesis=H0`, and effective `snr=0`. An SNR target
-of zero also gives the null. Joint sweeps retain the original target in
-`requested_snr`, including separate null rows for each requested target.
-Fraction-only sweeps leave coefficients uncalibrated. See
-`linear_model_active_fraction_config.yaml` for a complete joint configuration.
-With zero-mean Gaussian coefficients and a positive SNR target, changing
-`b_variance` alone does not change their final overall scale: calibration
-cancels that scaling.
+Active blocks are selected before signal calibration. If rounding fraction × p
+selects no networks, the row uses `B=0`, `hypothesis=H0`, and effective `snr=0`.
+A zero SNR target also gives the null. Joint sweeps retain `requested_snr`,
+including separate null rows for each requested target. Fraction-only sweeps
+leave coefficients uncalibrated. See `linear_model_active_fraction_config.yaml`.
+With zero-mean Gaussian coefficients and positive target SNR, calibration
+cancels changes in their initial overall variance.
 
-For joint-sweep analysis, keep both `requested_snr` and
-`b_active_network_fraction` as grouping coordinates. The existing active-fraction
-plotting script groups by fraction alone; it needs filtering or additional
-grouping before plotting a joint sweep to avoid pooling different SNR targets.
+## Results and plots
 
-### Solvers (`src/solvers/`)
-
-| Solver | File | Description |
-|--------|------|-------------|
-| `ASE` | `weighted_network.py` | Adjacency Spectral Embedding via truncated eigen-decomposition |
-| `MLE_gaussian` | `weighted_network.py` | Shrinkage MLE for Gaussian RDPG |
-| `MLE_logistic` | `binary_network.py` | Logistic-regression MLE for Bernoulli RDPG (Numba-accelerated gradient) |
-| `pgd_fit` / `pgd_fit_wrapper` | `MaMa_uuuuu.py` | Projected gradient descent for binary networks |
-| `placeholder_method` | `passtthrough.py` | No-op solver; returns zeros (useful for testing pipelines) |
-
-All solvers share the signature `solver(A, k, rng, **kwargs) → (Xhat, eigenvalues)`.
-
-### Methods (`methods.py`)
-
-Methods expose `fit(data)` and `get_estimated()`. The multiple-network permutation
-base, `RVTest`, `CanonicalCorrelationTest`, and `DistanceCorrelationTest` accept
-the new DGP dictionary (`A_Y` plus a list `A_X`) or an ordered list
-`[A_Y, A_X1, ..., A_Xp]`. They estimate Y using `d_y` dimensions and each X
-network using `d_x` dimensions, then call the statistic as
-`test_function(Yhat, Xhat)`, where `Xhat = concatenate(Xhat_blocks, axis=1)` has
-shape `(n, p * d_x)`.
-
-`permutation_type="latent"` (the default) fits all networks once and permutes
-rows of `Yhat`. `permutation_type="adjacency"` permutes both axes of `A_Y` and
-re-estimates Y for every permutation. The X embeddings stay fixed in both modes.
-True latent Y and X can be supplied with `use_true_latent=True` in latent mode;
-otherwise they are used only as reference values and to infer omitted dimensions.
-`get_estimated()["estimated_latent"]` contains
-`{"Y": Yhat, "X": Xhat, "X_blocks": Xhat_blocks}`;
-the `"true_latent"` entry contains the corresponding true matrices and blocks,
-if available. The block list preserves network order for recovery metrics.
+Reusable result loading, preprocessing, aggregation, and plotting live under
+`src.analysis`. `preprocess_results` is the supported path for current
+linear-model CSV output.
 
 ```python
-from src.methods import RVTest
-from src.solvers.weighted_network import ASE
+from src.analysis.processing import merge_result_shards, preprocess_results
+from src.analysis.plotting import plot_metric_grid
+from results.visualise_linear_model import linear_model_method_label
 
-method = RVTest(
-    solver=ASE, d_y=2, d_x=3,
-    permutation_type="latent", npermutations=999,
-    n_jobs=2, verbose=True,
+# filenames must contain one complete shard set, not unrelated runs
+raw = merge_result_shards("results", filenames)
+data = preprocess_results(raw, method_labeler=linear_model_method_label)
+figure, axes, summary = plot_metric_grid(
+    data, value="Rejection", x="n", col="p",
+    series=("method", "approximation", "asymptotic_null"),
+    filters={"snr": 0}, reference_y=0.05,
 )
-method.fit(data)  # output of GaussianNetwork or BernoulliNetwork
 ```
 
-Estimation-only methods use the same multiple-network input and output structure.
+Use explicit filters, facets, and grouping for every varying experiment
+coordinate. For joint signal sweeps, retain both `requested_snr` and
+`b_active_network_fraction`; filter by the requested SNR before plotting an
+active-fraction curve.
 
-| Class | Key parameters | Notes |
-|-------|---------------|-------|
-| `RVTest` | `approximation` (`'permutation'` / `'asymptotic'`), `asymptotic_null` (`'independence'` / `'zero_covariance'`), `permutation_type` (`'latent'` / `'adjacency'`), `d_y`, `d_x`, `npermutations`, `solver` | The asymptotic branch uses the Imhof method (`imhof.py`); independence uses the Kronecker covariance spectrum, while zero covariance estimates the full centered cross-product covariance |
-| `ObservedCVM` | `test_function` | CvM statistic on adjacency matrices; no embedding step needed |
-| `LLKRatioTest` | — | Likelihood-ratio test |
-| `QAP` | — | Quadratic Assignment Procedure |
-| `MRQAP` | `permutation_strategy`, `symmetric`, `include_intercept`, `npermutations`, `batch_size` | A `Y`/`A`/optional-`X` input tests one coefficient; an `A_Y`/`A_X` input uses an omnibus F-statistic to test whether all network coefficients are zero |
-| `DiffusionCorrelation` | — | Diffusion-map based correlation |
-| `CanonicalCorrelationTest` | `permutation_type`, `solver`, `gamma` | Permutation test via canonical correlations; the concatenated X covariance is regularized as sample covariance + `gamma * I`, with `gamma=sqrt(n)` by default |
-| `FitIndependent` | `solver`, `d_y`, `d_x` | Not a test; fits Y and every X network independently, stores individual X blocks, and concatenates them |
+Shard readers process bounded chunks, but merge/preparation functions collect
+those chunks before concatenation: total memory is not constant. The generic
+plot function returns the summary used to draw the figure. Study scripts retain
+their existing labels, layouts, and filenames; use `--help` for their CLI.
+The two-row type-I-error recipe needs four to six p values, even if an editable
+configuration currently supplies fewer.
 
-The global MRQAP interface operates directly on adjacency matrices and tests
-`H0: beta_1 = ... = beta_p = 0` by permuting the node labels of `A_Y`:
+## Scope
 
-```python
-from src.methods import MRQAP
-
-method = MRQAP(npermutations=999)
-method.fit({"A_Y": A_Y, "A_X": [A_1, A_2, A_3]})
-print(method.test_stat_estimate, method.pvalue, method.reject_null)
-```
-
-Permutation-based methods accept `n_jobs`, `batch_size`, and `verbose`.
-The default `n_jobs=1` evaluates permutations serially, positive values use
-that many worker processes, and `n_jobs=-1` uses every available CPU. The
-process-pool chunk size targets `batch_size` work batches per worker, with a
-default of 32. Set `verbose=True` to display permutation progress. Avoid
-enabling permutation-level and simulation-level process parallelism at the
-same time. Custom test functions and solvers must be picklable when
-permutation-level parallelism is enabled. Parallel workers return completed
-permutations as soon as they finish; results are restored to their original
-permutation order before p-values are calculated. Permutation p-values use the
-finite-sample correction `(1 + exceedances) / (npermutations + 1)`.
-
-Multivariate AC orthant counts use the exact recursive sorted-block algorithm
-from [Huang, Li and Wang, Section 5](https://arxiv.org/abs/2512.07443v2).
-It supports arbitrary response dimensions, using a single-threaded, cached
-Numba kernel for the 2D base case. For fixed dimension `d`, counting `q`
-thresholds against `n` observations has bound `O(N * log(N)**d)`, where
-`N = max(n, q)`; a coefficient with `M` neighbors has `q = n * M`.
-Initial calls may incur compilation overhead. Small subproblems and inputs
-requiring legacy NumPy comparison semantics use direct comparisons.
-The pre-optimization helper module is preserved in
-`src/test_functions/_ac_helpers_old.py`; `tests/test_orthant_counts.py` checks
-exact counts, coefficients, permutation-test results, and RNG states against it.
-
-### Metrics (`metrics.py`)
-
-`ComputeAll` is the recommended metric class — it computes both testing outcomes and latent-position recovery errors in a single pass.
-
-For multiple-network results it returns flat Frobenius and Procrustes error
-fields for Y, each X network, and concatenated X, for example:
-`RelativeFrobeniusNorm_Y`, `RelativeFrobeniusNorm_X_1`, ...,
-`RelativeFrobeniusNorm_X_global` (and corresponding `ProcrustesDistance_*`
-fields). The global error is evaluated on the horizontally concatenated
-estimated and true X matrices, **not** the average of per-network errors.
-Frobenius errors compare Gram matrices by default; existing metric formulas
-are unchanged.
-
-The individual recovery metric classes return dictionaries keyed by `Y`,
-`X_1`, ..., `X_global` for named multi-network inputs. They consume the
-`X_blocks` lists in method results; named inputs with X lists also work.
-Legacy single-matrix and unnamed sequence inputs retain scalar/list results.
-RV metrics remain similarity coefficients and MSE remains unaligned coordinate
-error. `ReturnMetric("Y")` and `ReturnMetric("X")` return true Y and concatenated
-true X; `ReturnMetric("estimated")` includes estimates and individual X blocks.
-
-Unavailable true positions produce `NaN` recovery errors. Pass a known
-`is_null=True` or `False` to obtain null-dependent outcome indicators; without
-that label, those indicators return `NaN`, while the rejection decision remains
-available. No null label is inferred from B. The simulation runner no longer
-computes or returns density.
-
-Individual metric classes: `Rejection`, `FalseRejection`, `TrueRejection`, `FalseAcceptance`, `TrueAcceptance`, `RelativeFrobeniusNorm`, `RobustRelativeProcrustesDistance`, `RVCoefficient`, `AdjustedRVCoefficient`, `MSE`.
-
----
-
-## Configuration (`load_config.py`)
-
-`load_config.py` provides a universal YAML-driven configuration system. It exposes three public functions:
-
-```python
-from src.load_config import load_config, build_factorial_design, flatten_args_columns
-
-cfg = load_config("config.yaml")           # load and resolve config
-h1, h0 = build_factorial_design(cfg)       # build factorial designs for H1 and H0
-flatten_args_columns(results_df)           # post-process result DataFrames
-```
-
-The experiment type is **auto-detected** from the YAML structure — no explicit tag is required:
-
-| Type | Detection rule | Description |
-|------|---------------|-------------|
-| `standard` | Default | Main copula study with H0/H1 sweep |
-| `lee2019` | `setups` contains `gaussian_latent_sims` key | Latent functional-relationship study |
-| `diff_marginals` | First `marginals` entry is a dict | Asymmetric per-network marginal distributions |
-| `sbm` | Top-level `sbm:` key present | Stochastic block model misspecification study |
-| `multiness` | `simulation` block contains `dim_common` | Multi-network common/individual latent dimensions |
-
-Registries in `load_config.py` map YAML string names to classes — extend `DGP_REGISTRY`, `SOLVER_REGISTRY`, and `METHOD_REGISTRY` to add new components without touching the runner script.
-
----
-
-## Results
-
-Simulation outputs are written to `results/` (configurable via `config.yaml`):
-
-| File | Contents |
-|------|----------|
-| `results/<prefix>_<timestamp>.csv` | Per-scenario test outcomes and metric values for both H0 and H1 runs |
-
-The CSV columns include `n`, `k`, `rho`, `dgp`, `solver`, `method`, `marginals`, and all metric names returned by the chosen `BaseMetric` subclass.
-
----
-
-## Dependencies
-
-Core dependencies (see `requirements.txt`):
-
-```
-numpy
-scipy
-pandas
-matplotlib
-seaborn
-tqdm
-pyyaml
-hyppo          
-numba          
-```
+The repository supports the multiple-network linear model only. The old copula,
+functional, SBM, conditioning, and single-network experiment families have been
+removed, along with their YAML resolution, historical tests, notebooks, and
+result-processing layer. Current CSVs should be read through `src.analysis`.

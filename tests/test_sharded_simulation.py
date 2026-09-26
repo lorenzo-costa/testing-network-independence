@@ -5,6 +5,7 @@ import pandas as pd
 
 from src.helper_functions.simulation_functions import _build_seeded_scenarios
 import src.run_sim_script_shard as shard_script
+from src.helper_functions.simulation_output import CsvResultWriter
 
 
 def _seed_keys(tasks):
@@ -96,7 +97,7 @@ def test_shard_runner_uses_slurm_values_and_unique_output(monkeypatch, tmp_path)
 
 def test_csv_result_writer_flushes_bounded_batches(tmp_path):
     output = tmp_path / "streamed.csv"
-    writer = shard_script._CsvResultWriter(output, batch_size=2)
+    writer = CsvResultWriter(output, batch_size=2)
 
     for n in (10, 20, 30):
         writer.add({"value": n, "args": {"n": n}})

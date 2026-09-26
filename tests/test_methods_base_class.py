@@ -50,12 +50,10 @@ def latent_data(n=6):
     }
 
 
-def test_result_structure_contains_one_latent_and_observed_y():
+def test_result_structure_contains_test_and_latent_outputs():
     method = BaseMethod()
     method.Zhat = np.zeros((3, 1))
     method.Z = np.ones((3, 1))
-    method.Y = np.arange(3)[:, None]
-    method.X = np.array([[0], [1], [1]])
     method.pvalue = 0.5
     method.reject_null = False
     method.test_stat_estimate = 1.25
@@ -64,16 +62,12 @@ def test_result_structure_contains_one_latent_and_observed_y():
     assert set(result) == {
         "estimated_latent",
         "true_latent",
-        "observed_Y",
-        "conditioning_X",
         "p-value",
         "reject_null",
         "test_stat",
     }
     assert result["estimated_latent"] is method.Zhat
     assert result["true_latent"] is method.Z
-    assert result["observed_Y"] is method.Y
-    assert result["conditioning_X"] is method.X
 
 
 def test_estimation_base_embeds_y_and_every_x_network():
@@ -103,7 +97,7 @@ def test_estimation_base_true_latents_bypass_solver():
     assert (method.d_y, method.d_x) == (1, 2)
 
 
-def test_estimation_base_rejects_legacy_single_network_input():
+def test_estimation_base_rejects_incomplete_network_input():
     method = BaseEstimationMethod(use_true_latent=True)
     with pytest.raises(ValueError, match="Y and X"):
         method._process_input({"Z": np.ones((4, 2)), "Y": np.ones((4, 1))})

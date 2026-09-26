@@ -1,4 +1,4 @@
-"""Testing outcomes and latent-recovery metrics for single or multiple networks."""
+"""Testing outcomes and latent-recovery metrics for multiple networks."""
 
 import numpy as np
 from scipy.linalg import norm
@@ -23,71 +23,47 @@ def _concatenate_blocks(blocks):
 
 
 def _latent_pairs(results):
-    """Return Y, each X block, and concatenated X for named network results.
-
-    Named results contain Y, concatenated X, and X_blocks; an X list is also
-    accepted. Dictionaries without block metadata permit only Y/global errors.
-    Legacy unnamed matrices/sequences retain their original scalar/list form.
-    """
+    """Return Y, each X block, and concatenated X for named network results."""
     estimated = results.get("estimated_latent")
     truth = results.get("true_latent")
-    if isinstance(estimated, dict) or isinstance(truth, dict):
-        if estimated is not None and not isinstance(estimated, dict):
-            raise ValueError("Estimated and true latents must use the same format.")
-        if truth is not None and not isinstance(truth, dict):
-            raise ValueError("Estimated and true latents must use the same format.")
-        estimated = {} if estimated is None else estimated
-        truth = {} if truth is None else truth
-        est_blocks = _x_blocks(estimated, "estimated_latent")
-        true_blocks = _x_blocks(truth, "true_latent")
-        if est_blocks is not None and true_blocks is not None:
-            if len(est_blocks) != len(true_blocks):
-                raise ValueError(
-                    "Estimated and true X must have the same number of blocks."
-                )
-        count = (
-            len(est_blocks)
-            if est_blocks is not None
-            else (len(true_blocks) if true_blocks is not None else 0)
+    if estimated is not None and not isinstance(estimated, dict):
+        raise ValueError("estimated_latent must be a mapping or None.")
+    if truth is not None and not isinstance(truth, dict):
+        raise ValueError("true_latent must be a mapping or None.")
+    estimated = {} if estimated is None else estimated
+    truth = {} if truth is None else truth
+    est_blocks = _x_blocks(estimated, "estimated_latent")
+    true_blocks = _x_blocks(truth, "true_latent")
+    if (
+        est_blocks is not None
+        and true_blocks is not None
+        and len(est_blocks) != len(true_blocks)
+    ):
+        raise ValueError("Estimated and true X must have the same number of blocks.")
+    count = (
+        len(est_blocks)
+        if est_blocks is not None
+        else (len(true_blocks) if true_blocks is not None else 0)
+    )
+    pairs = [("Y", estimated.get("Y"), truth.get("Y"))]
+    pairs.extend(
+        (
+            f"X_{i + 1}",
+            None if est_blocks is None else est_blocks[i],
+            None if true_blocks is None else true_blocks[i],
         )
-        pairs = [("Y", estimated.get("Y"), truth.get("Y"))]
-        pairs.extend(
-            (
-                f"X_{i + 1}",
-                None if est_blocks is None else est_blocks[i],
-                None if true_blocks is None else true_blocks[i],
-            )
-            for i in range(count)
-        )
-        est_global = (
-            _concatenate_blocks(est_blocks)
-            if est_blocks is not None
-            else estimated.get("X")
-        )
-        true_global = (
-            _concatenate_blocks(true_blocks)
-            if true_blocks is not None
-            else truth.get("X")
-        )
-        pairs.append(("X_global", est_global, true_global))
-        return "named", pairs
-
-    if isinstance(estimated, (list, tuple)) or isinstance(truth, (list, tuple)):
-        reference = estimated if isinstance(estimated, (list, tuple)) else truth
-        estimated = [None] * len(reference) if estimated is None else estimated
-        truth = [None] * len(reference) if truth is None else truth
-        if not isinstance(estimated, (list, tuple)) or not isinstance(
-            truth, (list, tuple)
-        ):
-            raise ValueError("Estimated and true latent sequences must match.")
-        if not estimated or len(estimated) != len(truth):
-            raise ValueError(
-                "Latent sequences must be nonempty and have matching lengths."
-            )
-        return "sequence", [
-            (str(i), est, true) for i, (est, true) in enumerate(zip(estimated, truth))
-        ]
-    return "single", [("z", estimated, truth)]
+        for i in range(count)
+    )
+    est_global = (
+        _concatenate_blocks(est_blocks)
+        if est_blocks is not None
+        else estimated.get("X")
+    )
+    true_global = (
+        _concatenate_blocks(true_blocks) if true_blocks is not None else truth.get("X")
+    )
+    pairs.append(("X_global", est_global, true_global))
+    return pairs
 
 
 def _optional_boolean(value, name):
@@ -115,25 +91,17 @@ class BaseMetric:
 
 
 class _LatentPairMetric(BaseMetric):
-    """Apply a measure to each pair, returning NaN for missing/nonfinite data.
-
-    Multiple-network results return a dict keyed by Y, X_1, ..., X_global.
-    Legacy single matrices and unnamed sequences retain scalar/list outputs.
-    """
-
-    _single_as_list = False
+    """Apply a measure to each named latent pair."""
 
     def __call__(self, results, is_null=None):
-        kind, pairs = _latent_pairs(results)
-        values = {
+        return self._evaluate_pairs(_latent_pairs(results))
+
+    def _evaluate_pairs(self, pairs):
+        """Evaluate an already normalized set of latent pairs."""
+        return {
             name: self._evaluate_pair(estimated, truth)
             for name, estimated, truth in pairs
         }
-        if kind == "named":
-            return values
-        if kind == "sequence" or self._single_as_list:
-            return list(values.values())
-        return next(iter(values.values()))
 
     def _evaluate_pair(self, estimated, truth):
         if estimated is None or truth is None:
@@ -160,8 +128,8 @@ class ReturnMetric(BaseMetric):
     """Return raw results; Y/X select true Y and concatenated true X.
 
     Estimated values (including individual X_blocks) are available through
-    only_return="estimated". Legacy observed_Y/conditioning_X remain supported.
-    Unlike numeric error metrics, missing raw arrays are returned as None.
+    only_return="estimated". Unlike numeric error metrics, missing raw arrays
+    are returned as None.
     """
 
     def __init__(self, only_return=None):
@@ -170,18 +138,14 @@ class ReturnMetric(BaseMetric):
     def __call__(self, results, is_null=None):
         estimated = results.get("estimated_latent")
         truth = results.get("true_latent")
-        if isinstance(estimated, dict) or isinstance(truth, dict):
-            true_values = {} if truth is None else truth
-            y = true_values.get("Y")
-            blocks = _x_blocks(true_values, "true_latent")
-            x = (
-                _concatenate_blocks(blocks)
-                if blocks is not None
-                else true_values.get("X")
-            )
-        else:
-            y = results.get("observed_Y")
-            x = results.get("conditioning_X")
+        if estimated is not None and not isinstance(estimated, dict):
+            raise ValueError("estimated_latent must be a mapping or None.")
+        if truth is not None and not isinstance(truth, dict):
+            raise ValueError("true_latent must be a mapping or None.")
+        true_values = {} if truth is None else truth
+        y = true_values.get("Y")
+        blocks = _x_blocks(true_values, "true_latent")
+        x = _concatenate_blocks(blocks) if blocks is not None else true_values.get("X")
         values = {
             "estimated": estimated,
             "truth": truth,
@@ -255,11 +219,8 @@ class RelativeFrobeniusNorm(_LatentPairMetric):
 class RobustRelativeProcrustesDistance(_LatentPairMetric):
     """Median-centered, rotation-aligned L1 relative error for each latent pair.
 
-    Different feature dimensions are zero-padded. The original rotation-only
-    alignment and single-matrix list return convention are preserved.
+    Different feature dimensions are zero-padded before rotation alignment.
     """
-
-    _single_as_list = True
 
     def _compute_pair(self, estimated, truth):
         d_true, d_est = truth.shape[1], estimated.shape[1]
@@ -333,7 +294,6 @@ class ComputeAll(BaseMetric):
     Named latent results produce flat fields with suffixes Y, X_1, ...,
     X_global. Global errors compare concatenated matrices directly.
     Missing truth or null labels produce NaN for the affected metrics.
-    Single-network results retain the legacy *_z fields.
     """
 
     def __init__(self, gram_matrix=True):
@@ -354,20 +314,15 @@ class ComputeAll(BaseMetric):
             results.get("estimated_latent") is not None
             or results.get("true_latent") is not None
         ):
+            pairs = _latent_pairs(results)
             for prefix, metric in (
                 ("RelativeFrobeniusNorm", RelativeFrobeniusNorm(self.gram_matrix)),
                 ("ProcrustesDistance", RobustRelativeProcrustesDistance()),
             ):
-                values = metric(results)
-                if isinstance(values, dict):
-                    out.update(
-                        {f"{prefix}_{name}": value for name, value in values.items()}
-                    )
-                else:
-                    # Preserve the earlier estimation-only result contract.
-                    out[f"{prefix}_z"] = (
-                        values[0] if prefix == "ProcrustesDistance" else values
-                    )
+                values = metric._evaluate_pairs(pairs)
+                out.update(
+                    {f"{prefix}_{name}": value for name, value in values.items()}
+                )
         return out
 
     def get_name(self):

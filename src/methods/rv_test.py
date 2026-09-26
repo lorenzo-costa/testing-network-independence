@@ -8,11 +8,6 @@ from ..test_functions.rv_cca_coefficients import (
 )
 from ..helper_functions.imhof import imhof
 
-import sys
-import os
-
-sys.path.append(os.path.abspath(os.path.join(os.getcwd(), "..")))
-
 
 class EstimateRV(BaseEstimationMethod):
     """Return the RV coefficient between Y and concatenated X network latents."""
@@ -144,9 +139,7 @@ class RVTest(BasePermutationTest):
                 "Invalid approximation method. Choose 'permutation' or 'asymptotic'."
             )
 
-        self.reject_null = (
-            None if self.pvalue == -1 else bool(self.pvalue < self.alpha)
-        )
+        self.reject_null = None if self.pvalue == -1 else bool(self.pvalue < self.alpha)
 
         return
 
@@ -202,9 +195,7 @@ class RVTest(BasePermutationTest):
             GX = X @ X.T
             W_gram = GY * GX
             W_gram_mean = W_gram.mean(axis=0, keepdims=True)
-            W_gram = (
-                W_gram - W_gram_mean - W_gram_mean.T + W_gram_mean.mean()
-            )
+            W_gram = W_gram - W_gram_mean - W_gram_mean.T + W_gram_mean.mean()
             Omega_gram = W_gram / n
             hat_lambda = np.linalg.eigvalsh(Omega_gram)
 

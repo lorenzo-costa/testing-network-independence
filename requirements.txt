@@ -2,9 +2,7 @@ numpy
 scipy
 pandas
 matplotlib
-seaborn
 tqdm
-h5py
 numba
-hyppo
 threadpoolctl
+PyYAML
