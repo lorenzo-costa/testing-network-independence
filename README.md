@@ -62,12 +62,13 @@ Their result dictionaries contain `estimated_latent`, `true_latent`, `p-value`,
 and `X_blocks`. Missing truth is supported. Global X recovery errors compare
 concatenated matrices; they are not averages of block errors.
 
-RV and CCA cache invariant work across permutations. Distance correlation
-supports dcorr and MGC; MRQAP works on adjacency matrices. Their distinct
-statistical rules remain in the concrete implementations. PGD initialization and
-public entry points remain in `src/solvers/MaMa_uuuuu.py`; numerical loops live in
-`_pgd_backends.py`. Automatic backend selection prefers JAX, then Numba, then
-NumPy. NumPy runs a fixed iteration count; Numba/JAX can stop early.
+RV, CCA, and graph correlation cache invariant work across permutations.
+Distance correlation supports dcorr and MGC; MRQAP works on adjacency matrices.
+Their distinct statistical rules remain in the concrete implementations. PGD
+initialization and public entry points remain in `src/solvers/MaMa_uuuuu.py`;
+numerical loops live in `_pgd_backends.py`. Automatic backend selection prefers
+JAX, then Numba, then NumPy. NumPy runs a fixed iteration count; Numba/JAX can
+stop early.
 
 ## Configured runs
 

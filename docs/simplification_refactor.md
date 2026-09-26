@@ -20,5 +20,5 @@ removed rather than kept as unsupported branches.
 
 The refactor keeps public method and solver locations, the existing RNG order,
 parallel shard behavior, numerical backends, and CSV metadata flow for the
-linear-model path. Validation: `python -m pytest -q` passes 645 current-path
+linear-model path. Validation: `python -m pytest -q` passes 637 current-path
 tests.

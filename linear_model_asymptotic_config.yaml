@@ -10,13 +10,13 @@ simulation:
   nsim: 200
   seed: 2
 
-  n: [50, 100, 200]
+  n: [500, 1000]
   p: [5, 10, 25, 50, 100]
   d_x: [5]
   d_y: [5]
 
   # snr=0 uses B=0 (the null); positive SNRs sample and rescale B.
-  snr: [0, 0.1, 0.25, 0.5, 1]
+  snr: [0]
   alpha: [0.05]
   edge_var: [2]
 
@@ -28,10 +28,6 @@ simulation:
 methods:
   npermutations: [400]
   list:
-    - name: MRQAP
-      kwargs:
-        permutation_strategy: y_permutation
-        batch_size: 32
 
     - name: RVTest
       kwargs:

@@ -14,7 +14,13 @@ from .configuration.linear_model import build_linear_model_rows
 from .configuration.validation import _as_sweep, _resolve_linear_model_simulation
 from .dgp import BernoulliNetwork, GaussianNetwork
 from .helper_functions.multiple_network_factories import make_network
-from .methods import CanonicalCorrelationTest, DistanceCorrelationTest, MRQAP, RVTest
+from .methods import (
+    CanonicalCorrelationTest,
+    DistanceCorrelationTest,
+    GraphCorrelationTest,
+    MRQAP,
+    RVTest,
+)
 from .metrics import ComputeAll
 from .solvers.MaMa_uuuuu import pgd_fit_wrapper
 from .solvers.weighted_network import ASE
@@ -35,6 +41,7 @@ METHOD_REGISTRY = {
     "RVTest": RVTest,
     "DiffusionCorrelation": DistanceCorrelationTest,
     "DistanceCorrelationTest": DistanceCorrelationTest,
+    "GraphCorrelationTest": GraphCorrelationTest,
     "CanonicalCorrelation": CanonicalCorrelationTest,
     "CanonicalCorrelationTest": CanonicalCorrelationTest,
     "MRQAP": MRQAP,
@@ -70,9 +77,7 @@ def _resolve_methods_block(methods_cfg: dict) -> dict:
         "use_true_latent": (
             None
             if methods_cfg.get("use_true_latent") is None
-            else _as_sweep(
-                methods_cfg["use_true_latent"], "methods.use_true_latent"
-            )
+            else _as_sweep(methods_cfg["use_true_latent"], "methods.use_true_latent")
         ),
     }
 
@@ -119,9 +124,7 @@ def load_config(path: str = "config.yaml") -> dict:
         "rng": np.random.default_rng(simulation["seed"]),
         "methods": _resolve_methods_block(raw.get("methods")),
         "setups": [_resolve_linear_model_setup(entry) for entry in raw["setups"]],
-        "metrics": [ComputeAll()]
-        if raw.get("metrics", {}).get("compute_all")
-        else [],
+        "metrics": [ComputeAll()] if raw.get("metrics", {}).get("compute_all") else [],
         "output": raw.get("output"),
     }
 

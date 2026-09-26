@@ -1,14 +1,20 @@
-"""Test based on graph correlation from Wen et al. (2023) RKHS-based Latent 
-Position Random Graph Correlation"""
+"""Permutation test based on latent-position graph correlation."""
 
-import numpy as np
 from ._base_class import BasePermutationTest
-from ..test_functions.graph_correlation import gcor
+from ..test_functions.graph_correlation import (
+    _gcor_from_x_cache,
+    _gcor_x_cache,
+    gcor,
+)
 
-class GraphCorrelation(BasePermutationTest):
-    """Testing independence using Graph Correlation
-    
-    Reference: Wen et al. (2023) RKHS-based Latent Position Random Graph Correlation
+from ..solvers import ASE
+
+
+class GraphCorrelationTest(BasePermutationTest):
+    """Test independence using graph correlation.
+
+    Reference: Wen et al. (2023), RKHS-based Latent Position Random Graph
+    Correlation.
 
     Parameters
     ----------
@@ -24,7 +30,7 @@ class GraphCorrelation(BasePermutationTest):
         Random number generator for reproducibility.
     n_jobs : int
         Number of permutation worker processes. ``-1`` uses all available CPUs.
-     batch_size : int
+    batch_size : int
         Target number of work batches per permutation worker.
     verbose : bool
         Whether to display permutation progress.
@@ -52,7 +58,7 @@ class GraphCorrelation(BasePermutationTest):
             alpha=alpha,
             permutation_type=permutation_type,
             use_true_latent=use_true_latent,
-            solver=solver,
+            solver=ASE,
             test_function=gcor,
             rng=rng,
             one_sided=True,
@@ -72,16 +78,17 @@ class GraphCorrelation(BasePermutationTest):
         """
 
         self._process_input(data)
-
+        self._centered_x_gram, self._x_graph_variance = _gcor_x_cache(self.Xhat)
         self._fit_permutation()
-
         self.reject_null = bool(self.pvalue < self.alpha)
 
-        return
-
     def _evaluate_test_statistic(self, Y, X, rng):
-        """Evaluate Graph Correlation while reusing the fixed X-side decomposition."""
-        return gcor(Y, X)
+        """Evaluate graph correlation using the fixed X-side cache."""
+        return _gcor_from_x_cache(
+            Y,
+            self._centered_x_gram,
+            self._x_graph_variance,
+        )
 
     def get_name(self):
         return "GraphCorrelation_PermutationTest_" + self.permutation_type

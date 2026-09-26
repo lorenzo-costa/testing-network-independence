@@ -5,6 +5,7 @@ METHOD_LABELS = {
     "RVTest_asymptotic_independence": "RV (asymptotic — independence)",
     "RVTest_asymptotic_zero_covariance": ("RV (asymptotic — zero covariance)"),
     "CCA": "CCA",
+    "GC": "Graph correlation",
     "DC": "MGC",
     "MRQAP": "MRQAP (adjacency)",
 }
@@ -14,6 +15,7 @@ COLORS = {
     "RVTest_asymptotic_independence": "#E69F00",
     "RVTest_asymptotic_zero_covariance": "#D55E00",
     "CCA": "#0072B2",
+    "GC": "#56B4E9",
     "DC": "#009E73",
     "MRQAP": "#CC79A7",
 }
@@ -23,6 +25,7 @@ MARKERS = {
     "RVTest_asymptotic_independence": "D",
     "RVTest_asymptotic_zero_covariance": "X",
     "CCA": "s",
+    "GC": "P",
     "DC": "^",
     "MRQAP": "v",
 }
@@ -32,6 +35,7 @@ LINESTYLES = {
     "RVTest_asymptotic_independence": "--",
     "RVTest_asymptotic_zero_covariance": ":",
     "CCA": "-",
+    "GC": "-",
     "DC": "-",
     "MRQAP": "-",
 }

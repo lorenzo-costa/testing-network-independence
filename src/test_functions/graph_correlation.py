@@ -39,39 +39,66 @@ def gcov(K_tilde, L_tilde) -> float:
     return float(np.sum(K_tilde * L_tilde)) / (n * (n - 3))
 
 
-def gcor(X, Z):
+def _gcor_x_cache(X: np.ndarray) -> tuple[np.ndarray, float]:
+    """Precompute the centered Gram matrix and graph variance for fixed X."""
+    X = np.asarray(X, dtype=float)
+    if X.ndim != 2:
+        raise ValueError("X must be a two-dimensional latent-position matrix.")
+    if X.shape[0] < 4:
+        raise ValueError("Need n >= 4 for graph correlation to be defined.")
+    if not np.isfinite(X).all():
+        raise ValueError("X must contain only finite values.")
+
+    centered_gram = u_center(X @ X.T)
+    variance = gcov(centered_gram, centered_gram)
+    return centered_gram, variance
+
+
+def _gcor_from_x_cache(
+    Y: np.ndarray,
+    centered_x_gram: np.ndarray,
+    x_variance: float,
+) -> float:
+    """Compute graph correlation while reusing the fixed X-side quantities."""
+    Y = np.asarray(Y, dtype=float)
+    centered_x_gram = np.asarray(centered_x_gram, dtype=float)
+    if Y.ndim != 2:
+        raise ValueError("Y must be a two-dimensional latent-position matrix.")
+    n = Y.shape[0]
+    if n < 4:
+        raise ValueError("Need n >= 4 for graph correlation to be defined.")
+    if centered_x_gram.shape != (n, n):
+        raise ValueError("Y and the cached X quantities must have the same n.")
+    if not np.isfinite(Y).all():
+        raise ValueError("Y must contain only finite values.")
+
+    centered_y_gram = u_center(Y @ Y.T)
+    covariance = gcov(centered_y_gram, centered_x_gram)
+    y_variance = gcov(centered_y_gram, centered_y_gram)
+    denominator = np.sqrt(y_variance * x_variance)
+    if denominator <= 0 or not np.isfinite(denominator):
+        raise ValueError(
+            "At least one graph variance is non-positive; graph correlation "
+            "is undefined."
+        )
+    return covariance / denominator
+
+
+def gcor(Y, X):
     """
     Compute the sample graph correlation gCor_n(G1, G2).
 
     Parameters
     ----------
+    Y : np.ndarray, shape (n, d_Y)
+        Latent positions for the response graph.
     X : np.ndarray, shape (n, d_X)
-        Latent positions for graph A.
-    Z : np.ndarray, shape (n, d_Z)
-        Latent positions for graph B.
+        Latent positions for the predictor graphs.
 
     Returns
     -------
     float:
         The sample graph correlation between the two graphs.
     """
-    assert X.shape[0] == Z.shape[0], "X and Z must have the same n"
-    n = X.shape[0]
-    assert n >= 4, "Need n ≥ 4 for gCor to be defined"
-
-    # Rank-d kernel matrices
-    K_hat = X @ X.T  # (n, n)
-    L_hat = Z @ Z.T  # (n, n)
-
-    # U-center
-    K_tilde = u_center(K_hat)
-    L_tilde = u_center(L_hat)
-
-    cov = gcov(K_tilde, L_tilde)
-    var1 = gcov(K_tilde, K_tilde)
-    var2 = gcov(L_tilde, L_tilde)
-
-    denom = np.sqrt(var1 * var2)
-    if denom <= 0:
-        raise ValueError("At least one graph variance is non-positive; gCor undefined.")
-    return cov / denom
+    centered_x_gram, x_variance = _gcor_x_cache(X)
+    return _gcor_from_x_cache(Y, centered_x_gram, x_variance)

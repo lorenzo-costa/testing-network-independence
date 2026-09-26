@@ -97,6 +97,7 @@ METHOD_ORDER = (
     "RVTest_asymptotic_independence",
     "RVTest_asymptotic_zero_covariance",
     "CCA",
+    "GC",
     "DC",
     "MRQAP",
 )
@@ -557,6 +558,8 @@ def linear_model_method_label(config: Mapping[str, Any]) -> str:
         return f"RVTest_{approximation}"
     if method == "CanonicalCorrelationTest":
         return "CCA"
+    if method == "GraphCorrelationTest":
+        return "GC"
     if method == "DistanceCorrelationTest":
         return "DC"
     return method
