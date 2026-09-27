@@ -1,0 +1,93 @@
+# Multiple-network linear-model experiment comparing the adjacency-level global
+# MRQAP permutation test with both RV asymptotic null models.
+#
+# Warning: the RV asymptotic approximation is poorly calibrated when p*d_x is
+# large relative to n. Use this config for comparison, not as the primary result.
+
+experiment_type: linear_model
+
+simulation:
+  nsim: 2
+  seed: 2
+
+  n: [50, 100, 200]
+  p: [1]
+  d_x: [5]
+  d_y: [5]
+
+  # snr=0 uses B=0 (the null); positive SNRs sample and rescale B.
+  alpha: [0.05]
+  edge_var: [2]
+
+  parallel: true
+  n_jobs: -1
+  batch_size: 32
+  blas_threads: 1
+
+methods:
+  npermutations: [400]
+  list:
+    - name: RVTest
+      kwargs:
+        approximation: permutation
+        permutation_type: latent
+        n_jobs: 1
+
+    - name: CanonicalCorrelationTest
+      kwargs:
+        permutation_type: latent
+        n_jobs: 1
+
+    - name: DistanceCorrelationTest
+      kwargs:
+        test_method: mgc
+        permutation_type: latent
+        n_jobs: 1
+    
+    - name: RVTest
+      kwargs:
+        approximation: asymptotic
+        asymptotic_null: zero_covariance
+    
+    - name: RVTest
+      kwargs:
+        approximation: asymptotic
+        asymptotic_null: independence
+    
+    - name: MRQAP
+      kwargs:
+        permutation_strategy: y_permutation
+        batch_size: 32
+
+setups:
+  - dgp: GaussianNetwork
+    solver: ASE
+    latent_sampler: CopulaSampler
+    dgp_kwargs:
+      copula_model: mixture_uniform
+      marginals: gaussian
+      rho: 0
+      copula_params:
+        weights: [0.5, 0.5]
+        correlations: [0.8, -0.8]
+
+  - dgp: BernoulliNetwork
+    solver: pgd_fit_wrapper
+    latent_sampler: CopulaSampler
+    dgp_kwargs:
+      rdpg: false
+      copula_model: mixture_uniform
+      marginals: gaussian
+      rho: 0
+      copula_params:
+        weights: [0.5, 0.5]
+        correlations: [0.8, -0.8]
+    solver_kwargs:
+      backend: numpy
+
+metrics:
+  compute_all: true
+
+output:
+  results_dir: results
+  file_prefix: linear_model_asymptotic_results

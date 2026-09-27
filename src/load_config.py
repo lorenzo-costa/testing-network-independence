@@ -14,6 +14,7 @@ from .configuration.linear_model import build_linear_model_rows
 from .configuration.validation import _as_sweep, _resolve_linear_model_simulation
 from .dgp import BernoulliNetwork, GaussianNetwork
 from .helper_functions.multiple_network_factories import make_network
+from .latent_samplers import CopulaSampler, MultipleNetworksSampler
 from .methods import (
     CanonicalCorrelationTest,
     DistanceCorrelationTest,
@@ -34,6 +35,11 @@ DGP_REGISTRY = {
 SOLVER_REGISTRY = {
     "ASE": ASE,
     "pgd_fit_wrapper": pgd_fit_wrapper,
+}
+
+LATENT_SAMPLER_REGISTRY = {
+    "MultipleNetworksSampler": MultipleNetworksSampler,
+    "CopulaSampler": CopulaSampler,
 }
 
 METHOD_REGISTRY = {
@@ -94,6 +100,15 @@ def _resolve_linear_model_setup(entry: dict) -> tuple:
             "Each setup must name a registered 'dgp' and 'solver'"
         ) from error
 
+    sampler_name = entry.get("latent_sampler", "MultipleNetworksSampler")
+    try:
+        latent_sampler = LATENT_SAMPLER_REGISTRY[sampler_name]
+    except KeyError as error:
+        available = ", ".join(sorted(LATENT_SAMPLER_REGISTRY))
+        raise ValueError(
+            f"Unknown latent_sampler: {sampler_name!r}. Available names: {available}."
+        ) from error
+
     dgp_kwargs = entry.get("dgp_kwargs") or {}
     solver_kwargs = entry.get("solver_kwargs") or {}
     if not isinstance(dgp_kwargs, dict):
@@ -101,7 +116,12 @@ def _resolve_linear_model_setup(entry: dict) -> tuple:
     if not isinstance(solver_kwargs, dict):
         raise TypeError("setup.solver_kwargs must be a mapping")
 
-    dgp_factory = partial(make_network, dgp_cls, network_kwargs=dgp_kwargs)
+    dgp_factory = partial(
+        make_network,
+        dgp_cls,
+        latent_sampler=latent_sampler,
+        network_kwargs=dgp_kwargs,
+    )
     return dgp_factory, partial(solver, **solver_kwargs) if solver_kwargs else solver
 
 
@@ -117,13 +137,20 @@ def load_config(path: str = "config.yaml") -> dict:
     if "setups" not in raw or not isinstance(raw["setups"], list):
         raise ValueError("linear_model configurations require a setups list")
 
-    simulation = _resolve_linear_model_simulation(raw.get("simulation"))
+    setups = [_resolve_linear_model_setup(entry) for entry in raw["setups"]]
+    requires_signal = any(
+        setup[0].keywords["latent_sampler"] is MultipleNetworksSampler
+        for setup in setups
+    )
+    simulation = _resolve_linear_model_simulation(
+        raw.get("simulation"), require_signal_parameter=requires_signal
+    )
     return {
         "experiment_type": "linear_model",
         "simulation": simulation,
         "rng": np.random.default_rng(simulation["seed"]),
         "methods": _resolve_methods_block(raw.get("methods")),
-        "setups": [_resolve_linear_model_setup(entry) for entry in raw["setups"]],
+        "setups": setups,
         "metrics": [ComputeAll()] if raw.get("metrics", {}).get("compute_all") else [],
         "output": raw.get("output"),
     }
@@ -153,6 +180,7 @@ def flatten_args_columns(df, extra_cols: dict | None = None):
         ("b_active_network_fraction", "b_active_network_fraction"),
         ("x_network_correlation", "x_network_correlation"),
         ("eps_distribution", "eps_distribution"),
+        ("latent_sampler", "latent_sampler"),
         ("hypothesis", "hypothesis"),
         ("edge_var", "edge_var"),
         ("approximation", "approximation"),

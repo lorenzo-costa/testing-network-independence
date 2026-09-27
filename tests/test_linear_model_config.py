@@ -6,6 +6,7 @@ import pytest
 
 from src.dgp import BernoulliNetwork, GaussianNetwork
 from src.helper_functions.simulation_functions import run_scenario
+from src.latent_samplers import CopulaSampler
 from src.load_config import (
     _resolve_linear_model_simulation,
     build_factorial_design,
@@ -16,6 +17,90 @@ from src.methods import CanonicalCorrelationTest, DistanceCorrelationTest, MRQAP
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_copula_sampler_is_selectable_from_yaml_without_linear_signal(tmp_path):
+    config_path = tmp_path / "copula.yaml"
+    config_path.write_text(
+        """
+experiment_type: linear_model
+simulation:
+  nsim: 1
+  seed: 7
+  n: [200]
+  p: [1]
+  d_x: [1]
+  d_y: [1]
+  edge_var: [0]
+methods:
+  npermutations: [2]
+  use_true_latent: [true]
+  list:
+    - name: RVTest
+      kwargs:
+        approximation: permutation
+setups:
+  - dgp: GaussianNetwork
+    solver: ASE
+    latent_sampler: CopulaSampler
+    dgp_kwargs:
+      copula_model: mixture_uniform
+      marginals: gaussian
+      rho: 0
+      copula_params:
+        weights: [0.5, 0.5]
+        correlations: [0.8, -0.8]
+metrics:
+  compute_all: true
+output: {}
+""",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+    row = build_factorial_design(config)[0]
+    factory = row["setup"][0]
+
+    assert factory.keywords["latent_sampler"] is CopulaSampler
+    assert "B" not in row
+    assert "snr" not in row
+    assert row["hypothesis"] == "H1"
+
+    network = factory(**row, rng=np.random.default_rng(8))
+    data = network.generate()
+    assert isinstance(network.latent_sampler, CopulaSampler)
+    assert set(data) == {"A_Y", "A_X", "Y", "X"}
+    assert len(data["X"]) == 1
+    assert network.is_null is False
+
+    result = run_scenario(
+        config["metrics"],
+        build_factorial_design(config)[0],
+        seed=np.random.SeedSequence(9),
+    )
+    assert np.isfinite(result["ComputeAll"]["Rejection"])
+    assert result["args"]["hypothesis"] == "H1"
+    assert result["args"]["latent_sampler"] == "CopulaSampler"
+
+
+def test_unknown_yaml_latent_sampler_is_rejected(tmp_path):
+    config_path = tmp_path / "unknown_sampler.yaml"
+    config_path.write_text(
+        """
+experiment_type: linear_model
+simulation: {nsim: 1, seed: 1, n: 10, p: 1, d_x: 1, d_y: 1}
+methods:
+  list: [{name: RVTest}]
+setups:
+  - dgp: GaussianNetwork
+    solver: ASE
+    latent_sampler: MissingSampler
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Unknown latent_sampler"):
+        load_config(config_path)
 
 
 def test_linear_model_config_builds_requested_factorial_sweep():

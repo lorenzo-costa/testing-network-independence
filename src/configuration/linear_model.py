@@ -2,6 +2,7 @@
 
 import numpy as np
 
+from ..latent_samplers import CopulaSampler
 from .sweeps import expand_sweeps
 
 
@@ -29,6 +30,17 @@ def build_linear_model_rows(cfg):
 
     rows = expand_sweeps(sweeps)
     for row in rows:
+        latent_sampler = row["setup"][0].keywords["latent_sampler"]
+        if latent_sampler is CopulaSampler:
+            sampler_kwargs = row["setup"][0].keywords["network_kwargs"]
+            is_null = CopulaSampler.is_independence_configuration(
+                sampler_kwargs.get("copula_model"),
+                sampler_kwargs.get("rho", 0),
+                sampler_kwargs.get("copula_params", {}),
+                sampler_kwargs.get("cross_covariance"),
+            )
+            row["hypothesis"] = "H0" if is_null else "H1"
+            continue
         fraction = row.get("b_active_network_fraction", 1)
         active_count = int(np.floor(fraction * row["p"] + 0.5))
         is_null = active_count == 0 or row.get("snr") == 0

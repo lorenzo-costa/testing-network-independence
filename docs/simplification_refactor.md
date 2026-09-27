@@ -8,9 +8,8 @@ linear-model YAML → configuration grid → simulation → methods/metrics → 
 
 `src/load_config.py` accepts only `experiment_type: linear_model`. It resolves
 the two network types, supported solvers, and methods into an ordered factorial
-grid. `src/latent_samplers/` contains only `MultipleNetworksSampler`, which
-generates the predictor blocks and response latent positions used by the active
-data-generating process.
+grid. `src/latent_samplers/` contains `MultipleNetworksSampler` for the linear
+latent model and `CopulaSampler` for YAML-selectable nonlinear dependence.
 
 `src/analysis/` owns shard I/O, parsing current runner output, preprocessing,
 aggregation, and generic plotting. `results/visualise_linear_model.py` contains

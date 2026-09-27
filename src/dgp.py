@@ -59,7 +59,7 @@ class GaussianNetwork:
         rng=None,
         symmetric=True,
         allow_self_loops=False,
-        latent_sampler=None,
+        latent_sampler=MultipleNetworksSampler,
         **kwargs):
         
         self.edge_var = _finite_scalar(edge_var, "edge_var", nonnegative=True)
@@ -76,6 +76,7 @@ class GaussianNetwork:
         self.p = self.latent_sampler.p
         self.d_x = self.latent_sampler.d_x
         self.d_y = self.latent_sampler.d_y
+        self.snr = getattr(self.latent_sampler, "snr", None)
         self.symmetric = symmetric
         self.allow_self_loops = allow_self_loops
 
@@ -94,7 +95,8 @@ class GaussianNetwork:
         expected_A = latent @ latent.T
         sampled = self.rng.normal(loc=expected_A, scale=np.sqrt(self.edge_var))
         if self.symmetric:
-            sampled = (sampled + sampled.T) / 2
+            upper = np.triu(sampled, k=1)
+            sampled = upper + upper.T
 
         # Remove self-loops if requested
         if not self.allow_self_loops:
@@ -114,13 +116,17 @@ class GaussianNetwork:
             ``(d_y, p * d_x)``. X networks preserve the latent block order.
         """
         latent = self.latent_sampler.sample_latent()
-        return {
+        if hasattr(self.latent_sampler, "is_null"):
+            self.is_null = self.latent_sampler.is_null
+        result = {
             "A_Y": self._sample_adjacency(latent["Y"]),
             "A_X": [self._sample_adjacency(x) for x in latent["X"]],
             "Y": latent["Y"],
             "X": latent["X"],
-            # "B": latent["B"],
         }
+        if "B" in latent:
+            result["B"] = latent["B"]
+        return result
 
 
 class BernoulliNetwork(GaussianNetwork):
@@ -185,7 +191,7 @@ class BernoulliNetwork(GaussianNetwork):
             rdpg=False,
             rng=None,
             symmetric=True,
-            latent_sampler=None,
+            latent_sampler=MultipleNetworksSampler,
             allow_self_loops=False,
             **kwargs):
         if not isinstance(rdpg, (bool, np.bool_)):
@@ -231,7 +237,8 @@ class BernoulliNetwork(GaussianNetwork):
             )
         sampled = self.rng.binomial(1, probabilities)
         if self.symmetric:
-            sampled = (sampled + sampled.T) / 2
+            upper = np.triu(sampled, k=1)
+            sampled = upper + upper.T
 
         # Remove self-loops if requested
         if not self.allow_self_loops:

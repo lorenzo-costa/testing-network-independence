@@ -14,7 +14,9 @@ def _as_sweep(value, name: str) -> list:
     return [value]
 
 
-def _resolve_linear_model_simulation(simulation_cfg: dict) -> dict:
+def _resolve_linear_model_simulation(
+    simulation_cfg: dict, *, require_signal_parameter=True
+) -> dict:
     """Validate and normalize the multiple-network linear-model sweep."""
     if not isinstance(simulation_cfg, dict):
         raise TypeError("simulation must be a mapping")
@@ -29,7 +31,7 @@ def _resolve_linear_model_simulation(simulation_cfg: dict) -> dict:
     signal_parameters = [
         name for name in ("snr", "b_active_network_fraction") if name in simulation_cfg
     ]
-    if not signal_parameters:
+    if require_signal_parameter and not signal_parameters:
         raise ValueError(
             "linear_model simulation must specify at least one of snr or "
             "b_active_network_fraction"

@@ -1,9 +1,10 @@
 # Network independence testing
 
 This repository simulates a response network **Y** and **p predictor networks X**,
-then tests their dependence using latent positions or adjacency matrices. The
-current latent model is `Y = concatenate(X_blocks) @ B.T + epsilon`. Network
-observations are Gaussian weighted or Bernoulli binary.
+then tests their dependence using latent positions or adjacency matrices.
+Latents can follow the linear model
+`Y = concatenate(X_blocks) @ B.T + epsilon` or a configured copula model.
+Network observations are Gaussian weighted or Bernoulli binary.
 
 ## Start here
 
@@ -45,7 +46,7 @@ run 2,400 scenarios; pass smaller parameters when exploring it.
 | Stage | Read | Responsibility |
 |---|---|---|
 | Example | `run_multiple_networks_example.py` | An explicit experiment from design to results |
-| Data | `src/dgp.py`, `src/latent_samplers/multiple_networks.py` | Latent blocks, coefficients, noise, and network draws |
+| Data | `src/dgp.py`, `src/latent_samplers/` | Linear/copula latents and network draws |
 | Method inputs | `src/methods/_network_input.py` | Validate Y/X shapes, embed each network, assemble results |
 | Inference | `src/methods/_base_class.py`, concrete method files | Permutation orchestration and test statistics |
 | Metrics | `src/metrics.py` | Testing outcomes and latent recovery errors |
@@ -107,6 +108,35 @@ including separate null rows for each requested target. Fraction-only sweeps
 leave coefficients uncalibrated. See `linear_model_active_fraction_config.yaml`.
 With zero-mean Gaussian coefficients and positive target SNR, calibration
 cancels changes in their initial overall variance.
+
+Copula experiments select the sampler on an individual setup. They do not need
+`snr`, `B`, or `b_active_network_fraction`:
+
+```yaml
+simulation:
+  nsim: 200
+  seed: 2
+  n: [200]
+  p: [1]
+  d_x: [1]
+  d_y: [1]
+
+setups:
+  - dgp: GaussianNetwork
+    solver: ASE
+    latent_sampler: CopulaSampler
+    dgp_kwargs:
+      copula_model: mixture_uniform
+      marginals: gaussian
+      rho: 0
+      copula_params:
+        weights: [0.5, 0.5]
+        correlations: [0.8, -0.8]
+```
+
+This balanced mixture has zero population Pearson correlation but is dependent.
+Copula configurations currently use `p: 1`; `p` is still passed through the
+sampler interface so support can be extended without changing the YAML schema.
 
 ## Results and plots
 

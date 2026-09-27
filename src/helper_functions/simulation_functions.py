@@ -23,6 +23,7 @@ def _generate_scenario_data(args):
     args["dgp_name"] = dgp.get_name()
     latent_sampler = getattr(dgp, "latent_sampler", None)
     if latent_sampler is not None:
+        args["latent_sampler"] = type(latent_sampler).__name__
         args["x_network_correlation"] = getattr(
             latent_sampler,
             "x_network_correlation",

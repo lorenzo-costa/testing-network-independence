@@ -77,7 +77,32 @@ class CopulaSampler:
 
         self._validate_args_copula()
 
-        self.is_null = True
+        self.is_null = self._is_independence_model()
+
+    def _is_independence_model(self):
+        """Return whether the configured copula is the independence copula."""
+        return self.is_independence_configuration(
+            self.copula_model,
+            self.rho,
+            self.copula_params,
+            self.cross_covariance,
+        )
+
+    @staticmethod
+    def is_independence_configuration(
+        copula_model, rho, copula_params, cross_covariance=None
+    ):
+        """Classify null configurations without drawing latent positions."""
+        if cross_covariance is not None and not np.allclose(cross_covariance, 0):
+            return False
+        if copula_model == "gaussian":
+            return rho == 0
+        if copula_model == "mixture_uniform":
+            correlations = np.asarray(copula_params.get("correlations", []))
+            return bool(correlations.size and np.all(correlations == 0))
+        # A t copula retains shared-scale dependence at rho=0. The supported
+        # Archimedean copulas are likewise configured only as alternatives.
+        return False
 
     def _validate_args_copula(self):
         if self.copula_model == "student_t" and "df" not in self.copula_params:
@@ -358,12 +383,7 @@ class CopulaSampler:
             u_x = ndtr(x_full)
             u_y = ndtr(y_full)
 
-            self.is_null = (correlations == 0).all()
-
-            u_x = ndtr(x_full)
-            u_y = ndtr(y_full)
-
-            self.is_null = False
+            self.is_null = self._is_independence_model()
 
         else:
             raise NotImplementedError(f"Copula {self.copula_model} not implemented")

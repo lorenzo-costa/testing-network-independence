@@ -138,7 +138,8 @@ class MultipleNetworksSampler:
         b_active_network_fraction = None,
         x_distribution = "multivariate_gaussian",
         eps_distribution = "multivariate_gaussian",
-        b_distribution = "gaussian"):
+        b_distribution = "gaussian",
+        **kwargs):
         
         self.n = self._positive_integer(n, "n")
         self.p = self._positive_integer(p, "p")

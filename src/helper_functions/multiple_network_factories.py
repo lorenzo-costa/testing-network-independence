@@ -1,6 +1,7 @@
 """Importable DGP factories for spawned simulation workers."""
 
 from src.dgp import GaussianNetwork
+from src.latent_samplers import CopulaSampler, MultipleNetworksSampler
 
 
 def make_network(
@@ -10,12 +11,13 @@ def make_network(
     p,
     d_x,
     d_y,
-    B,
+    B=None,
     rng,
     edge_var=1,
     snr=None,
     b_active_network_fraction=None,
     rdpg=False,
+    latent_sampler=MultipleNetworksSampler,
     network_kwargs=None,
     **_,
 ):
@@ -29,17 +31,29 @@ def make_network(
         options.setdefault("edge_var", edge_var)
     else:
         options.setdefault("rdpg", rdpg)
+    sampler_options = {}
+    if latent_sampler is MultipleNetworksSampler:
+        sampler_options.update(
+            B=B,
+            snr=snr,
+            b_active_network_fraction=b_active_network_fraction,
+        )
+    elif latent_sampler is not CopulaSampler:
+        raise ValueError(f"Unsupported latent sampler: {latent_sampler!r}")
+
     network = network_class(
         n=n,
         p=p,
         d_x=d_x,
         d_y=d_y,
-        B=B,
-        snr=snr,
-        b_active_network_fraction=b_active_network_fraction,
+        latent_sampler=latent_sampler,
         rng=rng,
+        **sampler_options,
         **options,
     )
-    # The example supplies only B=0 or B=None; snr=0 also forces zero B.
-    network.is_null = B == 0 or network.snr == 0
+    if latent_sampler is MultipleNetworksSampler:
+        # The example supplies only B=0 or B=None; snr=0 also forces zero B.
+        network.is_null = B == 0 or network.snr == 0
+    else:
+        network.is_null = network.latent_sampler.is_null
     return network
