@@ -142,7 +142,7 @@ def _resolve_linear_model_setup(entry: dict) -> tuple:
     dgp_factory = partial(
         make_network,
         dgp_cls,
-        latent_sampler=latent_sampler,
+        latent_sampler_class=latent_sampler,
         null_target=null_target,
         network_kwargs=dgp_kwargs,
     )
@@ -163,7 +163,7 @@ def load_config(path: str = "config.yaml") -> dict:
 
     setups = [_resolve_linear_model_setup(entry) for entry in raw["setups"]]
     requires_signal = any(
-        setup[0].keywords["latent_sampler"] is MultipleNetworksSampler
+        setup[0].keywords["latent_sampler_class"] is MultipleNetworksSampler
         for setup in setups
     )
     simulation = _resolve_linear_model_simulation(

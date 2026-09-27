@@ -30,7 +30,7 @@ def build_linear_model_rows(cfg):
 
     rows = expand_sweeps(sweeps)
     for row in rows:
-        latent_sampler = row["setup"][0].keywords["latent_sampler"]
+        latent_sampler = row["setup"][0].keywords["latent_sampler_class"]
         if latent_sampler is CopulaSampler:
             sampler_kwargs = row["setup"][0].keywords["network_kwargs"]
             null_target = row["setup"][0].keywords.get("null_target")

@@ -17,7 +17,7 @@ def make_network(
     snr=None,
     b_active_network_fraction=None,
     rdpg=False,
-    latent_sampler=MultipleNetworksSampler,
+    latent_sampler_class=MultipleNetworksSampler,
     null_target=None,
     network_kwargs=None,
     **_,
@@ -33,26 +33,28 @@ def make_network(
     else:
         options.setdefault("rdpg", rdpg)
     sampler_options = {}
-    if latent_sampler is MultipleNetworksSampler:
+    if latent_sampler_class is MultipleNetworksSampler:
         sampler_options.update(
             B=B,
             snr=snr,
             b_active_network_fraction=b_active_network_fraction,
         )
-    elif latent_sampler is not CopulaSampler:
-        raise ValueError(f"Unsupported latent sampler: {latent_sampler!r}")
+    elif latent_sampler_class is not CopulaSampler:
+        raise ValueError(
+            f"Unsupported latent sampler: {latent_sampler_class!r}"
+        )
 
     network = network_class(
         n=n,
         p=p,
         d_x=d_x,
         d_y=d_y,
-        latent_sampler=latent_sampler,
+        latent_sampler=latent_sampler_class,
         rng=rng,
         **sampler_options,
         **options,
     )
-    if latent_sampler is MultipleNetworksSampler:
+    if latent_sampler_class is MultipleNetworksSampler:
         # The example supplies only B=0 or B=None; snr=0 also forces zero B.
         network.is_null = B == 0 or network.snr == 0
     else:

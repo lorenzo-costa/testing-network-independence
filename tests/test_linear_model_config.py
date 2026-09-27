@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from src.dgp import BernoulliNetwork, GaussianNetwork
-from src.helper_functions.simulation_functions import run_scenario
+from src.helper_functions.simulation_functions import _generate_scenario_data, run_scenario
 from src.latent_samplers import CopulaSampler
 from src.load_config import (
     _resolve_linear_model_simulation,
@@ -61,7 +61,7 @@ output: {}
     row = build_factorial_design(config)[0]
     factory = row["setup"][0]
 
-    assert factory.keywords["latent_sampler"] is CopulaSampler
+    assert factory.keywords["latent_sampler_class"] is CopulaSampler
     assert "B" not in row
     assert "snr" not in row
     assert row["hypothesis"] == "H1"
@@ -81,6 +81,15 @@ output: {}
     assert np.isfinite(result["ComputeAll"]["Rejection"])
     assert result["args"]["hypothesis"] == "H1"
     assert result["args"]["latent_sampler"] == "CopulaSampler"
+
+    # Runtime metadata must not override the sampler class when a factorial row
+    # is reused by another replicate in the same multiprocessing chunk.
+    repeated_args = build_factorial_design(config)[0]
+    repeated_args["rng"] = np.random.default_rng(10)
+    _generate_scenario_data(repeated_args)
+    assert repeated_args["latent_sampler"] == "CopulaSampler"
+    repeated_dgp, _ = _generate_scenario_data(repeated_args)
+    assert isinstance(repeated_dgp.latent_sampler, CopulaSampler)
 
 
 def test_unknown_yaml_latent_sampler_is_rejected(tmp_path):
