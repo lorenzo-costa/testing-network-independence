@@ -11,7 +11,7 @@ simulation:
   seed: 2
 
   n: [500, 1000]
-  p: [5, 10, 25, 50, 100]
+  p: [5, 10, 25, 50]
   d_x: [5]
   d_y: [5]
 
@@ -28,16 +28,32 @@ simulation:
 methods:
   npermutations: [400]
   list:
+    - name: RVTest
+      kwargs:
+        approximation: permutation
+        permutation_type: latent
+        n_jobs: 1
 
+    - name: CanonicalCorrelationTest
+      kwargs:
+        permutation_type: latent
+        n_jobs: 1
+
+    - name: DistanceCorrelationTest
+      kwargs:
+        test_method: mgc
+        permutation_type: latent
+        n_jobs: 1
+    
     - name: RVTest
       kwargs:
         approximation: asymptotic
         asymptotic_null: independence
-
-    - name: RVTest
+    
+    - name: MRQAP
       kwargs:
-        approximation: asymptotic
-        asymptotic_null: zero_covariance
+        permutation_strategy: y_permutation
+        batch_size: 32
 
 setups:
   - dgp: GaussianNetwork
@@ -55,4 +71,4 @@ metrics:
 
 output:
   results_dir: results
-  file_prefix: linear_model_asymptotic_results
+  file_prefix: asymptotic_null
