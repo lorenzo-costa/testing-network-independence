@@ -18,6 +18,7 @@ def make_network(
     b_active_network_fraction=None,
     rdpg=False,
     latent_sampler=MultipleNetworksSampler,
+    null_target=None,
     network_kwargs=None,
     **_,
 ):
@@ -56,4 +57,7 @@ def make_network(
         network.is_null = B == 0 or network.snr == 0
     else:
         network.is_null = network.latent_sampler.is_null
+    network.null_target = null_target
+    if null_target == "zero_covariance":
+        network.is_null = True
     return network

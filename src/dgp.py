@@ -116,7 +116,10 @@ class GaussianNetwork:
             ``(d_y, p * d_x)``. X networks preserve the latent block order.
         """
         latent = self.latent_sampler.sample_latent()
-        if hasattr(self.latent_sampler, "is_null"):
+        if (
+            hasattr(self.latent_sampler, "is_null")
+            and getattr(self, "null_target", None) != "zero_covariance"
+        ):
             self.is_null = self.latent_sampler.is_null
         result = {
             "A_Y": self._sample_adjacency(latent["Y"]),

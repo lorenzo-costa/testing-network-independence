@@ -116,10 +116,34 @@ def _resolve_linear_model_setup(entry: dict) -> tuple:
     if not isinstance(solver_kwargs, dict):
         raise TypeError("setup.solver_kwargs must be a mapping")
 
+    null_target = entry.get("null_target")
+    if null_target not in {None, "independence", "zero_covariance"}:
+        raise ValueError(
+            "setup.null_target must be 'independence', 'zero_covariance', or null"
+        )
+    if null_target == "zero_covariance":
+        if latent_sampler is not CopulaSampler:
+            raise ValueError(
+                "setup.null_target='zero_covariance' currently requires "
+                "latent_sampler: CopulaSampler"
+            )
+        if not CopulaSampler.has_zero_covariance_configuration(
+            dgp_kwargs.get("copula_model"),
+            dgp_kwargs.get("rho", 0),
+            dgp_kwargs.get("copula_params", {}),
+            dgp_kwargs.get("marginals"),
+            dgp_kwargs.get("cross_covariance"),
+        ):
+            raise ValueError(
+                "setup.null_target='zero_covariance' requires a supported "
+                "zero-covariance copula configuration"
+            )
+
     dgp_factory = partial(
         make_network,
         dgp_cls,
         latent_sampler=latent_sampler,
+        null_target=null_target,
         network_kwargs=dgp_kwargs,
     )
     return dgp_factory, partial(solver, **solver_kwargs) if solver_kwargs else solver
@@ -181,6 +205,7 @@ def flatten_args_columns(df, extra_cols: dict | None = None):
         ("x_network_correlation", "x_network_correlation"),
         ("eps_distribution", "eps_distribution"),
         ("latent_sampler", "latent_sampler"),
+        ("null_target", "null_target"),
         ("hypothesis", "hypothesis"),
         ("edge_var", "edge_var"),
         ("approximation", "approximation"),

@@ -125,6 +125,7 @@ setups:
   - dgp: GaussianNetwork
     solver: ASE
     latent_sampler: CopulaSampler
+    null_target: zero_covariance
     dgp_kwargs:
       copula_model: mixture_uniform
       marginals: gaussian
@@ -137,6 +138,9 @@ setups:
 This balanced mixture has zero population Pearson correlation but is dependent.
 Copula configurations currently use `p: 1`; `p` is still passed through the
 sampler interface so support can be extended without changing the YAML schema.
+With `null_target: zero_covariance`, scenario metrics treat this distribution as
+H0 even though independence-targeting methods correctly see dependence. Without
+that field, copula scenarios retain the default independence target.
 
 ## Results and plots
 

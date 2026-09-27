@@ -103,6 +103,45 @@ setups:
         load_config(config_path)
 
 
+def test_zero_covariance_null_target_labels_dependent_copula_as_h0():
+    config = load_config(ROOT / "zero_covariance.yaml")
+    design = build_factorial_design(config)
+
+    assert design
+    assert {row["null_target"] for row in design} == {"zero_covariance"}
+    assert {row["hypothesis"] for row in design} == {"H0"}
+
+    row = next(
+        row
+        for row in design
+        if row["setup"][0].args[0] is GaussianNetwork
+        and row["method"].func is RVTest
+        and row["method"].keywords.get("approximation") == "permutation"
+        and row["n"] == 50
+    )
+    runtime = dict(row, n=20, npermutations=2, use_true_latent=True)
+    result = run_scenario(
+        config["metrics"], runtime, seed=np.random.SeedSequence(17)
+    )
+
+    outcome = result["ComputeAll"]
+    assert result["args"]["null_target"] == "zero_covariance"
+    assert outcome["FalseRejection"] == bool(outcome["Rejection"])
+    assert outcome["TrueRejection"] is False
+
+
+def test_zero_covariance_null_target_rejects_nonzero_covariance(tmp_path):
+    config_text = (ROOT / "zero_covariance.yaml").read_text(encoding="utf-8")
+    config_path = tmp_path / "nonzero_covariance.yaml"
+    config_path.write_text(
+        config_text.replace("correlations: [0.8, -0.8]", "correlations: [0.8, 0.8]"),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="zero-covariance copula configuration"):
+        load_config(config_path)
+
+
 def test_linear_model_config_builds_requested_factorial_sweep():
     config = load_config(ROOT / "linear_model_config.yaml")
     design = build_factorial_design(config)

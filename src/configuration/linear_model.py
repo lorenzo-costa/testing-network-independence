@@ -33,12 +33,16 @@ def build_linear_model_rows(cfg):
         latent_sampler = row["setup"][0].keywords["latent_sampler"]
         if latent_sampler is CopulaSampler:
             sampler_kwargs = row["setup"][0].keywords["network_kwargs"]
-            is_null = CopulaSampler.is_independence_configuration(
-                sampler_kwargs.get("copula_model"),
-                sampler_kwargs.get("rho", 0),
-                sampler_kwargs.get("copula_params", {}),
-                sampler_kwargs.get("cross_covariance"),
-            )
+            null_target = row["setup"][0].keywords.get("null_target")
+            row["null_target"] = null_target or "independence"
+            is_null = null_target == "zero_covariance"
+            if not is_null:
+                is_null = CopulaSampler.is_independence_configuration(
+                    sampler_kwargs.get("copula_model"),
+                    sampler_kwargs.get("rho", 0),
+                    sampler_kwargs.get("copula_params", {}),
+                    sampler_kwargs.get("cross_covariance"),
+                )
             row["hypothesis"] = "H0" if is_null else "H1"
             continue
         fraction = row.get("b_active_network_fraction", 1)

@@ -126,6 +126,8 @@ LINEAR_MODEL_CONFIG_FIELDS = (
     "snr",
     "b_active_network_fraction",
     "hypothesis",
+    "null_target",
+    "latent_sampler",
     "alpha",
     "x_network_correlation",
     "eps_distribution",
@@ -334,6 +336,8 @@ def preprocess_linear_model_results(
     )
     results["eps_distribution"] = results["eps_distribution"].map(_error_distribution)
     results["hypothesis"] = results["hypothesis"].map(_clean_text)
+    results["null_target"] = results["null_target"].map(_clean_text)
+    results["latent_sampler"] = results["latent_sampler"].map(_clean_text)
     results["use_true_latent"] = results["use_true_latent"].map(_parse_latent_mode)
     results["dgp_name"] = results["dgp_name"].map(
         lambda value: _clean_text(value).split("_")[0]

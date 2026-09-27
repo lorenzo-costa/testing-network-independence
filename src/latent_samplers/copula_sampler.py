@@ -104,6 +104,43 @@ class CopulaSampler:
         # Archimedean copulas are likewise configured only as alternatives.
         return False
 
+    @staticmethod
+    def has_zero_covariance_configuration(
+        copula_model,
+        rho,
+        copula_params,
+        marginals,
+        cross_covariance=None,
+    ):
+        """Verify supported copula configurations with zero cross-covariance."""
+        if isinstance(marginals, str):
+            gaussian_marginals = marginals == "gaussian"
+        elif isinstance(marginals, dict):
+            gaussian_marginals = (
+                marginals.get("x") == "gaussian"
+                and marginals.get("y") == "gaussian"
+            )
+        else:
+            gaussian_marginals = False
+        if not gaussian_marginals:
+            return False
+
+        if cross_covariance is not None:
+            return bool(np.allclose(cross_covariance, 0))
+        if copula_model == "gaussian":
+            return rho == 0
+        if copula_model == "mixture_uniform":
+            weights = np.asarray(copula_params.get("weights", []), dtype=float)
+            correlations = np.asarray(
+                copula_params.get("correlations", []), dtype=float
+            )
+            return bool(
+                weights.size
+                and weights.shape == correlations.shape
+                and np.isclose(weights @ correlations, 0)
+            )
+        return False
+
     def _validate_args_copula(self):
         if self.copula_model == "student_t" and "df" not in self.copula_params:
             raise ValueError("df parameter must be provided for student_t copula")
