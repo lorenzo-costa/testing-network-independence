@@ -76,6 +76,12 @@ ASYMPTOTIC_RESULT_FILES: tuple[str, ...] = (
     "linear_model_asymptotic_results_61636044_shard-002-of-003.csv",
 )
 
+ASYMPTOTIC_TYPE_I_RESULT_FILES: tuple[str, ...] = (
+    "linear_model_asymptotic_results_61997008_shard-000-of-003.csv",
+    "linear_model_asymptotic_results_61997008_shard-001-of-003.csv",
+    "linear_model_asymptotic_results_61997008_shard-002-of-003.csv",
+)
+
 P_ONE_RESULT_FILE = "linear_model_results_20260924_1130.csv"
 REDUCED_GRID_P_VALUES = (10, 100)
 REDUCED_GRID_SNR_VALUES = (1,)
@@ -151,12 +157,14 @@ __all__ = [
     "aggregate_rejection_rates",
     "configure_plot_style",
     "filter_results",
+    "generate_asymptotic_type_i_figures",
     "generate_linear_model_figures",
     "linear_model_method_label",
     "merge_result_shard_sets",
     "merge_result_shards",
     "plot_metric_grid",
     "prepare_active_fraction_results",
+    "prepare_asymptotic_type_i_results",
     "prepare_p_one_testing_results",
     "prepare_linear_model_results",
     "preprocess_linear_model_results",
@@ -194,6 +202,16 @@ def parse_args(argv=None) -> argparse.Namespace:
         help=(
             "Asymptotic shard filenames; overrides ASYMPTOTIC_RESULT_FILES. "
             "Only RV rows are retained."
+        ),
+    )
+    parser.add_argument(
+        "--asymptotic-type-i-files",
+        nargs="+",
+        default=None,
+        help=(
+            "Separate null-only asymptotic shard filenames; overrides "
+            "ASYMPTOTIC_TYPE_I_RESULT_FILES. These rows are used only for "
+            "asymptotic type-I-error figures."
         ),
     )
     parser.add_argument(
@@ -356,6 +374,52 @@ def prepare_linear_model_results(
         detail = " matching the method filter" if include_methods is not None else ""
         raise ValueError(f"The shard files contain no result rows{detail}.")
     results = pd.concat(frames, ignore_index=True)
+    _validate_linear_model_results(results)
+    return results
+
+
+def prepare_asymptotic_type_i_results(
+    results_dir: Path,
+    filenames: Sequence[str],
+) -> pd.DataFrame:
+    """Load null-only asymptotic RV shards for separate type-I plots.
+
+    The asymptotic configuration omits ``use_true_latent`` because ``RVTest``
+    uses its default estimated-latent mode. Resolve that omission only for this
+    result family so the general linear-model loader remains strict.
+    """
+    frames = []
+    for chunk in iter_shard_outputs(
+        results_dir,
+        filenames,
+        chunksize=PLOT_CHUNKSIZE,
+        usecols=("args", "ComputeAll"),
+    ):
+        processed = preprocess_linear_model_results(
+            chunk,
+            include_methods=("RVTest_asymptotic",),
+            validate=False,
+        )
+        if not processed.empty:
+            processed["use_true_latent"] = (
+                processed["use_true_latent"]
+                .astype("boolean")
+                .fillna(False)
+                .astype(bool)
+            )
+            frames.append(processed)
+    if not frames:
+        raise ValueError(
+            "The asymptotic type-I shard files contain no asymptotic RV rows."
+        )
+
+    results = pd.concat(frames, ignore_index=True)
+    alternative_rows = results["snr"] != 0
+    if alternative_rows.any():
+        raise ValueError(
+            "Asymptotic type-I shard files must contain only SNR-zero rows; "
+            f"found {int(alternative_rows.sum())} alternative rows."
+        )
     _validate_linear_model_results(results)
     return results
 
@@ -1396,6 +1460,66 @@ def generate_linear_model_figures(
     return outputs
 
 
+def generate_asymptotic_type_i_figures(
+    results: pd.DataFrame,
+    output_dir: str | Path,
+    *,
+    asymptotic_null: str = "split",
+    apply_style: bool = True,
+) -> list[Path]:
+    """Save type-I-error figures containing only asymptotic RV methods."""
+    results = select_asymptotic_null_results(results, asymptotic_null)
+    results = results[results["snr"] == 0].copy()
+    if results.empty:
+        raise ValueError("No SNR-zero rows found for asymptotic type-I plots.")
+    unexpected = ~results["method"].isin(ASYMPTOTIC_METHODS.values())
+    if unexpected.any():
+        methods = sorted(set(results.loc[unexpected, "method"]))
+        raise ValueError(
+            "Asymptotic type-I plots accept only asymptotic RV methods; "
+            f"found {methods}."
+        )
+    _validate_linear_model_results(results)
+    if apply_style:
+        configure_plot_style()
+
+    output_dir = Path(output_dir)
+    rejection_rates = aggregate_rejection_rates(results)
+    filename_suffix = f"asymptotic_only_{asymptotic_null}"
+    outputs = []
+    available_networks = results["dgp_name"].drop_duplicates().tolist()
+    networks = [name for name in NETWORK_LABELS if name in available_networks]
+    networks.extend(name for name in available_networks if name not in networks)
+    for network in networks:
+        network_results = results[results["dgp_name"] == network]
+        settings = (
+            network_results[["eps_distribution", "x_network_correlation"]]
+            .drop_duplicates()
+            .sort_values(["eps_distribution", "x_network_correlation"])
+        )
+        show_setting = len(settings) > 1
+        latent_modes = [
+            mode
+            for mode in LATENT_MODE_LABELS
+            if mode in set(network_results["use_true_latent"].dropna())
+        ]
+        for setting in settings.itertuples(index=False):
+            for use_true_latent in latent_modes:
+                outputs.append(
+                    plot_type_i_error_by_p(
+                        rejection_rates,
+                        output_dir,
+                        network,
+                        use_true_latent,
+                        setting.eps_distribution,
+                        setting.x_network_correlation,
+                        show_setting,
+                        filename_suffix=filename_suffix,
+                    )
+                )
+    return outputs
+
+
 def main(argv=None) -> list[Path]:
     args = parse_args(argv)
     filenames = tuple(args.files) if args.files is not None else RESULT_FILES
@@ -1403,6 +1527,11 @@ def main(argv=None) -> list[Path]:
         tuple(args.asymptotic_files)
         if args.asymptotic_files is not None
         else ASYMPTOTIC_RESULT_FILES
+    )
+    asymptotic_type_i_filenames = (
+        tuple(args.asymptotic_type_i_files)
+        if args.asymptotic_type_i_files is not None
+        else ASYMPTOTIC_TYPE_I_RESULT_FILES
     )
     mrqap_filenames = (
         tuple(args.mrqap_files) if args.mrqap_files is not None else MRQAP_RESULT_FILES
@@ -1443,6 +1572,18 @@ def main(argv=None) -> list[Path]:
         reduced_grid=args.reduced_grid,
         testing_only=args.testing_only,
     )
+    if asymptotic_type_i_filenames:
+        asymptotic_type_i_results = prepare_asymptotic_type_i_results(
+            args.results_dir,
+            asymptotic_type_i_filenames,
+        )
+        outputs.extend(
+            generate_asymptotic_type_i_figures(
+                asymptotic_type_i_results,
+                args.output_dir,
+                asymptotic_null=args.asymptotic_null,
+            )
+        )
     print(f"Saved {len(outputs)} figures to {args.output_dir}")
     return outputs
 

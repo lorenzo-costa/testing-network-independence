@@ -126,20 +126,20 @@ class MultipleNetworksSampler:
         d_x,
         d_y,
         *,
-        B=None,
-        snr=None,
-        x_mean=0,
-        x_variance=1,
-        x_network_correlation=None,
-        eps_variance=1,
-        b_mean=0,
-        b_variance=1,
-        b_active_network_fraction=None,
-        x_distribution="multivariate_gaussian",
-        eps_distribution="multivariate_gaussian",
-        b_distribution="gaussian",
         rng=None,
-    ):
+        B = None,
+        snr = None,
+        x_mean = 0,
+        x_variance = 1,
+        x_network_correlation = None,
+        eps_variance = 1,
+        b_mean = 0,
+        b_variance = 1,
+        b_active_network_fraction = None,
+        x_distribution = "multivariate_gaussian",
+        eps_distribution = "multivariate_gaussian",
+        b_distribution = "gaussian"):
+        
         self.n = self._positive_integer(n, "n")
         self.p = self._positive_integer(p, "p")
         self.d_x = self._positive_integer(d_x, "d_x")

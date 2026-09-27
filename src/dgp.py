@@ -55,47 +55,29 @@ class GaussianNetwork:
         d_x,
         d_y,
         *,
-        B=None,
-        snr=None,
-        x_mean=0,
-        x_variance=1,
-        x_network_correlation=None,
-        eps_variance=1,
-        b_mean=0,
-        b_variance=1,
-        b_active_network_fraction=None,
-        x_distribution="multivariate_gaussian",
-        eps_distribution="multivariate_gaussian",
-        b_distribution="gaussian",
         edge_var=1,
         rng=None,
-    ):
+        symmetric=True,
+        allow_self_loops=False,
+        latent_sampler=None,
+        **kwargs):
+        
         self.edge_var = _finite_scalar(edge_var, "edge_var", nonnegative=True)
-        self.latent_sampler = MultipleNetworksSampler(
+        self.latent_sampler = latent_sampler(
             n=n,
             p=p,
             d_x=d_x,
             d_y=d_y,
-            B=B,
-            snr=snr,
-            x_mean=x_mean,
-            x_variance=x_variance,
-            x_network_correlation=x_network_correlation,
-            eps_variance=eps_variance,
-            b_mean=b_mean,
-            b_variance=b_variance,
-            b_active_network_fraction=b_active_network_fraction,
-            x_distribution=x_distribution,
-            eps_distribution=eps_distribution,
-            b_distribution=b_distribution,
             rng=rng,
+            **kwargs
         )
         self.rng = self.latent_sampler.rng
         self.n = self.latent_sampler.n
         self.p = self.latent_sampler.p
         self.d_x = self.latent_sampler.d_x
         self.d_y = self.latent_sampler.d_y
-        self.snr = self.latent_sampler.snr
+        self.symmetric = symmetric
+        self.allow_self_loops = allow_self_loops
 
     def __repr__(self):
         return (
@@ -111,9 +93,15 @@ class GaussianNetwork:
         """Sample one Gaussian edge per upper-triangle entry and mirror it."""
         expected_A = latent @ latent.T
         sampled = self.rng.normal(loc=expected_A, scale=np.sqrt(self.edge_var))
-        upper = np.triu(sampled, k=1)
-        return upper + upper.T
+        if self.symmetric:
+            sampled = (sampled + sampled.T) / 2
 
+        # Remove self-loops if requested
+        if not self.allow_self_loops:
+            np.fill_diagonal(sampled, 0)
+
+        return sampled
+    
     def generate(self):
         """Sample latent positions and their symmetric, zero-diagonal networks.
 
@@ -131,7 +119,7 @@ class GaussianNetwork:
             "A_X": [self._sample_adjacency(x) for x in latent["X"]],
             "Y": latent["Y"],
             "X": latent["X"],
-            "B": latent["B"],
+            # "B": latent["B"],
         }
 
 
@@ -188,27 +176,18 @@ class BernoulliNetwork(GaussianNetwork):
     """
 
     def __init__(
-        self,
-        n,
-        p,
-        d_x,
-        d_y,
-        *,
-        B=None,
-        snr=None,
-        x_mean=0,
-        x_variance=1,
-        x_network_correlation=None,
-        eps_variance=1,
-        b_mean=0,
-        b_variance=1,
-        b_active_network_fraction=None,
-        x_distribution="multivariate_gaussian",
-        eps_distribution="multivariate_gaussian",
-        b_distribution="gaussian",
-        rdpg=False,
-        rng=None,
-    ):
+            self,
+            n,
+            p,
+            d_x,
+            d_y,
+            *,
+            rdpg=False,
+            rng=None,
+            symmetric=True,
+            latent_sampler=None,
+            allow_self_loops=False,
+            **kwargs):
         if not isinstance(rdpg, (bool, np.bool_)):
             raise ValueError("rdpg must be a boolean.")
         self.rdpg = bool(rdpg)
@@ -217,20 +196,11 @@ class BernoulliNetwork(GaussianNetwork):
             p=p,
             d_x=d_x,
             d_y=d_y,
-            B=B,
-            snr=snr,
-            x_mean=x_mean,
-            x_variance=x_variance,
-            x_network_correlation=x_network_correlation,
-            eps_variance=eps_variance,
-            b_mean=b_mean,
-            b_variance=b_variance,
-            b_active_network_fraction=b_active_network_fraction,
-            x_distribution=x_distribution,
-            eps_distribution=eps_distribution,
-            b_distribution=b_distribution,
             rng=rng,
-        )
+            symmetric=symmetric,
+            latent_sampler=latent_sampler,
+            allow_self_loops=allow_self_loops,
+            **kwargs)
 
     def get_name(self):
         """Return the name of the multiple-network Bernoulli model."""
@@ -239,7 +209,7 @@ class BernoulliNetwork(GaussianNetwork):
     def __repr__(self):
         return (
             f"{self.get_name()}(n={self.n}, p={self.p}, d_x={self.d_x}, "
-            f"d_y={self.d_y}, rdpg={self.rdpg})"
+            f"d_y={self.d_y}, rdpg={self.rdpg}"
         )
 
     def _sample_adjacency(self, latent):
@@ -247,6 +217,7 @@ class BernoulliNetwork(GaussianNetwork):
         probabilities = latent @ latent.T
         if not self.rdpg:
             probabilities = expit(probabilities)
+            
         # Self-loops are absent, so squared latent norms need not be probabilities.
         np.fill_diagonal(probabilities, 0)
         if (
@@ -259,5 +230,11 @@ class BernoulliNetwork(GaussianNetwork):
                 "off-diagonal latent inner products must already lie in [0, 1]."
             )
         sampled = self.rng.binomial(1, probabilities)
-        upper = np.triu(sampled, k=1)
-        return upper + upper.T
+        if self.symmetric:
+            sampled = (sampled + sampled.T) / 2
+
+        # Remove self-loops if requested
+        if not self.allow_self_loops:
+            np.fill_diagonal(sampled, 0)
+
+        return sampled
