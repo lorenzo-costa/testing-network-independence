@@ -70,7 +70,7 @@ setups:
       rho: 0
       copula_params:
         weights: [0.5, 0.5]
-        correlations: [0.8, -0.8]
+        correlations: [0.9, -0.9]
 
   - dgp: BernoulliNetwork
     solver: pgd_fit_wrapper
@@ -83,7 +83,7 @@ setups:
       rho: 0
       copula_params:
         weights: [0.5, 0.5]
-        correlations: [0.8, -0.8]
+        correlations: [0.9, -0.9]
     solver_kwargs:
       backend: numpy
 
