@@ -71,15 +71,12 @@ MRQAP_RESULT_FILES: tuple[str, ...] = (
 )
 
 ASYMPTOTIC_RESULT_FILES: tuple[str, ...] = (
-    "linear_model_asymptotic_results_61636044_shard-000-of-003.csv",
-    "linear_model_asymptotic_results_61636044_shard-001-of-003.csv",
-    "linear_model_asymptotic_results_61636044_shard-002-of-003.csv",
 )
 
 ASYMPTOTIC_TYPE_I_RESULT_FILES: tuple[str, ...] = (
-    "linear_model_asymptotic_results_61997008_shard-000-of-003.csv",
-    "linear_model_asymptotic_results_61997008_shard-001-of-003.csv",
-    "linear_model_asymptotic_results_61997008_shard-002-of-003.csv",
+    "asymptotic_null_62119506_shard-000-of-003.csv",
+    "asymptotic_null_62119506_shard-001-of-003.csv",
+    "asymptotic_null_62119506_shard-002-of-003.csv",
 )
 
 P_ONE_RESULT_FILE = "linear_model_results_20260924_1130.csv"
@@ -159,7 +156,6 @@ __all__ = [
     "aggregate_rejection_rates",
     "configure_plot_style",
     "filter_results",
-    "generate_asymptotic_type_i_figures",
     "generate_linear_model_figures",
     "linear_model_method_label",
     "merge_result_shard_sets",
@@ -211,9 +207,9 @@ def parse_args(argv=None) -> argparse.Namespace:
         nargs="+",
         default=None,
         help=(
-            "Separate null-only asymptotic shard filenames; overrides "
-            "ASYMPTOTIC_TYPE_I_RESULT_FILES. These rows are used only for "
-            "asymptotic type-I-error figures."
+            "Separate null-only shard filenames containing the full method "
+            "comparison; overrides ASYMPTOTIC_TYPE_I_RESULT_FILES. These rows "
+            "are used only for the large-n type-I-error figures."
         ),
     )
     parser.add_argument(
@@ -386,11 +382,11 @@ def prepare_asymptotic_type_i_results(
     results_dir: Path,
     filenames: Sequence[str],
 ) -> pd.DataFrame:
-    """Load null-only asymptotic RV shards for separate type-I plots.
+    """Load null-only large-n shards for a separate full-method comparison.
 
-    The asymptotic configuration omits ``use_true_latent`` because ``RVTest``
-    uses its default estimated-latent mode. Resolve that omission only for this
-    result family so the general linear-model loader remains strict.
+    This configuration omits ``use_true_latent`` because latent methods use
+    their default estimated-latent mode and MRQAP works on adjacencies. Resolve
+    that omission only for this result family so the general loader stays strict.
     """
     frames = []
     for chunk in iter_shard_outputs(
@@ -401,7 +397,6 @@ def prepare_asymptotic_type_i_results(
     ):
         processed = preprocess_linear_model_results(
             chunk,
-            include_methods=("RVTest_asymptotic",),
             validate=False,
         )
         if not processed.empty:
@@ -414,7 +409,7 @@ def prepare_asymptotic_type_i_results(
             frames.append(processed)
     if not frames:
         raise ValueError(
-            "The asymptotic type-I shard files contain no asymptotic RV rows."
+            "The large-n type-I shard files contain no result rows."
         )
 
     results = pd.concat(frames, ignore_index=True)
@@ -751,6 +746,18 @@ def _plot_curves(
     ax.grid(axis="y", color="#E2E2E2", linewidth=0.45)
 
 
+def _set_network_size_axis(ax: Axes, data: pd.DataFrame) -> None:
+    """Use readable numeric ticks when network sizes span several scales."""
+    n_values = sorted(pd.to_numeric(data["n"], errors="coerce").dropna().unique())
+    if not n_values:
+        return
+    if len(n_values) > 1:
+        ax.set_xscale("log")
+    ax.set_xticks(n_values)
+    ax.set_xticklabels([f"{value:g}" for value in n_values])
+    ax.tick_params(axis="x", which="minor", labelbottom=False)
+
+
 def _latent_mode_slug(use_true_latent: bool) -> str:
     return "true_latent" if use_true_latent else "estimated_latent"
 
@@ -943,7 +950,7 @@ def plot_type_i_error_by_p(
         1,
         len(p_values),
         figsize=(max(15.6, 2.6 * len(p_values)), 4.2),
-        sharex=True,
+        sharex=False,
         sharey=True,
         squeeze=False,
         layout="constrained",
@@ -960,6 +967,7 @@ def plot_type_i_error_by_p(
             sem_column="rejection_sem",
             upper_clip=1.0,
         )
+        _set_network_size_axis(ax, panel)
         ax.axhline(
             alpha,
             color="#555555",
@@ -1080,7 +1088,7 @@ def plot_type_i_error_two_row(
     axes = []
     for index, (row, columns) in enumerate(spans):
         shared = axes[0] if axes else None
-        ax = fig.add_subplot(grid[row, columns], sharex=shared, sharey=shared)
+        ax = fig.add_subplot(grid[row, columns], sharey=shared)
         axes.append(ax)
 
         p_value = p_values[index]
@@ -1093,6 +1101,7 @@ def plot_type_i_error_two_row(
             sem_column="rejection_sem",
             upper_clip=1.0,
         )
+        _set_network_size_axis(ax, panel)
         ax.axhline(
             alpha,
             color="#555555",
@@ -1339,6 +1348,7 @@ def generate_linear_model_figures(
     *,
     asymptotic_null: str,
     additional_testing_results: pd.DataFrame | None = None,
+    additional_type_i_results: pd.DataFrame | None = None,
     effect_label: str = "SNR",
     reduced_grid: bool = False,
     testing_only: bool = False,
@@ -1369,6 +1379,25 @@ def generate_linear_model_figures(
             ignore_index=True,
         )
     testing_results = expand_adjacency_results_across_latent_modes(testing_results)
+    if additional_type_i_results is not None:
+        additional_type_i_results = select_asymptotic_null_results(
+            additional_type_i_results,
+            asymptotic_null,
+        )
+        if (additional_type_i_results["snr"] != 0).any():
+            raise ValueError("additional_type_i_results must contain only SNR-zero rows.")
+        if reduced_grid:
+            additional_type_i_results = _select_reduced_grid(
+                additional_type_i_results
+            )
+        _validate_linear_model_results(additional_type_i_results)
+        # These rows already carry their actual latent mode. In particular,
+        # large-n MRQAP rows belong only to the estimated-latent comparison and
+        # must not create a sparse MRQAP-only extension of the true-latent plot.
+        testing_results = pd.concat(
+            [testing_results, additional_type_i_results],
+            ignore_index=True,
+        )
     rejection_rates = aggregate_rejection_rates(testing_results)
     frobenius_errors = (
         None
@@ -1464,66 +1493,6 @@ def generate_linear_model_figures(
     return outputs
 
 
-def generate_asymptotic_type_i_figures(
-    results: pd.DataFrame,
-    output_dir: str | Path,
-    *,
-    asymptotic_null: str = "split",
-    apply_style: bool = True,
-) -> list[Path]:
-    """Save type-I-error figures containing only asymptotic RV methods."""
-    results = select_asymptotic_null_results(results, asymptotic_null)
-    results = results[results["snr"] == 0].copy()
-    if results.empty:
-        raise ValueError("No SNR-zero rows found for asymptotic type-I plots.")
-    unexpected = ~results["method"].isin(ASYMPTOTIC_METHODS.values())
-    if unexpected.any():
-        methods = sorted(set(results.loc[unexpected, "method"]))
-        raise ValueError(
-            "Asymptotic type-I plots accept only asymptotic RV methods; "
-            f"found {methods}."
-        )
-    _validate_linear_model_results(results)
-    if apply_style:
-        configure_plot_style()
-
-    output_dir = Path(output_dir)
-    rejection_rates = aggregate_rejection_rates(results)
-    filename_suffix = f"asymptotic_only_{asymptotic_null}"
-    outputs = []
-    available_networks = results["dgp_name"].drop_duplicates().tolist()
-    networks = [name for name in NETWORK_LABELS if name in available_networks]
-    networks.extend(name for name in available_networks if name not in networks)
-    for network in networks:
-        network_results = results[results["dgp_name"] == network]
-        settings = (
-            network_results[["eps_distribution", "x_network_correlation"]]
-            .drop_duplicates()
-            .sort_values(["eps_distribution", "x_network_correlation"])
-        )
-        show_setting = len(settings) > 1
-        latent_modes = [
-            mode
-            for mode in LATENT_MODE_LABELS
-            if mode in set(network_results["use_true_latent"].dropna())
-        ]
-        for setting in settings.itertuples(index=False):
-            for use_true_latent in latent_modes:
-                outputs.append(
-                    plot_type_i_error_by_p(
-                        rejection_rates,
-                        output_dir,
-                        network,
-                        use_true_latent,
-                        setting.eps_distribution,
-                        setting.x_network_correlation,
-                        show_setting,
-                        filename_suffix=filename_suffix,
-                    )
-                )
-    return outputs
-
-
 def main(argv=None) -> list[Path]:
     args = parse_args(argv)
     filenames = tuple(args.files) if args.files is not None else RESULT_FILES
@@ -1568,26 +1537,23 @@ def main(argv=None) -> list[Path]:
         args.results_dir,
         args.p_one_file,
     )
+    asymptotic_type_i_results = (
+        prepare_asymptotic_type_i_results(
+            args.results_dir,
+            asymptotic_type_i_filenames,
+        )
+        if asymptotic_type_i_filenames
+        else None
+    )
     outputs = generate_linear_model_figures(
         results,
         args.output_dir,
         asymptotic_null=args.asymptotic_null,
         additional_testing_results=p_one_testing_results,
+        additional_type_i_results=asymptotic_type_i_results,
         reduced_grid=args.reduced_grid,
         testing_only=args.testing_only,
     )
-    if asymptotic_type_i_filenames:
-        asymptotic_type_i_results = prepare_asymptotic_type_i_results(
-            args.results_dir,
-            asymptotic_type_i_filenames,
-        )
-        outputs.extend(
-            generate_asymptotic_type_i_figures(
-                asymptotic_type_i_results,
-                args.output_dir,
-                asymptotic_null=args.asymptotic_null,
-            )
-        )
     print(f"Saved {len(outputs)} figures to {args.output_dir}")
     return outputs
 

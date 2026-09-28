@@ -12,7 +12,6 @@ from results.visualise_linear_model import (
     aggregate_frobenius_errors,
     aggregate_rejection_rates,
     expand_adjacency_results_across_latent_modes,
-    generate_asymptotic_type_i_figures,
     generate_linear_model_figures,
     linear_model_method_label,
     merge_result_shards,
@@ -120,49 +119,99 @@ def test_combine_and_preprocess_linear_model_shards(tmp_path):
     assert aggregate["replicates"].tolist() == [1, 1, 1]
 
 
-def test_separate_asymptotic_type_i_shards_fill_default_latent_mode_and_plot(
-    tmp_path, monkeypatch
+def test_separate_large_n_type_i_shards_fill_default_latent_mode_for_all_methods(
+    tmp_path,
 ):
     names = [
         "linear_model_asymptotic_results_123_shard-000-of-003.csv",
         "linear_model_asymptotic_results_123_shard-001-of-003.csv",
         "linear_model_asymptotic_results_123_shard-002-of-003.csv",
     ]
-    null_models = ("independence", "zero_covariance", "independence")
-    for name, null_model in zip(names, null_models):
-        row = _row(500, 5, 0, False, approximation="asymptotic")
+    rows = [
+        _row(500, 5, 0, False, approximation="asymptotic"),
+        _row(1000, 5, 0, False, method="CanonicalCorrelationTest"),
+        _row(500, 10, 0, False, method="MRQAP", frobenius_y=None),
+    ]
+    rows[0]["args"]["asymptotic_null"] = "independence"
+    for name, row in zip(names, rows):
         row["args"].pop("use_true_latent")
-        row["args"]["asymptotic_null"] = null_model
         pd.DataFrame([row]).to_csv(tmp_path / name, index=False)
 
     results = prepare_asymptotic_type_i_results(tmp_path, names)
 
     assert results["use_true_latent"].tolist() == [False] * 3
-    assert set(results["method"]) == {"RVTest_asymptotic"}
-    captured = []
+    assert set(results["method"]) == {"RVTest_asymptotic", "CCA", "MRQAP"}
 
-    def capture_plot(aggregated, output_dir, *args, **kwargs):
-        captured.append((set(aggregated["method"]), kwargs["filename_suffix"]))
-        return Path(output_dir) / "asymptotic-type-i.png"
 
+def test_large_n_null_rows_extend_existing_type_i_aggregation_only(
+    tmp_path, monkeypatch
+):
+    common = {
+        "dgp_name": "GaussianNetwork",
+        "p": 5,
+        "alpha": 0.05,
+        "use_true_latent": False,
+        "x_network_correlation": 0.0,
+        "eps_distribution": "multivariate_gaussian",
+        "RelativeFrobeniusNorm_Y": 0.2,
+    }
+    primary = pd.DataFrame(
+        [
+            {**common, "n": 50, "snr": 0, "method": "RVTest_permutation", "Rejection": False},
+            {**common, "n": 50, "snr": 0.5, "method": "RVTest_permutation", "Rejection": True},
+        ]
+    )
+    large_n = pd.DataFrame(
+        [
+            {**common, "n": 500, "snr": 0, "method": "CCA", "Rejection": False},
+            {
+                **common,
+                "n": 500,
+                "snr": 0,
+                "method": "RVTest_asymptotic",
+                "asymptotic_null": "independence",
+                "Rejection": True,
+            },
+        ]
+    )
+    captured_type_i = []
+
+    def placeholder(aggregated, output_dir, *args, **kwargs):
+        return Path(output_dir) / "placeholder.png"
+
+    def capture_type_i(aggregated, output_dir, *args, **kwargs):
+        captured_type_i.append(aggregated.copy())
+        return Path(output_dir) / "type-i.png"
+
+    monkeypatch.setattr(visualise_linear_model, "plot_power_grid", placeholder)
     monkeypatch.setattr(
         visualise_linear_model,
         "plot_type_i_error_by_p",
-        capture_plot,
+        capture_type_i,
     )
-    outputs = generate_asymptotic_type_i_figures(
-        results,
+    monkeypatch.setattr(
+        visualise_linear_model,
+        "plot_type_i_error_two_row",
+        placeholder,
+    )
+
+    generate_linear_model_figures(
+        primary,
         tmp_path,
         asymptotic_null="split",
+        additional_type_i_results=large_n,
+        testing_only=True,
         apply_style=False,
     )
 
-    expected_methods = {
+    assert len(captured_type_i) == 1
+    summary = captured_type_i[0]
+    assert set(summary["n"]) == {50, 500}
+    assert set(summary["method"]) == {
+        "RVTest_permutation",
         "RVTest_asymptotic_independence",
-        "RVTest_asymptotic_zero_covariance",
+        "CCA",
     }
-    assert outputs == [tmp_path / "asymptotic-type-i.png"]
-    assert captured == [(expected_methods, "asymptotic_only_split")]
 
 
 def test_chunked_shard_reader_retains_shard_metadata(tmp_path):
