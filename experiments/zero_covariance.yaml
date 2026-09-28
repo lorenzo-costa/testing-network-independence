@@ -7,7 +7,7 @@
 experiment_type: linear_model
 
 simulation:
-  nsim: 2
+  nsim: 200
   seed: 2
 
   n: [50, 100, 200, 500]
