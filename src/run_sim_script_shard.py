@@ -32,7 +32,7 @@ def _build_parser():
         "--config",
         type=str,
         nargs="+",
-        default=["config.yaml"],
+        default=["experiments/linear_model_config.yaml"],
         help="One or more YAML config files.",
     )
     parser.add_argument(

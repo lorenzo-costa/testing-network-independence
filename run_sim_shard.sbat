@@ -22,7 +22,7 @@ set -euo pipefail
 CONFIG_FILE=${1:-}
 if [ -z "$CONFIG_FILE" ]; then
     echo "Error: No configuration file provided."
-    echo "Usage: sbatch run_sim_shard.sbat config_xxxx.yaml"
+    echo "Usage: sbatch run_sim_shard.sbat experiments/config_xxxx.yaml"
     exit 1
 fi
 

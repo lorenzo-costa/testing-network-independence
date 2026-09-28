@@ -74,8 +74,8 @@ stop early.
 ## Configured runs
 
 ```sh
-python -m src.run_simulation_script --config linear_model_config.yaml
-python -m src.run_sim_script_shard --config linear_model_config.yaml --shard-index 0 --num-shards 3 --n-jobs 4
+python -m src.run_simulation_script --config experiments/linear_model_config.yaml
+python -m src.run_sim_script_shard --config experiments/linear_model_config.yaml --shard-index 0 --num-shards 3 --n-jobs 4
 ```
 
 The supplied YAMLs are research configurations and can be expensive. Inspect
@@ -105,7 +105,8 @@ Active blocks are selected before signal calibration. If rounding fraction × p
 selects no networks, the row uses `B=0`, `hypothesis=H0`, and effective `snr=0`.
 A zero SNR target also gives the null. Joint sweeps retain `requested_snr`,
 including separate null rows for each requested target. Fraction-only sweeps
-leave coefficients uncalibrated. See `linear_model_active_fraction_config.yaml`.
+leave coefficients uncalibrated. See
+`experiments/linear_model_active_fraction_config.yaml`.
 With zero-mean Gaussian coefficients and positive target SNR, calibration
 cancels changes in their initial overall variance.
 

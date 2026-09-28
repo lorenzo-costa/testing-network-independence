@@ -50,7 +50,9 @@ def test_runner_uses_yaml_parallel_settings_and_flattens_linear_model_columns(
 
     monkeypatch.setattr(script, "run_simulation", fake_run_simulation)
 
-    output_path = script.main(["--config", "linear_model_config.yaml"])
+    output_path = script.main(
+        ["--config", "experiments/linear_model_config.yaml"]
+    )
 
     assert captured["nsim"] == 2
     assert captured["parallel"] is True

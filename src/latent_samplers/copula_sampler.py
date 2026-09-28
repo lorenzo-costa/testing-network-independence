@@ -10,8 +10,13 @@ class CopulaSampler:
     ----------
     n : int
         Number of samples (nodes).
-    k : int
-        Dimensionality of the latent space.
+    d_x : int
+        Latent dimension of each X network.
+    d_y : int, default=1
+        Latent dimension of Y.
+    p : int, default=1
+        Number of X networks. The concatenated X vector is ordered by network
+        and has dimension ``p * d_x``.
     rho : float
         Correlation parameter for the copula.
     marginals : dict or str
@@ -22,8 +27,10 @@ class CopulaSampler:
     copula_params : dict
         Additional parameters for the copula model (e.g. df for student_t, weights and correlations for mixture_uniform).
     column_covariance : np.ndarray
-        Covariance matrix for the columns of the latent variables. Used in Guassian, Student-t,
-        and mixture_uniform copulas to induce column-wise dependence.
+        Covariance matrix of shape ``(p * d_x, p * d_x)`` for concatenated X.
+        Off-diagonal network blocks specify dependence between X networks.
+    cross_covariance : np.ndarray, optional
+        X-Y covariance block of shape ``(d_y, p * d_x)``.
     rng : np.random.Generator
         Random number generator for reproducibility.
     """
@@ -51,10 +58,15 @@ class CopulaSampler:
         self.rho = rho
         self.copula_model = copula_model
         self.copula_params = copula_params if copula_params is not None else {}
+        if isinstance(p, (bool, np.bool_)) or not isinstance(
+            p, (int, np.integer)
+        ) or p < 1:
+            raise ValueError("p must be a positive integer")
         self.p = p
+        self.x_dim = p * d_x
         
         self.column_covariance_x = (
-            np.eye(d_x)
+            np.eye(self.x_dim)
             if column_covariance is None
             else np.asarray(column_covariance, dtype=float)
         )
@@ -142,6 +154,15 @@ class CopulaSampler:
         return False
 
     def _validate_args_copula(self):
+        if self.p > 1 and self.copula_model not in {
+            "gaussian",
+            "student_t",
+            "mixture_uniform",
+        }:
+            raise ValueError(
+                "p > 1 is supported only for gaussian, student_t, and "
+                "mixture_uniform copulas"
+            )
         if self.copula_model == "student_t" and "df" not in self.copula_params:
             raise ValueError("df parameter must be provided for student_t copula")
         if self.copula_model == "mixture_uniform":
@@ -161,20 +182,32 @@ class CopulaSampler:
             if not np.isclose(sum(self.copula_params["weights"]), 1.0):
                 raise ValueError("weights must sum to 1 for mixture_uniform copula")
 
-        if not self.column_covariance_x.shape == (self.d_x, self.d_x):
-            raise ValueError(f"column_covariance_x must be a {self.d_x}x{self.d_x} matrix.")
+        if self.column_covariance_x.shape != (self.x_dim, self.x_dim):
+            raise ValueError(
+                "column_covariance_x must have shape "
+                f"({self.x_dim}, {self.x_dim})"
+            )
         if not self.column_covariance_y.shape == (self.d_y, self.d_y):
             raise ValueError(f"column_covariance_y must be a {self.d_y}x{self.d_y} matrix.")
+        if self.cross_covariance is not None and self.cross_covariance.shape != (
+            self.d_y,
+            self.x_dim,
+        ):
+            raise ValueError(
+                "cross_covariance must have shape "
+                f"({self.d_y}, {self.x_dim})"
+            )
 
     def _generate_gaussian(self, rho, size):
         """Helper function for generate_copula_uniforms to generate correlated Gaussian,
         with Z, Y possibly having diff dimensions.
 
-        We define a pairing matrix R such that R_ij=1 if column i of Z is directly
-        related to column j of Y. Then for Sigma_Z = L_Z @ L_Z.T and Sigma_X = L_X @ L_X.T
+        We define a pairing matrix R such that R_ij=1 if column i of Y is directly
+        related to column j of X. Then for Sigma_X = L_X @ L_X.T and
+        Sigma_Y = L_Y @ L_Y.T
         the joint cov matrix is:
-        [Sigma_Z, rho L_Z @ R.T @ L_X.T]
-        [rho L_X @ R.T @ L_Z.T, Sigma_X]
+        [Sigma_X, rho L_X @ R.T @ L_Y.T]
+        [rho L_Y @ R @ L_X.T, Sigma_Y]
         Note cov between columns can be non-zero even if R_ij is zero through cov
         within Z and Y (i.e. column covariance)
 
@@ -187,29 +220,39 @@ class CopulaSampler:
             Lx = np.linalg.cholesky(Sigma_x)
             Ly = np.linalg.cholesky(Sigma_y)
 
-            def _rectangular_identity(d_x, d_y):
-                R = np.zeros((d_x, d_y))
-                m = min(d_x, d_y)
+            def _rectangular_identity(d_y, x_dim):
+                R = np.zeros((d_y, x_dim))
+                m = min(d_y, x_dim)
                 R[np.arange(m), np.arange(m)] = 1.0
                 return R
 
-            R = self.copula_params.get(
-                "cross_correlation_template",
-                _rectangular_identity(self.d_x, self.d_y),
+            R = np.asarray(
+                self.copula_params.get(
+                    "cross_correlation_template",
+                    _rectangular_identity(self.d_y, self.x_dim),
+                ),
+                dtype=float,
             )
+            if R.shape != (self.d_y, self.x_dim):
+                raise ValueError(
+                    "cross_correlation_template must have shape "
+                    f"({self.d_y}, {self.x_dim})"
+                )
 
             Sigma_xy = rho * Ly @ R @ Lx.T
         else:
             # As written, this does not vary across mixture components.
             Sigma_xy = self.cross_covariance
 
-        Sigma = np.block([
-            [Sigma_x,    Sigma_xy],
-            [Sigma_xy.T, Sigma_y ],
-        ])
+        Sigma = np.block(
+            [
+                [Sigma_x, Sigma_xy.T],
+                [Sigma_xy, Sigma_y],
+            ]
+        )
 
         joint = self.rng.multivariate_normal(
-            mean=np.zeros(self.d_x + self.d_y),
+            mean=np.zeros(self.x_dim + self.d_y),
             cov=Sigma,
             size=size,
             check_valid="warn",
@@ -228,18 +271,18 @@ class CopulaSampler:
 
         if self.copula_model == "gaussian":
             jj = self._generate_gaussian(rho=self.rho, size=self.n)
-            x = jj[:, : self.d_x]
-            y = jj[:, self.d_x :]
+            x = jj[:, : self.x_dim]
+            y = jj[:, self.x_dim :]
 
             u_x, u_y = ndtr(x), ndtr(y)
-            self.is_null = (self.rho == 0)
+            self.is_null = self._is_independence_model()
 
         elif self.copula_model == "student_t":
             # Generate Gaussiana and scale by chi-sq
 
             jj = self._generate_gaussian(rho=self.rho, size=self.n)
-            g_x = jj[:, : self.d_x]
-            g_y = jj[:, self.d_x :]
+            g_x = jj[:, : self.x_dim]
+            g_y = jj[:, self.x_dim :]
 
             df = self.copula_params["df"]
             w = self.rng.chisquare(df=df, size=(self.n, 1))
@@ -402,7 +445,7 @@ class CopulaSampler:
                 p=weights,
             )
 
-            x_full = np.empty((self.n, self.d_x))
+            x_full = np.empty((self.n, self.x_dim))
             y_full = np.empty((self.n, self.d_y))
 
             for i, rho_i in enumerate(correlations):
@@ -414,8 +457,8 @@ class CopulaSampler:
                 # sample gaussian conditional on component assignment
                 joint = self._generate_gaussian(rho=rho_i, size=count)
 
-                x_full[mask] = joint[:, :self.d_x]
-                y_full[mask] = joint[:, self.d_x:]
+                x_full[mask] = joint[:, :self.x_dim]
+                y_full[mask] = joint[:, self.x_dim:]
 
             u_x = ndtr(x_full)
             u_y = ndtr(y_full)
@@ -495,7 +538,11 @@ class CopulaSampler:
             Y = Y - Y.mean(axis=0)
             X = X - X.mean(axis=0)
             
-        return {'Y': Y, 'X': [X]}
+        X_networks = [
+            X[:, network * self.d_x : (network + 1) * self.d_x]
+            for network in range(self.p)
+        ]
+        return {"Y": Y, "X": X_networks}
 
     def get_name(self):
         try:

@@ -113,7 +113,7 @@ setups:
 
 
 def test_zero_covariance_null_target_labels_dependent_copula_as_h0():
-    config = load_config(ROOT / "zero_covariance.yaml")
+    config = load_config(ROOT / "experiments" / "zero_covariance.yaml")
     design = build_factorial_design(config)
 
     assert design
@@ -140,7 +140,9 @@ def test_zero_covariance_null_target_labels_dependent_copula_as_h0():
 
 
 def test_zero_covariance_null_target_rejects_nonzero_covariance(tmp_path):
-    config_text = (ROOT / "zero_covariance.yaml").read_text(encoding="utf-8")
+    config_text = (ROOT / "experiments" / "zero_covariance.yaml").read_text(
+        encoding="utf-8"
+    )
     config_path = tmp_path / "nonzero_covariance.yaml"
     config_path.write_text(
         config_text.replace("correlations: [0.8, -0.8]", "correlations: [0.8, 0.8]"),
@@ -152,7 +154,7 @@ def test_zero_covariance_null_target_rejects_nonzero_covariance(tmp_path):
 
 
 def test_linear_model_config_builds_requested_factorial_sweep():
-    config = load_config(ROOT / "linear_model_config.yaml")
+    config = load_config(ROOT / "experiments" / "linear_model_config.yaml")
     design = build_factorial_design(config)
 
     assert config["experiment_type"] == "linear_model"
@@ -188,7 +190,9 @@ def test_linear_model_config_builds_requested_factorial_sweep():
 
 
 def test_active_fraction_config_builds_requested_factorial_sweep():
-    config = load_config(ROOT / "linear_model_active_fraction_config.yaml")
+    config = load_config(
+        ROOT / "experiments" / "linear_model_active_fraction_config.yaml"
+    )
     design = build_factorial_design(config)
 
     assert config["simulation"]["snr"] == [0.1, 0.25, 0.5]
@@ -265,7 +269,9 @@ def test_joint_signal_sweep_validates_each_parameter(parameter, invalid):
 
 @pytest.mark.parametrize("mode", ["snr", "fraction", "joint"])
 def test_signal_sweeps_generate_calibrated_alternatives_and_correct_nulls(mode):
-    config = load_config(ROOT / "linear_model_active_fraction_config.yaml")
+    config = load_config(
+        ROOT / "experiments" / "linear_model_active_fraction_config.yaml"
+    )
     for factory, _ in config["setups"]:
         factory.keywords["network_kwargs"].update(
             x_network_correlation=0.25, eps_variance=2
@@ -314,7 +320,9 @@ def test_signal_sweeps_generate_calibrated_alternatives_and_correct_nulls(mode):
 
 @pytest.mark.parametrize("fraction", [0, 0.1, 0.5])
 def test_joint_sweep_scenario_preserves_signal_coordinates_and_null_metrics(fraction):
-    config = load_config(ROOT / "linear_model_active_fraction_config.yaml")
+    config = load_config(
+        ROOT / "experiments" / "linear_model_active_fraction_config.yaml"
+    )
     config["simulation"] = _resolve_linear_model_simulation(
         dict(
             nsim=1, seed=1, n=12, p=1, d_x=1, d_y=1,
@@ -337,7 +345,7 @@ def test_joint_sweep_scenario_preserves_signal_coordinates_and_null_metrics(frac
 
 
 def test_every_linear_model_network_and_method_combination_runs():
-    config = load_config(ROOT / "linear_model_config.yaml")
+    config = load_config(ROOT / "experiments" / "linear_model_config.yaml")
     design = build_factorial_design(config)
     representatives = {}
     for row in design:
@@ -369,7 +377,9 @@ def test_every_linear_model_network_and_method_combination_runs():
 
 
 def test_asymptotic_linear_model_config_includes_mrqap_and_both_rv_nulls():
-    config = load_config(ROOT / "linear_model_asymptotic_config.yaml")
+    config = load_config(
+        ROOT / "experiments" / "linear_model_asymptotic_config.yaml"
+    )
     design = build_factorial_design(config)
 
     assert len(design) == 2 * 3 * 5 * 5 * 3
@@ -398,7 +408,9 @@ def test_asymptotic_linear_model_config_includes_mrqap_and_both_rv_nulls():
 
 
 def test_asymptotic_linear_model_config_runs_global_mrqap_scenario():
-    config = load_config(ROOT / "linear_model_asymptotic_config.yaml")
+    config = load_config(
+        ROOT / "experiments" / "linear_model_asymptotic_config.yaml"
+    )
     design = build_factorial_design(config)
     row = next(
         row

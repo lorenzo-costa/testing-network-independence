@@ -149,7 +149,7 @@ def _resolve_linear_model_setup(entry: dict) -> tuple:
     return dgp_factory, partial(solver, **solver_kwargs) if solver_kwargs else solver
 
 
-def load_config(path: str = "config.yaml") -> dict:
+def load_config(path: str = "experiments/linear_model_config.yaml") -> dict:
     """Load one supported ``linear_model`` YAML configuration."""
     with open(path, encoding="utf-8") as file:
         raw = yaml.safe_load(file)

@@ -24,7 +24,7 @@ def main(argv=None):
         "--config",
         type=str,
         nargs="+",  # one or more paths
-        default=["config.yaml"],
+        default=["experiments/linear_model_config.yaml"],
         help="One or more YAML config files (one per experiment type).",
     )
     args = parser.parse_args(argv)

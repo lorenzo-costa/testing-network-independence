@@ -75,7 +75,7 @@ def test_shard_runner_uses_slurm_values_and_unique_output(monkeypatch, tmp_path)
     output = shard_script.main(
         [
             "--config",
-            "linear_model_config.yaml",
+            "experiments/linear_model_config.yaml",
             "--shard-index",
             "1",
             "--num-shards",
