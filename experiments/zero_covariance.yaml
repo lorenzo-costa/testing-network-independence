@@ -26,6 +26,7 @@ simulation:
 
 methods:
   npermutations: [400]
+  use_true_latent: [true]
   list:
     - name: RVTest
       kwargs:
