@@ -88,13 +88,38 @@ def prepare_zero_covariance_results(
         # coordinate. Copula simulations have no SNR, so assign that plotting
         # coordinate without changing the recorded null_target.
         processed["snr"] = 0.0
-        processed["use_true_latent"] = False
         frames.append(processed)
 
     if not frames:
         raise ValueError("The zero-covariance shard files contain no result rows.")
 
     results = pd.concat(frames, ignore_index=True)
+    non_adjacency = results["method"] != "MRQAP"
+    latent_modes = set(results.loc[non_adjacency, "use_true_latent"].dropna())
+    if len(latent_modes) > 1:
+        raise ValueError(
+            "Every zero-covariance result set must record at most one latent "
+            f"mode for non-MRQAP methods; found {sorted(latent_modes)}."
+        )
+    # Earlier estimated-latent jobs predate this recorded metadata. Preserve
+    # their established interpretation while allowing newer true-latent jobs
+    # to carry the mode explicitly.
+    has_recorded_latent_mode = bool(latent_modes)
+    use_true_latent = latent_modes.pop() if latent_modes else False
+    missing_non_adjacency = (
+        non_adjacency & results["use_true_latent"].isna()
+    )
+    if has_recorded_latent_mode and missing_non_adjacency.any():
+        raise ValueError(
+            f"{int(missing_non_adjacency.sum())} non-MRQAP rows have no "
+            "use_true_latent value."
+        )
+    results["use_true_latent"] = (
+        results["use_true_latent"]
+        .astype("boolean")
+        .fillna(use_true_latent)
+        .astype(bool)
+    )
     results = select_asymptotic_null_results(results, "split")
     _validate_linear_model_results(results)
     return results
@@ -109,6 +134,13 @@ def generate_zero_covariance_figures(
     """Generate one standard Type I error grid for each network model."""
     configure_plot_style()
     results = results[results["method"] != "DC"].copy()
+    latent_modes = results["use_true_latent"].dropna().drop_duplicates().tolist()
+    if len(latent_modes) != 1:
+        raise ValueError(
+            "A figure set must contain exactly one latent-position mode; "
+            f"found {latent_modes}."
+        )
+    use_true_latent = bool(latent_modes[0])
     aggregated = aggregate_rejection_rates(results)
     outputs = []
     available = results["dgp_name"].drop_duplicates().tolist()
@@ -129,7 +161,7 @@ def generate_zero_covariance_figures(
                 aggregated,
                 output_dir,
                 network,
-                False,
+                use_true_latent,
                 setting["eps_distribution"],
                 float(setting["x_network_correlation"]),
                 show_setting=False,
