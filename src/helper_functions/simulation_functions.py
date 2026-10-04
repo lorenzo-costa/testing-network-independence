@@ -1,6 +1,7 @@
 import numpy as np
 from tqdm import tqdm
 from multiprocessing import Pool, cpu_count
+from copy import copy
 
 # TODO:
 # - this could be sped up by having dpg run once and then feed data to each arg combination
@@ -70,6 +71,43 @@ def run_scenario_wrapper(args):
     return run_scenario(metrics, args, seed=seed, method_params=method_params)
 
 
+def _validate_shard(shard_index, num_shards):
+    if not isinstance(shard_index, int) or not isinstance(num_shards, int):
+        raise TypeError("shard_index and num_shards must be integers")
+    if num_shards < 1:
+        raise ValueError("num_shards must be positive")
+    if not 0 <= shard_index < num_shards:
+        raise ValueError("shard_index must satisfy 0 <= shard_index < num_shards")
+
+
+def _local_scenario_count(nsim, design_size, shard_index, num_shards):
+    return len(range(shard_index, nsim * design_size, num_shards))
+
+
+def _scenario_tasks(
+    nsim,
+    factorial_design,
+    metrics,
+    method_params,
+    rng,
+    shard_index,
+    num_shards,
+):
+    """Yield this shard's deterministic subset of the global scenario grid."""
+    total_scenarios = nsim * len(factorial_design)
+    child_seeds = rng.spawn(total_scenarios)
+    for global_index in range(shard_index, total_scenarios, num_shards):
+        design_index = global_index % len(factorial_design)
+        # ``run_scenario`` augments its arguments, so each task needs its own
+        # top-level mapping even when it uses the same factorial-design row.
+        yield (
+            copy(factorial_design[design_index]),
+            metrics,
+            method_params,
+            child_seeds[global_index],
+        )
+
+
 def run_simulation_parallel(
     nsim,
     factorial_design,
@@ -78,44 +116,49 @@ def run_simulation_parallel(
     rng=None,
     n_jobs=None,
     batch_size=32,
+    shard_index=0,
+    num_shards=1,
+    result_callback=None,
 ):
     if rng is None:
         rng = np.random.default_rng()
 
     if not isinstance(factorial_design, list):
-        raise ValueError("factorial_design must be a list of tuples")
+        raise ValueError("factorial_design must be a list")
+    if not factorial_design:
+        return [] if result_callback is None else None
+    _validate_shard(shard_index, num_shards)
 
     if n_jobs is None:
         n_jobs = cpu_count()
+    if n_jobs < 1:
+        raise ValueError("n_jobs must be positive")
+    if batch_size < 1:
+        raise ValueError("batch_size must be positive")
 
-    # Create all scenario arguments upfront (flattened structure)
-    all_scenarios = [
-        (args, metrics, method_params) for i in range(nsim) for args in factorial_design
-    ]
-
-    total_scenarios = len(all_scenarios)
-
-    child_seeds = rng.spawn(total_scenarios)
-
-    all_scenarios_seed = [
-        (*scenario, seed) for scenario, seed in zip(all_scenarios, child_seeds)
-    ]
-
-    # Shuffle scenarios for better parallelisation
-    rng.shuffle(all_scenarios_seed)
-
-    # Better chunk size: balance between overhead and load distribution
-    chunk_size = max(1, total_scenarios // (n_jobs * batch_size))
-    # chunk_size = max(1, total_scenarios // (n_jobs * 32))
-
-    results = []
+    local_total = _local_scenario_count(
+        nsim, len(factorial_design), shard_index, num_shards
+    )
+    chunk_size = max(1, local_total // (n_jobs * batch_size))
+    tasks = _scenario_tasks(
+        nsim,
+        factorial_design,
+        metrics,
+        method_params,
+        rng,
+        shard_index,
+        num_shards,
+    )
+    results = [] if result_callback is None else None
     with Pool(processes=n_jobs) as pool:
-        with tqdm(total=total_scenarios, desc="Running scenarios") as pbar:
-            # Use imap_unordered for better performance (order doesn't matter)
+        with tqdm(total=local_total, desc="Running scenarios") as pbar:
             for result in pool.imap_unordered(
-                run_scenario_wrapper, all_scenarios_seed, chunksize=chunk_size
+                run_scenario_wrapper, tasks, chunksize=chunk_size
             ):
-                results.append(result)
+                if result_callback is None:
+                    results.append(result)
+                else:
+                    result_callback(result)
                 pbar.update(1)
 
     return results
@@ -130,6 +173,9 @@ def run_simulation(
     rng=None,
     n_jobs=None,
     batch_size=32,
+    shard_index=0,
+    num_shards=1,
+    result_callback=None,
 ):
     """Run a simulation study.
 
@@ -159,6 +205,12 @@ def run_simulation(
     _type_
         _description_
     """
+    if not isinstance(factorial_design, list):
+        raise ValueError("factorial_design must be a list")
+    if not factorial_design:
+        return [] if result_callback is None else None
+    _validate_shard(shard_index, num_shards)
+
     if parallel:
         return run_simulation_parallel(
             nsim=nsim,
@@ -168,26 +220,32 @@ def run_simulation(
             rng=rng,
             n_jobs=n_jobs,
             batch_size=batch_size,
+            shard_index=shard_index,
+            num_shards=num_shards,
+            result_callback=result_callback,
         )
 
     if rng is None:
         rng = np.random.default_rng()
 
-    results = []
-
-    # for i in range(nsim):
-    #     print(f"Simulation {i + 1} of {nsim}")
-    #     for args in tqdm(factorial_design, desc="Running scenarios"):
-    #         scenario_out = run_scenario(metrics, args, method_params=method_params)
-    #         results.append(scenario_out)
-
-    for i in range(nsim):
-        sim_seeds = rng.spawn(len(factorial_design))
-
-        for args, seed in zip(tqdm(factorial_design), sim_seeds):
-            scenario_out = run_scenario(
-                metrics, args, method_params=method_params, seed=seed
-            )
+    local_total = _local_scenario_count(
+        nsim, len(factorial_design), shard_index, num_shards
+    )
+    tasks = _scenario_tasks(
+        nsim,
+        factorial_design,
+        metrics,
+        method_params,
+        rng,
+        shard_index,
+        num_shards,
+    )
+    results = [] if result_callback is None else None
+    for task in tqdm(tasks, total=local_total, desc="Running scenarios"):
+        scenario_out = run_scenario_wrapper(task)
+        if result_callback is None:
             results.append(scenario_out)
+        else:
+            result_callback(scenario_out)
 
     return results
