@@ -74,3 +74,33 @@ def test_unknown_marginal_is_rejected():
             copula_model="gaussian",
             marginals="invalid",
         )
+
+
+def test_one_sided_pareto_marginal_supports_shape_and_scale():
+    sampler = CopulaGenerator(
+        n=100,
+        k=2,
+        copula_model="gaussian",
+        rho=0,
+        marginals={"z": "pareto 2.5 3", "y": "pareto 3"},
+        center_latent=False,
+        rng=np.random.default_rng(42),
+    )
+
+    Z, Y = sampler._sample_latent_copula()
+
+    assert Z.shape == (100, 2)
+    assert Y.shape == (100, 1)
+    assert (Z >= 3).all()
+    assert (Y >= 1).all()
+
+
+@pytest.mark.parametrize("marginal", ["pareto", "pareto 0", "pareto 2 -1"])
+def test_pareto_marginal_validates_parameters(marginal):
+    with pytest.raises(ValueError, match="pareto"):
+        CopulaGenerator(
+            n=10,
+            k=2,
+            copula_model="gaussian",
+            marginals=marginal,
+        )

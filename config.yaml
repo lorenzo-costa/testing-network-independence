@@ -11,7 +11,8 @@
 # - egde weight variance: 1 (for Gaussian networks)
 # - correlation under H1: 0.2
 # - using both true and estimated latent positions for testing methods
-# - marginals: Gaussian, uniform, cauchy, t, chi-squared
+# - marginals: Gaussian, uniform, Cauchy, Student-t, chi-squared, Pareto
+#   Pareto syntax: "pareto <shape> [scale]" (e.g. "pareto 2.5").
 # - copula models: gaussian, clayton, gumbel, student_t, mixture_uniform
 # - testing methods: RV, distance correlation, CCA, and multivariate AC
 # - DGPs: GaussianNetwork, BernoulliNetwork
