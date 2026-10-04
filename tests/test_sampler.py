@@ -2,6 +2,7 @@ import importlib
 
 import pytest
 
+from src.load_config import _resolve_copula_setup
 from src.latent_samplers.copula_sampler import CopulaGenerator
 from src.latent_samplers.conditional_independence_copula_sampler import (
     ConditionalIndependenceCopulaSampler,
@@ -99,6 +100,26 @@ def test_nonconditioning_sampler_returns_none_x():
     assert Z.shape == (10, 2)
     assert Y.shape == (10, 1)
     assert X is None
+
+
+def test_config_resolver_forwards_standard_copula_arguments():
+    dgp_factory, _ = _resolve_copula_setup(
+        {
+            "dgp": "GaussianNetwork",
+            "solver": "ASE",
+            "copula_model": "gaussian",
+            "center_latent": False,
+        }
+    )
+
+    dgp = dgp_factory(
+        n=10,
+        k=3,
+        rho=0.2,
+        marginals={"z": "uniform 0 0.5773502692", "y": "uniform 0 1"},
+    )
+
+    assert dgp.latent_sampler.center_latent is False
 
 
 def test_conditional_selector_can_use_true_activation_and_copula_model():

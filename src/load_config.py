@@ -98,6 +98,12 @@ def _resolve_copula_setup(entry: dict):
         "rdpg",
         "rdpg_distr",
     }
+    copula_keys = {
+        "center_latent",
+        "column_covariance",
+        "column_covariance_y",
+        "cross_covariance",
+    }
     conditional_keys = {
         "C",
         "rho",
@@ -127,6 +133,8 @@ def _resolve_copula_setup(entry: dict):
         reserved.update(conditional_keys)
     if entry.get("post_nonlinear_noise") is not None:
         reserved.update(post_nonlinear_keys)
+    if entry.get("copula_model") is not None:
+        reserved.update(copula_keys)
 
     copula_params = {k: v for k, v in entry.items() if k not in reserved}
 
@@ -144,6 +152,8 @@ def _resolve_copula_setup(entry: dict):
         dgp_kwargs.update(
             {key: entry[key] for key in conditional_keys if key in entry}
         )
+    if entry.get("copula_model") is not None:
+        dgp_kwargs.update({key: entry[key] for key in copula_keys if key in entry})
     if entry.get("post_nonlinear_noise") is not None:
         dgp_kwargs.update(
             {key: entry[key] for key in post_nonlinear_keys if key in entry}

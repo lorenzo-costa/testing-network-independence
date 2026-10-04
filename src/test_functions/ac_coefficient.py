@@ -32,9 +32,11 @@ def ac_coefficient(Y, Z, X=None, *, M=1, permutation=False,
     Parameters
     ----------
     Y : array-like
-        Response variable(s). If Y is univariate, the scalar rank estimator is used.
+        Response variable(s). If Y is univariate, the scalar rank estimator is
+        used; otherwise the multivariate coordinate-permutation estimator is
+        used.
     Z : array-like
-        Predictor variable(s). If Z is multivariate, the coordinate-permutation estimator is used.
+        Predictor variable(s), used to construct nearest-neighbor maps.
     X : array-like, optional
         Conditioning variable(s). If X is provided, the conditional version of the coefficient is computed. 
     M : int or float, optional
