@@ -86,6 +86,12 @@ RDPG_COPULA_RESULT_FILES = (
     "simulation_results_63203393_shard-002-of-003.csv",
 )
 
+FUNCTIONAL_RESULT_FILES = (
+    "simulation_results_63274294_shard-000-of-003.csv",
+    "simulation_results_63274294_shard-001-of-003.csv",
+    "simulation_results_63274294_shard-002-of-003.csv",
+)
+
 COLUMNS_TO_REPLACE = (
     "RelativeFrobeniusNorm_x",
     "RelativeFrobeniusNorm_z",
@@ -187,6 +193,17 @@ MARGINALS_Y = ("gaussian", "chi df=5", "cauchy")
 RDPG_COPULAS = ("gaussian", "clayton", "mixture")
 RDPG_MARGINALS_Z = ("uniform 0 0.5773502692",)
 RDPG_MARGINALS_Y = ("gaussian", "chi df=5", "cauchy", "pareto 1.5")
+SHARDED_FUNCTIONAL_FORMS = (
+    "linear",
+    "sigmoid",
+    "sine",
+    "pareto",
+    "radial",
+    "tanh_product",
+    "manifold",
+    "abs_max",
+    "max",
+)
 RHO_SWEEP_MARGINALS_Y = ("gaussian", "chi df=5")
 
 LATENT_SIMULATIONS = (
@@ -263,6 +280,11 @@ def parse_args() -> argparse.Namespace:
         "--rdpg-only",
         action="store_true",
         help="Create only figures for the sharded RDPG copula study.",
+    )
+    parser.add_argument(
+        "--functionals-only",
+        action="store_true",
+        help="Create only figures for the sharded functional study.",
     )
     return parser.parse_args()
 
@@ -457,6 +479,18 @@ def prepare_rdpg_copula_results(results_dir: Path) -> pd.DataFrame:
     if rdpg.empty:
         raise ValueError("The RDPG result batch contains no Bernoulli-network rows.")
     return rdpg
+
+
+def prepare_sharded_functional_results(
+    results_dir: Path,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Read the sharded functional study and split it by network model."""
+    data = process_results(read_result_batch(results_dir, FUNCTIONAL_RESULT_FILES))
+    gaussian = data[data["dgp_name"] == "GaussianNetwork"].copy()
+    bernoulli = data[data["dgp_name"] == "BernoulliNetwork"].copy()
+    if gaussian.empty or bernoulli.empty:
+        raise ValueError("Functional result batch must contain both network models.")
+    return gaussian, bernoulli
 
 
 def aggregate_null_results(data: pd.DataFrame) -> pd.DataFrame:
@@ -1065,6 +1099,84 @@ def plot_rdpg_copula_figures(data: pd.DataFrame, output_dir: Path) -> None:
     save_figure(fig, output_dir, "27_rdpg_copulas_by_n_ky3")
 
 
+def aggregate_sharded_functional_results(data: pd.DataFrame) -> pd.DataFrame:
+    """Aggregate power for every current functional alternative and method."""
+    filtered = data[
+        (data["rho"] != 0.0)
+        & data["functional_form"].isin(SHARDED_FUNCTIONAL_FORMS)
+        & data["method"].isin(RDPG_METHODS)
+    ].copy()
+    return aggregate_results(
+        filtered,
+        y_axis="Rejection",
+        x_axis="n",
+        factors=["method", "functional_form"],
+    )
+
+
+def plot_sharded_functional_network(
+    data: pd.DataFrame,
+    output_dir: Path,
+    *,
+    network_name: str,
+    filename: str,
+) -> None:
+    """Plot the complete 3-by-3 grid of current functional alternatives."""
+    aggregated = aggregate_sharded_functional_results(data)
+    assert_unique(
+        aggregated,
+        ["n", "method", "functional_form"],
+        f"{network_name} sharded functional curves",
+    )
+    fig, axes = plt.subplots(
+        3,
+        3,
+        figsize=(8.0, 7.0),
+        sharex=True,
+        sharey=True,
+        squeeze=False,
+        layout="constrained",
+    )
+    for index, functional_form in enumerate(SHARDED_FUNCTIONAL_FORMS):
+        row, column = divmod(index, 3)
+        ax = axes[row, column]
+        plot_line_panel(
+            ax,
+            aggregated[aggregated["functional_form"] == functional_form],
+            y_mean="Rejection_mean",
+            y_sem="Rejection_sem",
+            methods=RDPG_METHODS,
+        )
+        style_probability_axis(ax)
+        ax.set_title(display_label(functional_form))
+
+    fig.suptitle(f"Power by network size — {network_name}, $k_y=3$")
+    fig.supxlabel(r"Network size, $n$")
+    fig.supylabel("Power")
+    add_shared_legend(fig, lines=True, methods=RDPG_METHODS)
+    save_figure(fig, output_dir, filename)
+
+
+def plot_sharded_functional_figures(
+    gaussian: pd.DataFrame,
+    bernoulli: pd.DataFrame,
+    output_dir: Path,
+) -> None:
+    """Create functional-study figures for both network models."""
+    plot_sharded_functional_network(
+        bernoulli,
+        output_dir,
+        network_name="Bernoulli binary network",
+        filename="28_binary_functional_forms_by_n_ky3",
+    )
+    plot_sharded_functional_network(
+        gaussian,
+        output_dir,
+        network_name="Gaussian weighted network",
+        filename="29_gaussian_functional_forms_by_n_ky3",
+    )
+
+
 def plot_rho_sweep_network(
     data: pd.DataFrame,
     output_dir: Path,
@@ -1342,9 +1454,16 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     configure_plot_style()
+    if args.rdpg_only and args.functionals_only:
+        parser.error("--rdpg-only and --functionals-only cannot be used together")
     if args.rdpg_only:
         plot_rdpg_copula_figures(prepare_rdpg_copula_results(results_dir), output_dir)
         print(f"Saved RDPG copula figure as PNG to {output_dir}")
+        return
+    if args.functionals_only:
+        gaussian, bernoulli = prepare_sharded_functional_results(results_dir)
+        plot_sharded_functional_figures(gaussian, bernoulli, output_dir)
+        print(f"Saved functional-study figures as PNG to {output_dir}")
         return
 
     gaussian, bernoulli = prepare_results(results_dir)
@@ -1430,8 +1549,14 @@ def main() -> None:
         figure_numbers=(25, 26),
     )
     plot_rdpg_copula_figures(prepare_rdpg_copula_results(results_dir), output_dir)
+    functional_gaussian, functional_bernoulli = prepare_sharded_functional_results(
+        results_dir
+    )
+    plot_sharded_functional_figures(
+        functional_gaussian, functional_bernoulli, output_dir
+    )
 
-    print(f"Saved 27 figures as PNG to {output_dir}")
+    print(f"Saved 29 figures as PNG to {output_dir}")
 
 
 if __name__ == "__main__":

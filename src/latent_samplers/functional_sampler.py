@@ -49,10 +49,14 @@ class FunctionalGenerator:
     column_covariance : ndarray, optional
         ``k y k`` covariance matrix used for Gaussian predictors.  The
         identity is used by default.
-    predictor_distribution : {"gaussian", "student_t"}, default="gaussian"
+    predictor_distribution : {"gaussian", "student_t", "uniform_rdpg"}, default="gaussian"
         Distribution used for the predictor vector.  For ``student_t``,
         ``predictor_df`` controls the degrees of freedom and
-        ``column_covariance`` is the scale matrix.
+        ``column_covariance`` is the scale matrix. ``uniform_rdpg`` samples
+        uniformly from the positive orthant of the unit Euclidean ball.  It is
+        intended for ``BernoulliNetwork(rdpg=True)``: each sampled row has norm
+        at most one and nonnegative entries, so every pairwise inner product is
+        in ``[0, 1]``.
     predictor_df : float, default=5.0
         Degrees of freedom when ``predictor_distribution="student_t"``.
     noise_scale : float, default=0.0
@@ -134,9 +138,10 @@ class FunctionalGenerator:
             raise ValueError("noise_scale must be non-negative.")
         if noise_type not in {"additive", "multiplicative"}:
             raise ValueError("noise_type must be 'additive' or 'multiplicative'.")
-        if predictor_distribution not in {"gaussian", "student_t"}:
+        if predictor_distribution not in {"gaussian", "student_t", "uniform_rdpg"}:
             raise ValueError(
-                "predictor_distribution must be 'gaussian' or 'student_t'."
+                "predictor_distribution must be 'gaussian', 'student_t', or "
+                "'uniform_rdpg'."
             )
         if predictor_distribution == "student_t" and predictor_df <= 0:
             raise ValueError("predictor_df must be positive for Student-t predictors.")
@@ -157,6 +162,12 @@ class FunctionalGenerator:
         self.center_latent = bool(center_latent)
         self.rng = rng if rng is not None else np.random.default_rng()
         self.extra_params = dict(kwargs)
+
+        if self.predictor_distribution == "uniform_rdpg" and self.center_latent:
+            raise ValueError(
+                "center_latent must be False for uniform_rdpg because centering "
+                "does not preserve valid RDPG inner products."
+            )
 
         if column_covariance is None:
             column_covariance = np.eye(self.kz)
@@ -192,6 +203,15 @@ class FunctionalGenerator:
 
     def _sample_predictors(self) -> np.ndarray:
         """Draw a fresh ``(n, k)`` predictor matrix."""
+        if self.predictor_distribution == "uniform_rdpg":
+            # Folding a uniform point from the unit ball into the positive
+            # orthant is uniform on that orthant.  The radius and direction are
+            # sampled independently, which avoids rejection sampling in high k.
+            direction = np.abs(self.rng.standard_normal((self.n, self.kz)))
+            direction /= np.linalg.norm(direction, axis=1, keepdims=True)
+            radius = self.rng.random(self.n) ** (1.0 / self.kz)
+            return direction * radius[:, None]
+
         gaussian = self.rng.multivariate_normal(
             mean=np.zeros(self.kz),
             cov=self.column_covariance,

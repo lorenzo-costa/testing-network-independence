@@ -595,6 +595,14 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
         if "column_covariance" in sim:
             names.append("column_covariance")
             vals.append(sim["column_covariance"])
+        if "predictor_distribution" in sim:
+            names.append("predictor_distribution")
+            vals.append(
+                _as_sweep(
+                    sim["predictor_distribution"],
+                    "simulation.predictor_distribution",
+                )
+            )
 
         if mth["approximation"] is not None:
             names.append("approximation")
