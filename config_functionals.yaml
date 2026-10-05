@@ -10,7 +10,7 @@ simulation:
   seed: 1                 
 
   n: [100, 300, 500]      
-  k: [1]                  
+  k: [3]                  
   ky: [1]
   rho: [0.2]              
   alpha: [0.05]           
