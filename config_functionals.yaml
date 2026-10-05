@@ -15,7 +15,7 @@ simulation:
   rho: [0.2]              
   alpha: [0.05]           
   edge_var: [3]           
-  noise_scale : [2.0]
+  noise_scale : [0.5]
   predictor_distribution: uniform_rdpg
 
   functionals:
