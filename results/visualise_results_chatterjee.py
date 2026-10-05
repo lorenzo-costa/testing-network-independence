@@ -76,6 +76,16 @@ KY3_RHO_BERNOULLI_RESULT_FILES = (
     "simulation_results_20260730_0928.csv",
 )
 
+# RDPG Bernoulli-copula study, split across two three-way Slurm arrays.
+RDPG_COPULA_RESULT_FILES = (
+    "simulation_results_63197367_shard-000-of-003.csv",
+    "simulation_results_63197367_shard-001-of-003.csv",
+    "simulation_results_63197367_shard-002-of-003.csv",
+    "simulation_results_63203393_shard-000-of-003.csv",
+    "simulation_results_63203393_shard-001-of-003.csv",
+    "simulation_results_63203393_shard-002-of-003.csv",
+)
+
 COLUMNS_TO_REPLACE = (
     "RelativeFrobeniusNorm_x",
     "RelativeFrobeniusNorm_z",
@@ -127,6 +137,7 @@ COLORS = {
     "AC_adaptive": "#CC79A7",
     "RVTest_permutation": "#E69F00",
     "RVTest_asymptotic": "#222222",
+    "CCA": "#56B4E9",
 }
 
 MARKERS = {
@@ -136,6 +147,7 @@ MARKERS = {
     "AC_adaptive": "s",
     "RVTest_permutation": "v",
     "RVTest_asymptotic": "o",
+    "CCA": "P",
 }
 
 LINESTYLES = {
@@ -145,6 +157,7 @@ LINESTYLES = {
     "AC_adaptive": "-",
     "RVTest_permutation": "-",
     "RVTest_asymptotic": "-",
+    "CCA": "-",
 }
 
 METHOD_LABELS = {
@@ -154,14 +167,26 @@ METHOD_LABELS = {
     "AC_adaptive": "AC (adaptive)",
     "RVTest_permutation": "RV (permutation)",
     "RVTest_asymptotic": "RV (asymptotic)",
+    "CCA": "CCA",
 }
 
-METHODS = tuple(COLORS)
+METHODS = (
+    "DC",
+    "AC_1",
+    "AC_sqrt",
+    "AC_adaptive",
+    "RVTest_permutation",
+    "RVTest_asymptotic",
+)
+RDPG_METHODS = (*METHODS, "CCA")
 
 COPULAS = ("gaussian", "student_t", "clayton", "mixture")
 MARGINALS_Z = ("gaussian", "chi df=5")
 MARGINALS_Z_KY3 = (*MARGINALS_Z, "unif(-1, 1)")
 MARGINALS_Y = ("gaussian", "chi df=5", "cauchy")
+RDPG_COPULAS = ("gaussian", "clayton", "mixture")
+RDPG_MARGINALS_Z = ("uniform 0 0.5773502692",)
+RDPG_MARGINALS_Y = ("gaussian", "chi df=5", "cauchy", "pareto 1.5")
 RHO_SWEEP_MARGINALS_Y = ("gaussian", "chi df=5")
 
 LATENT_SIMULATIONS = (
@@ -208,6 +233,8 @@ MARGINAL_LABELS = {
     "gaussian": r"$\mathcal{N}(0, 1)$",
     "chi df=5": r"$\chi^2_5$",
     "unif(-1, 1)": r"$U(-1, 1)$",
+    "uniform 0 0.5773502692": r"$U(0, 1/\sqrt{3})$",
+    "pareto 1.5": r"Pareto$(1.5)$",
 }
 
 PNG_DPI = 600
@@ -231,6 +258,11 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path(__file__).resolve().parent / "chatterjee_figures",
         help="Directory in which to save PNG figures.",
+    )
+    parser.add_argument(
+        "--rdpg-only",
+        action="store_true",
+        help="Create only figures for the sharded RDPG copula study.",
     )
     return parser.parse_args()
 
@@ -418,6 +450,15 @@ def prepare_ky3_rho_results(
     return gaussian, bernoulli
 
 
+def prepare_rdpg_copula_results(results_dir: Path) -> pd.DataFrame:
+    """Read and process both sharded RDPG Bernoulli-copula batches."""
+    data = process_results(read_result_batch(results_dir, RDPG_COPULA_RESULT_FILES))
+    rdpg = data[data["dgp_name"] == "BernoulliNetwork"].copy()
+    if rdpg.empty:
+        raise ValueError("The RDPG result batch contains no Bernoulli-network rows.")
+    return rdpg
+
+
 def aggregate_null_results(data: pd.DataFrame) -> pd.DataFrame:
     null_factors = [
         "method",
@@ -506,9 +547,9 @@ def assert_unique(data: pd.DataFrame, keys: list[str], context: str) -> None:
         )
 
 
-def method_handles(*, lines: bool) -> list[Line2D]:
+def method_handles(*, lines: bool, methods: tuple[str, ...] = METHODS) -> list[Line2D]:
     handles = []
-    for method in METHODS:
+    for method in methods:
         handles.append(
             Line2D(
                 [0],
@@ -526,13 +567,18 @@ def method_handles(*, lines: bool) -> list[Line2D]:
     return handles
 
 
-def add_shared_legend(fig: Figure, *, lines: bool) -> None:
+def add_shared_legend(
+    fig: Figure,
+    *,
+    lines: bool,
+    methods: tuple[str, ...] = METHODS,
+) -> None:
     layout_engine = fig.get_layout_engine()
     if layout_engine is not None:
         # Reserve a stable header band: title at the top, legend immediately below.
         layout_engine.set(rect=(0.0, 0.0, 1.0, 0.86))
     fig.legend(
-        handles=method_handles(lines=lines),
+        handles=method_handles(lines=lines, methods=methods),
         loc="upper center",
         bbox_to_anchor=(0.5, 0.94),
         ncols=3,
@@ -565,9 +611,10 @@ def plot_line_panel(
     y_sem: str,
     x_column: str = "n",
     band_alpha: float = 0.13,
+    methods: tuple[str, ...] = METHODS,
 ) -> None:
     assert_unique(data, [x_column, "method"], "Line panel")
-    for method in METHODS:
+    for method in methods:
         subset = data[data["method"] == method].sort_values(x_column)
         if subset.empty:
             continue
@@ -951,6 +998,73 @@ def plot_copula_figures(
     )
 
 
+def aggregate_rdpg_copula_results(data: pd.DataFrame) -> pd.DataFrame:
+    """Aggregate power for the sharded RDPG copula study."""
+    filtered = data[
+        (data["rho"] != 0.0)
+        & data["copula"].isin(RDPG_COPULAS)
+        & data["marginal_z"].isin(RDPG_MARGINALS_Z)
+        & data["marginal_y"].isin(RDPG_MARGINALS_Y)
+        & data["method"].isin(RDPG_METHODS)
+    ].copy()
+    return aggregate_results(
+        filtered,
+        y_axis="Rejection",
+        x_axis="n",
+        factors=["method", "copula", "marginal_z", "marginal_y"],
+    )
+
+
+def plot_rdpg_copula_figures(data: pd.DataFrame, output_dir: Path) -> None:
+    """Plot power across all five RDPG sample sizes and copula settings."""
+    aggregated = aggregate_rdpg_copula_results(data)
+    assert_unique(
+        aggregated,
+        ["n", "method", "copula", "marginal_z", "marginal_y"],
+        "RDPG copula power curves",
+    )
+    fig, axes = plt.subplots(
+        len(RDPG_MARGINALS_Y),
+        len(RDPG_COPULAS),
+        figsize=(8.0, 7.0),
+        sharex=True,
+        sharey=True,
+        squeeze=False,
+        layout="constrained",
+    )
+    for row, marginal_y in enumerate(RDPG_MARGINALS_Y):
+        for column, copula in enumerate(RDPG_COPULAS):
+            ax = axes[row, column]
+            panel = aggregated[
+                (aggregated["marginal_y"] == marginal_y)
+                & (aggregated["copula"] == copula)
+            ]
+            plot_line_panel(
+                ax,
+                panel,
+                y_mean="Rejection_mean",
+                y_sem="Rejection_sem",
+                methods=RDPG_METHODS,
+            )
+            style_probability_axis(ax)
+
+    add_facet_labels(
+        axes,
+        column_values=RDPG_COPULAS,
+        column_prefix="",
+        row_values=RDPG_MARGINALS_Y,
+        row_prefix="Y marginal: ",
+        row_labeler=display_marginal_label,
+    )
+    fig.suptitle(
+        "Power by network size — RDPG Bernoulli network, $k=k_y=3$"
+    )
+    fig.supxlabel(r"Network size, $n$")
+    fig.supylabel("Power")
+    add_shared_legend(fig, lines=True, methods=RDPG_METHODS)
+    save_figure(fig, output_dir, "27_rdpg_copulas_by_n_ky3")
+
+
 def plot_rho_sweep_network(
     data: pd.DataFrame,
     output_dir: Path,
@@ -1228,6 +1342,11 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     configure_plot_style()
+    if args.rdpg_only:
+        plot_rdpg_copula_figures(prepare_rdpg_copula_results(results_dir), output_dir)
+        print(f"Saved RDPG copula figure as PNG to {output_dir}")
+        return
+
     gaussian, bernoulli = prepare_results(results_dir)
     gaussian_ky3, bernoulli_ky3 = prepare_ky3_copula_results(results_dir)
     null_gaussian_ky3_raw, null_bernoulli_ky3_raw = prepare_ky3_null_results(
@@ -1310,8 +1429,9 @@ def main() -> None:
         ky=3,
         figure_numbers=(25, 26),
     )
+    plot_rdpg_copula_figures(prepare_rdpg_copula_results(results_dir), output_dir)
 
-    print(f"Saved 26 figures as PNG to {output_dir}")
+    print(f"Saved 27 figures as PNG to {output_dir}")
 
 
 if __name__ == "__main__":
