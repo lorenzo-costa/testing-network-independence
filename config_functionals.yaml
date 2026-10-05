@@ -65,7 +65,7 @@ methods:
     - name: MultivariateACTest
       kwargs:
         adaptive_m: true
-        use_permutation_coeff: true
+        use_permutation_coeff: false
       
     - name: DiffusionCorrelation
       kwargs: {}
