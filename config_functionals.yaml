@@ -54,17 +54,17 @@ methods:
     - name: MultivariateACTest
       kwargs:
         M: 1
-        use_permutation_coeff: false
+        use_permutation_coeff: true
 
     - name: MultivariateACTest
       kwargs:
         M: 0.5
-        use_permutation_coeff: false
+        use_permutation_coeff: true
 
     - name: MultivariateACTest
       kwargs:
         adaptive_m: true
-        use_permutation_coeff: false
+        use_permutation_coeff: true
       
     - name: DiffusionCorrelation
       kwargs: {}
