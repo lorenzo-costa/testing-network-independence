@@ -16,7 +16,7 @@ simulation:
   alpha: [0.05]           
   edge_var: [3]           
   noise_scale : [0.5]
-  predictor_distribution: uniform_rdpg
+  predictor_distribution: [gaussian, uniform_rdpg]
 
   functionals:
     - name: pareto
@@ -89,10 +89,7 @@ methods:
 setups:
   - dgp: BernoulliNetwork
     solver: ASE
-    rdpg: true
-
-  - dgp: GaussianNetwork
-    solver: ASE
+    rdpg: auto
 
 # -----------------------------------------------------------------------------
 # Metrics

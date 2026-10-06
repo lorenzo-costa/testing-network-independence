@@ -87,11 +87,10 @@ RDPG_COPULA_RESULT_FILES = (
 )
 
 FUNCTIONAL_RESULT_FILES = (
-    "simulation_results_63285583_shard-000-of-003.csv",
-    "simulation_results_63285583_shard-001-of-003.csv",
-    "simulation_results_63285583_shard-002-of-003.csv",
+    "simulation_results_63309064_shard-000-of-003.csv",
+    "simulation_results_63309064_shard-001-of-003.csv",
+    "simulation_results_63309064_shard-002-of-003.csv",
 )
-
 
 
 COLUMNS_TO_REPLACE = (

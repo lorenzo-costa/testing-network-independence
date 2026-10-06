@@ -82,7 +82,12 @@ class GaussianNetwork(LatentSampler):
 
 
 class BernoulliNetwork(GaussianNetwork):
-    """Single-network Bernoulli DGP with observed node covariates."""
+    """Single-network Bernoulli DGP with observed node covariates.
+
+    ``rdpg`` may be a boolean or ``"auto"``.  Auto mode uses the direct RDPG
+    link only when the functional sampler uses ``predictor_distribution``
+    ``"uniform_rdpg"``; all other samplers use the logistic link.
+    """
 
     def __init__(
         self,
@@ -125,12 +130,21 @@ class BernoulliNetwork(GaussianNetwork):
             f"sparsity_exponent={self.sparsity_exponent})"
         )
 
+    def _uses_rdpg_link(self):
+        """Whether this generated network should use direct RDPG probabilities."""
+        if self.rdpg == "auto":
+            return (
+                getattr(self.latent_sampler, "predictor_distribution", None)
+                == "uniform_rdpg"
+            )
+        return bool(self.rdpg)
+
     def generate(self):
         Z, Y, X = self._get_latent_and_covariate()
         expected_A = Z @ Z.T
         if self.sparsity_exponent > 0:
             expected_A *= np.log(self.n) ** (-self.sparsity_exponent)
-        if not self.rdpg:
+        if not self._uses_rdpg_link():
             expected_A = expit(expected_A)
         expected_A = np.clip(expected_A, 0, 1)
 
