@@ -15,8 +15,11 @@ simulation:
   rho: [0.2]              
   alpha: [0.05]           
   edge_var: [3]           
-  noise_scale : [1]
-  predictor_distribution: [gaussian, uniform_rdpg]
+  predictor_noise_sweeps:
+    - predictor_distribution: gaussian
+      noise_scale: 2.0
+    - predictor_distribution: uniform_rdpg
+      noise_scale: 0.5
 
   functionals:
     - name: pareto

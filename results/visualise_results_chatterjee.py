@@ -87,9 +87,9 @@ RDPG_COPULA_RESULT_FILES = (
 )
 
 FUNCTIONAL_RESULT_FILES = (
-    "simulation_results_63309064_shard-000-of-003.csv",
-    "simulation_results_63309064_shard-001-of-003.csv",
-    "simulation_results_63309064_shard-002-of-003.csv",
+    "simulation_results_63369056_shard-000-of-003.csv",
+    "simulation_results_63369056_shard-001-of-003.csv",
+    "simulation_results_63369056_shard-002-of-003.csv",
 )
 
 
@@ -485,13 +485,21 @@ def prepare_rdpg_copula_results(results_dir: Path) -> pd.DataFrame:
 def prepare_sharded_functional_results(
     results_dir: Path,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Read the sharded functional study and split it by network model."""
+    """Read the sharded functional study and split it by predictor distribution."""
     data = process_results(read_result_batch(results_dir, FUNCTIONAL_RESULT_FILES))
-    gaussian = data[data["dgp_name"] == "GaussianNetwork"].copy()
     bernoulli = data[data["dgp_name"] == "BernoulliNetwork"].copy()
-    if gaussian.empty or bernoulli.empty:
-        raise ValueError("Functional result batch must contain both network models.")
-    return gaussian, bernoulli
+    gaussian = bernoulli[
+        bernoulli["predictor_distribution"] == "gaussian"
+    ].copy()
+    uniform = bernoulli[
+        bernoulli["predictor_distribution"] == "uniform_rdpg"
+    ].copy()
+    if gaussian.empty or uniform.empty:
+        raise ValueError(
+            "Functional result batch must contain Bernoulli-network rows for "
+            "both gaussian and uniform_rdpg predictors."
+        )
+    return gaussian, uniform
 
 
 def aggregate_null_results(data: pd.DataFrame) -> pd.DataFrame:
@@ -1115,11 +1123,11 @@ def aggregate_sharded_functional_results(data: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def plot_sharded_functional_network(
+def plot_sharded_functional_distribution(
     data: pd.DataFrame,
     output_dir: Path,
     *,
-    network_name: str,
+    predictor_name: str,
     filename: str,
 ) -> None:
     """Plot the complete 3-by-3 grid of current functional alternatives."""
@@ -1127,7 +1135,7 @@ def plot_sharded_functional_network(
     assert_unique(
         aggregated,
         ["n", "method", "functional_form"],
-        f"{network_name} sharded functional curves",
+        f"{predictor_name} sharded functional curves",
     )
     fig, axes = plt.subplots(
         3,
@@ -1151,7 +1159,9 @@ def plot_sharded_functional_network(
         style_probability_axis(ax)
         ax.set_title(display_label(functional_form))
 
-    fig.suptitle(f"Power by network size — {network_name}, $k_y=3$")
+    fig.suptitle(
+        f"Power by network size — Bernoulli network, {predictor_name} predictors"
+    )
     fig.supxlabel(r"Network size, $n$")
     fig.supylabel("Power")
     add_shared_legend(fig, lines=True, methods=RDPG_METHODS)
@@ -1160,21 +1170,21 @@ def plot_sharded_functional_network(
 
 def plot_sharded_functional_figures(
     gaussian: pd.DataFrame,
-    bernoulli: pd.DataFrame,
+    uniform: pd.DataFrame,
     output_dir: Path,
 ) -> None:
-    """Create functional-study figures for both network models."""
-    plot_sharded_functional_network(
-        bernoulli,
-        output_dir,
-        network_name="Bernoulli binary network",
-        filename="28_binary_functional_forms_by_n_ky3",
-    )
-    plot_sharded_functional_network(
+    """Create functional-study figures for Gaussian and uniform RDPG predictors."""
+    plot_sharded_functional_distribution(
         gaussian,
         output_dir,
-        network_name="Gaussian weighted network",
-        filename="29_gaussian_functional_forms_by_n_ky3",
+        predictor_name="Gaussian",
+        filename="28_functional_forms_gaussian_predictors",
+    )
+    plot_sharded_functional_distribution(
+        uniform,
+        output_dir,
+        predictor_name="uniform RDPG",
+        filename="29_functional_forms_uniform_rdpg_predictors",
     )
 
 
@@ -1462,8 +1472,8 @@ def main() -> None:
         print(f"Saved RDPG copula figure as PNG to {output_dir}")
         return
     if args.functionals_only:
-        gaussian, bernoulli = prepare_sharded_functional_results(results_dir)
-        plot_sharded_functional_figures(gaussian, bernoulli, output_dir)
+        gaussian, uniform = prepare_sharded_functional_results(results_dir)
+        plot_sharded_functional_figures(gaussian, uniform, output_dir)
         print(f"Saved functional-study figures as PNG to {output_dir}")
         return
 
@@ -1550,11 +1560,11 @@ def main() -> None:
         figure_numbers=(25, 26),
     )
     plot_rdpg_copula_figures(prepare_rdpg_copula_results(results_dir), output_dir)
-    functional_gaussian, functional_bernoulli = prepare_sharded_functional_results(
+    functional_gaussian, functional_uniform = prepare_sharded_functional_results(
         results_dir
     )
     plot_sharded_functional_figures(
-        functional_gaussian, functional_bernoulli, output_dir
+        functional_gaussian, functional_uniform, output_dir
     )
 
     print(f"Saved 29 figures as PNG to {output_dir}")

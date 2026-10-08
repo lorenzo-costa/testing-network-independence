@@ -358,6 +358,34 @@ def _resolve_functionals_block(functionals_cfg):
     return resolved
 
 
+def _resolve_predictor_noise_sweeps(predictor_noise_cfg):
+    """Validate paired functional predictor-distribution and noise sweeps."""
+    if not isinstance(predictor_noise_cfg, list) or not predictor_noise_cfg:
+        raise TypeError("simulation.predictor_noise_sweeps must be a non-empty list")
+
+    resolved = []
+    for entry in predictor_noise_cfg:
+        if not isinstance(entry, dict):
+            raise TypeError("Each predictor_noise_sweeps entry must be a mapping")
+        distribution = entry.get("predictor_distribution")
+        noise_scale = entry.get("noise_scale")
+        if not isinstance(distribution, str) or not distribution:
+            raise TypeError(
+                "predictor_distribution in predictor_noise_sweeps must be a string"
+            )
+        if isinstance(noise_scale, bool) or not isinstance(noise_scale, (int, float)):
+            raise TypeError(
+                "noise_scale in predictor_noise_sweeps must be a number"
+            )
+        resolved.append(
+            {
+                "predictor_distribution": distribution,
+                "noise_scale": noise_scale,
+            }
+        )
+    return resolved
+
+
 # =============================================================================
 # Experiment-type detection
 # =============================================================================
@@ -460,6 +488,15 @@ def load_config(path: str = "config.yaml") -> dict:
         sim_raw = dict(sim_raw)
         sim_raw["functionals"] = _resolve_functionals_block(sim_raw["functionals"])
         sim_raw.update(_resolve_noise_options(sim_raw))
+        if "predictor_noise_sweeps" in sim_raw:
+            if "noise_scale" in sim_raw or "predictor_distribution" in sim_raw:
+                raise ValueError(
+                    "predictor_noise_sweeps cannot be combined with noise_scale or "
+                    "predictor_distribution."
+                )
+            sim_raw["predictor_noise_sweeps"] = _resolve_predictor_noise_sweeps(
+                sim_raw["predictor_noise_sweeps"]
+            )
 
     methods = _resolve_methods_block(raw["methods"])
     metrics = [ComputeAll()] if raw.get("metrics", {}).get("compute_all") else []
@@ -586,7 +623,10 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
         if sim.get("functionals") is not None:
             names.append("_functional")
             vals.append(sim["functionals"])
-        if "noise_scale" in sim:
+        if "predictor_noise_sweeps" in sim:
+            names.append("_predictor_noise")
+            vals.append(sim["predictor_noise_sweeps"])
+        elif "noise_scale" in sim:
             names.append("noise_scale")
             vals.append(sim["noise_scale"])
         if "noise_type" in sim:
@@ -595,7 +635,10 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
         if "column_covariance" in sim:
             names.append("column_covariance")
             vals.append(sim["column_covariance"])
-        if "predictor_distribution" in sim:
+        if (
+            "predictor_noise_sweeps" not in sim
+            and "predictor_distribution" in sim
+        ):
             names.append("predictor_distribution")
             vals.append(
                 _as_sweep(
@@ -619,6 +662,9 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             if functional is not None:
                 row["functional_form"] = functional["functional_form"]
                 row["function_params"] = functional["function_params"]
+            predictor_noise = row.pop("_predictor_noise", None)
+            if predictor_noise is not None:
+                row.update(predictor_noise)
         return rows
 
     # -- Multiness ------------------------------------------------------------

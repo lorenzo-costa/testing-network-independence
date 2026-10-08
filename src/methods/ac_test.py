@@ -132,7 +132,7 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
             self.adaptive_m_values = self._adaptive_m_grid(self.Y.shape[0])
         self._fit_permutation()
 
-        if self.adaptive_m:
+        if self.adaptive_m: 
             self.adaptive_s_statistics = self.statistic_matrix
             self.adaptive_m_means = self.statistic_means
             self.adaptive_m_stds = self.statistic_standard_deviations

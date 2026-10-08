@@ -479,6 +479,7 @@ def _add_config_columns(results: pd.DataFrame) -> pd.DataFrame:
         "degree": ("degree", None),
         "NN_number": ("NN_number", None),
         "functional_form": ("functional_form", _clean_string),
+        "predictor_distribution": ("predictor_distribution", _clean_string),
         "sbm_covariate_sampling": (
             "sbm_covariate_sampling",
             _clean_string,

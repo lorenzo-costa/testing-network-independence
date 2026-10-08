@@ -204,9 +204,9 @@ class FunctionalGenerator:
     def _sample_predictors(self) -> np.ndarray:
         """Draw a fresh ``(n, k)`` predictor matrix."""
         if self.predictor_distribution == "uniform_rdpg":
-            # Folding a uniform point from the unit ball into the positive
-            # orthant is uniform on that orthant.  The radius and direction are
-            # sampled independently, which avoids rejection sampling in high k.
+             # directions are sampled from a reflected gaussian and then normalsied
+            # to get points we sample radius and multiply by direction  The radius and 
+            # direction are sampled independently, which avoids rejection sampling in high k.
             direction = np.abs(self.rng.standard_normal((self.n, self.kz)))
             direction /= np.linalg.norm(direction, axis=1, keepdims=True)
             radius = self.rng.random(self.n) ** (1.0 / self.kz)
