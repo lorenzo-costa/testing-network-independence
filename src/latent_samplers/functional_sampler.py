@@ -8,7 +8,7 @@ This module follows the output convention used by ``copula_sampler.py``:
   scalar response customarily denoted by :math:`Y`.
 
 The default models are deterministic: ``Y[:, 0] = f(Z)``.  Hence, with
-``noise_scale=0`` they are useful alternatives for testing a dependence
+``noise_scale=0`` and ``rho=None`` they are useful alternatives for testing a dependence
 statistic that should attain its functional-dependence maximum when
 :math:`Y=f(Y)`.
 """
@@ -61,7 +61,15 @@ class FunctionalGenerator:
         Degrees of freedom when ``predictor_distribution="student_t"``.
     noise_scale : float, default=0.0
         Standard deviation of response noise.  Set this to zero to preserve
-        the exact deterministic relationship ``Y=f(Z)``.
+        the exact deterministic relationship ``Y=f(Z)`` when ``rho=None``.
+    rho : float, optional
+        Target signal fraction for additive noise, with ``0 < rho <= 1``.
+        Overrides ``noise_scale`` using the current sample's signal variance:
+        ``noise_var = np.var(f(Z)) * (1 - rho) / rho``.  Gaussian noise is
+        drawn with this target variance; its realized sample variance may
+        differ.  ``rho=1`` or a constant signal produces no noise.  For a
+        constant signal the variance ratio is undefined.  Ignored for
+        multiplicative noise.
     noise_type : {"additive", "multiplicative"}, default="additive"
         Additive noise uses ``Y = f(Z) + sigma*epsilon``.  Multiplicative
         noise uses ``Y = f(Z) * exp(sigma*epsilon)`` and is especially useful
@@ -125,6 +133,7 @@ class FunctionalGenerator:
         predictor_distribution = "gaussian",
         predictor_df = 5.0,
         noise_scale = 0.0,
+        rho = None,
         noise_type = "additive",
         center_latent = False,
         rng  = None,
@@ -138,6 +147,8 @@ class FunctionalGenerator:
             raise ValueError("noise_scale must be non-negative.")
         if noise_type not in {"additive", "multiplicative"}:
             raise ValueError("noise_type must be 'additive' or 'multiplicative'.")
+        if noise_type == "additive" and rho is not None and not 0 < rho <= 1:
+            raise ValueError("rho must satisfy 0 < rho <= 1 for additive noise.")
         if predictor_distribution not in {"gaussian", "student_t", "uniform_rdpg"}:
             raise ValueError(
                 "predictor_distribution must be 'gaussian', 'student_t', or "
@@ -158,6 +169,7 @@ class FunctionalGenerator:
         self.predictor_distribution = predictor_distribution
         self.predictor_df = float(predictor_df)
         self.noise_scale = float(noise_scale)
+        self.rho = rho
         self.noise_type = noise_type
         self.center_latent = bool(center_latent)
         self.rng = rng if rng is not None else np.random.default_rng()
@@ -408,12 +420,16 @@ class FunctionalGenerator:
         return scale * (1.0 - u) ** (-1.0 / alpha)
 
     def _add_noise(self, y: np.ndarray) -> np.ndarray:
-        if self.noise_scale == 0.0:
+        noise_scale = self.noise_scale
+        if self.noise_type == "additive" and self.rho is not None:
+            noise_var = np.var(y) * (1 - self.rho) / self.rho
+            noise_scale = np.sqrt(noise_var)
+        if noise_scale == 0.0:
             return y
         epsilon = self.rng.standard_normal(self.n)
         if self.noise_type == "additive":
-            return y + self.noise_scale * epsilon
-        return y * np.exp(self.noise_scale * epsilon)
+            return y + noise_scale * epsilon
+        return y * np.exp(noise_scale * epsilon)
 
     def sample_latent(self) -> tuple[np.ndarray, np.ndarray]:
         """Sample predictors and their response.
@@ -444,7 +460,12 @@ class FunctionalGenerator:
     def get_name(self) -> str:
         """Return a concise, filesystem-friendly description of this DGP."""
         name = self._functional_name if self._functional_name is not None else "custom"
+        noise = (
+            f"rho{self.rho:g}"
+            if self.noise_type == "additive" and self.rho is not None
+            else f"noise{self.noise_scale:g}"
+        )
         return (
             f"functional_{name}_n{self.n}_k{self.kz}_"
-            f"predictors_{self.predictor_distribution}_noise{self.noise_scale:g}"
+            f"predictors_{self.predictor_distribution}_{noise}"
         )
