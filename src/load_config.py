@@ -304,14 +304,25 @@ def _resolve_methods_block(methods_cfg: dict) -> dict:
 def _resolve_noise_options(simulation_cfg: dict) -> dict:
     """Validate optional functional-noise controls from the simulation block.
 
-    ``noise_scale`` is an integer and ``noise_type`` is a string.  Both may
-    also be supplied as lists to sweep several values; scalar values are
-    normalised to one-element lists for the factorial design.
+    ``noise_scale`` and ``snr`` are numeric and ``noise_type`` is a string.
+    Each may also be supplied as a list to sweep several values; scalars are
+    normalised to one-element lists for the factorial design.  ``snr`` is the
+    signal fraction and maps to the functional sampler's ``rho`` parameter.
     """
     def _as_list(value):
         return value if isinstance(value, list) else [value]
 
     resolved = {}
+    if "snr" in simulation_cfg:
+        if "rho" in simulation_cfg:
+            raise ValueError("Specify only one of simulation.snr and simulation.rho")
+        snrs = _as_list(simulation_cfg["snr"])
+        if any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in snrs):
+            raise TypeError("simulation.snr must be a number or a list of numbers")
+        if not snrs or any(not 0 < value <= 1 for value in snrs):
+            raise ValueError("simulation.snr must contain values satisfying 0 < snr <= 1")
+        resolved["rho"] = snrs
+
     if "noise_scale" in simulation_cfg:
         scales = _as_list(simulation_cfg["noise_scale"])
         if any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in scales):
