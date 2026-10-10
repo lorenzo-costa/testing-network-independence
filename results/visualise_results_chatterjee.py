@@ -87,9 +87,9 @@ RDPG_COPULA_RESULT_FILES = (
 )
 
 FUNCTIONAL_RESULT_FILES = (
-    "simulation_results_63633032_shard-000-of-003.csv",
-    "simulation_results_63633032_shard-001-of-003.csv",
-    "simulation_results_63633032_shard-002-of-003.csv",
+    "simulation_results_63635873_shard-000-of-003.csv",
+    "simulation_results_63635873_shard-001-of-003.csv",
+    "simulation_results_63635873_shard-002-of-003.csv",
 )
 
 
@@ -198,10 +198,8 @@ SHARDED_FUNCTIONAL_FORMS = (
     "linear",
     "sigmoid",
     "sine",
-    "pareto",
     "radial",
     "tanh_product",
-    "manifold",
     "abs_max",
     "max",
 )
@@ -1150,7 +1148,7 @@ def plot_sharded_functional_snr(
     filename: str,
     snr: float,
 ) -> None:
-    """Plot the complete 3-by-3 functional grid at one SNR level."""
+    """Plot the selected functional alternatives at one SNR level."""
     assert_unique(
         aggregated,
         ["n", "method", "functional_form"],
@@ -1177,6 +1175,11 @@ def plot_sharded_functional_snr(
         )
         style_probability_axis(ax)
         ax.set_title(display_label(functional_form))
+        if index + 3 >= len(SHARDED_FUNCTIONAL_FORMS):
+            ax.tick_params(axis="x", labelbottom=True)
+
+    for ax in axes.flat[len(SHARDED_FUNCTIONAL_FORMS):]:
+        ax.set_visible(False)
 
     fig.suptitle(
         f"Power by network size — Bernoulli network, {predictor_name} predictors"

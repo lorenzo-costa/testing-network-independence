@@ -339,7 +339,7 @@ class FunctionalGenerator:
 
     def _functional_piecewise(self, Z: np.ndarray) -> np.ndarray:
         switch_feature = int(self.function_params.get("switch_feature", 0))
-        if not 0 <= switch_feature < self.k:
+        if not 0 <= switch_feature < self.kz:
             raise ValueError("switch_feature must be an integer in [0, k).")
         threshold = float(self.function_params.get("threshold", 0.0))
         base_index = self._index(Z)

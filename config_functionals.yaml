@@ -10,7 +10,7 @@ simulation:
   seed: 1                 
 
   n: [100, 300]      
-  k: [3]                  
+  k: [1]                  
   ky: [1]
   snr: [0.1, 0.3, 0.4]  # Var(f(Z)) / (Var(f(Z)) + Var(noise))
   alpha: [0.05]           
