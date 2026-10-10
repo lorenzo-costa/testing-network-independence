@@ -17,6 +17,7 @@ simulation:
   edge_var: [3]           
   predictor_distribution: [gaussian, uniform_rdpg]
 
+  # Shared k=1 list; abs_max is intentionally retained for both distributions.
   functionals:
     - name: sigmoid
       kwargs:
@@ -26,14 +27,24 @@ simulation:
         global_scale : 10.0
     - name: linear
       kwargs: {}
+    # Represents nonlinear_additive, sparse_nonlinear, and manifold at k=1.
+    - name: nonlinear_additive
+      kwargs:
+        quadratic_scale: 1.0
     - name: radial
       kwargs: {}
+    - name: threshold
+      kwargs:
+        threshold: 0.0
+      kwargs_by_predictor_distribution:
+        uniform_rdpg:
+          threshold: 0.5
     - name: tanh_product
       kwargs:
         global_scale : 10.0
     - name: abs_max
       kwargs: {}
-    - name: max
+    - name: pareto
       kwargs: {}
 
 # -----------------------------------------------------------------------------

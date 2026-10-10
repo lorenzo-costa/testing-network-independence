@@ -345,7 +345,9 @@ def _resolve_functionals_block(functionals_cfg):
     Each entry is retained as a plain, serialisable descriptor so downstream
     simulation code can dispatch the functional by name while receiving its
     keyword arguments unchanged.  A bare string is also accepted as shorthand
-    for ``{"name": <string>, "kwargs": {}}``.
+    for ``{"name": <string>, "kwargs": {}}``. Optional
+    ``kwargs_by_predictor_distribution`` overrides individual kwargs for
+    matching predictor distributions when the design rows are built.
     """
     if functionals_cfg is None:
         return None
@@ -363,9 +365,20 @@ def _resolve_functionals_block(functionals_cfg):
         kwargs = entry.get("kwargs") or {}
         if not isinstance(kwargs, dict):
             raise TypeError("functional kwargs must be a mapping")
-        resolved.append(
-            {"functional_form": entry["name"], "function_params": kwargs}
-        )
+        descriptor = {"functional_form": entry["name"], "function_params": kwargs}
+        if "kwargs_by_predictor_distribution" in entry:
+            overrides = entry["kwargs_by_predictor_distribution"]
+            if not isinstance(overrides, dict) or any(
+                not isinstance(distribution, str)
+                or not isinstance(params, dict)
+                for distribution, params in overrides.items()
+            ):
+                raise TypeError(
+                    "functional kwargs_by_predictor_distribution must map "
+                    "predictor names to parameter mappings"
+                )
+            descriptor["kwargs_by_predictor_distribution"] = overrides
+        resolved.append(descriptor)
     return resolved
 
 
@@ -669,13 +682,17 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             vals.append(sim["function_type"])
         rows = [dict(zip(names, v)) for v in iproduct(*vals)]
         for row in rows:
-            functional = row.pop("_functional", None)
-            if functional is not None:
-                row["functional_form"] = functional["functional_form"]
-                row["function_params"] = functional["function_params"]
             predictor_noise = row.pop("_predictor_noise", None)
             if predictor_noise is not None:
                 row.update(predictor_noise)
+            functional = row.pop("_functional", None)
+            if functional is not None:
+                row["functional_form"] = functional["functional_form"]
+                row["function_params"] = dict(functional["function_params"])
+                overrides = functional.get("kwargs_by_predictor_distribution", {})
+                row["function_params"].update(
+                    overrides.get(row.get("predictor_distribution", "gaussian"), {})
+                )
         return rows
 
     # -- Multiness ------------------------------------------------------------

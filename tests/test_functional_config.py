@@ -66,3 +66,42 @@ def test_snr_and_rho_cannot_conflict(tmp_path):
 
     with pytest.raises(ValueError, match="Specify only one"):
         load_config(path)
+
+
+@pytest.mark.parametrize("paired_sweep", [False, True])
+def test_threshold_override_reaches_only_uniform_predictors(tmp_path, paired_sweep):
+    raw = yaml.safe_load(CONFIG_PATH.read_text())
+    if paired_sweep:
+        distributions = raw["simulation"].pop("predictor_distribution")
+        raw["simulation"]["predictor_noise_sweeps"] = [
+            {"predictor_distribution": distribution, "noise_scale": 0.0}
+            for distribution in distributions
+        ]
+    path = tmp_path / "functionals.yaml"
+    path.write_text(yaml.safe_dump(raw))
+    config = load_config(path)
+    design = build_factorial_design(config)
+    threshold_rows = [row for row in design if row["functional_form"] == "threshold"]
+
+    for distribution, threshold, expected in [
+        ("gaussian", 0.0, [1.0, 1.0, 1.0]),
+        ("uniform_rdpg", 0.5, [0.0, 0.0, 1.0]),
+    ]:
+        rows = [row for row in threshold_rows if row["predictor_distribution"] == distribution]
+        assert rows
+        assert all(row["function_params"]["threshold"] == threshold for row in rows)
+        row = rows[0]
+        factory, _ = row["setup"]
+        sampler = factory(**dict(row, n=3)).latent_sampler
+        signal = sampler._evaluate_function(np.array([[0.25], [0.5], [0.75]]))
+        np.testing.assert_array_equal(signal, expected)
+
+    descriptor = next(
+        entry for entry in config["simulation"]["functionals"]
+        if entry["functional_form"] == "threshold"
+    )
+    assert descriptor["function_params"]["threshold"] == 0.0
+    assert all(
+        "threshold" not in row["function_params"]
+        for row in design if row["functional_form"] != "threshold"
+    )
