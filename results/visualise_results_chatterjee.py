@@ -87,9 +87,9 @@ RDPG_COPULA_RESULT_FILES = (
 )
 
 FUNCTIONAL_RESULT_FILES = (
-    "simulation_results_63369056_shard-000-of-003.csv",
-    "simulation_results_63369056_shard-001-of-003.csv",
-    "simulation_results_63369056_shard-002-of-003.csv",
+    "simulation_results_63633032_shard-000-of-003.csv",
+    "simulation_results_63633032_shard-001-of-003.csv",
+    "simulation_results_63633032_shard-002-of-003.csv",
 )
 
 
@@ -1109,7 +1109,7 @@ def plot_rdpg_copula_figures(data: pd.DataFrame, output_dir: Path) -> None:
 
 
 def aggregate_sharded_functional_results(data: pd.DataFrame) -> pd.DataFrame:
-    """Aggregate power for every current functional alternative and method."""
+    """Aggregate power separately for each SNR, functional, and method."""
     filtered = data[
         (data["rho"] != 0.0)
         & data["functional_form"].isin(SHARDED_FUNCTIONAL_FORMS)
@@ -1119,7 +1119,7 @@ def aggregate_sharded_functional_results(data: pd.DataFrame) -> pd.DataFrame:
         filtered,
         y_axis="Rejection",
         x_axis="n",
-        factors=["method", "functional_form"],
+        factors=["rho", "method", "functional_form"],
     )
 
 
@@ -1130,8 +1130,27 @@ def plot_sharded_functional_distribution(
     predictor_name: str,
     filename: str,
 ) -> None:
-    """Plot the complete 3-by-3 grid of current functional alternatives."""
+    """Plot a separate functional grid for every available positive SNR."""
     aggregated = aggregate_sharded_functional_results(data)
+    for snr, snr_data in aggregated.groupby("rho", sort=True):
+        plot_sharded_functional_snr(
+            snr_data,
+            output_dir,
+            predictor_name=predictor_name,
+            filename=f"{filename}_snr_{snr:g}",
+            snr=snr,
+        )
+
+
+def plot_sharded_functional_snr(
+    aggregated: pd.DataFrame,
+    output_dir: Path,
+    *,
+    predictor_name: str,
+    filename: str,
+    snr: float,
+) -> None:
+    """Plot the complete 3-by-3 functional grid at one SNR level."""
     assert_unique(
         aggregated,
         ["n", "method", "functional_form"],
@@ -1161,6 +1180,7 @@ def plot_sharded_functional_distribution(
 
     fig.suptitle(
         f"Power by network size — Bernoulli network, {predictor_name} predictors"
+        f"\nSNR = {snr:g}"
     )
     fig.supxlabel(r"Network size, $n$")
     fig.supylabel("Power")
