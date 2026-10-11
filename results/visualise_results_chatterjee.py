@@ -87,9 +87,9 @@ RDPG_COPULA_RESULT_FILES = (
 )
 
 FUNCTIONAL_RESULT_FILES = (
-    "simulation_results_63635873_shard-000-of-003.csv",
-    "simulation_results_63635873_shard-001-of-003.csv",
-    "simulation_results_63635873_shard-002-of-003.csv",
+    "simulation_results_63690183_shard-000-of-003.csv",
+    "simulation_results_63690183_shard-001-of-003.csv",
+    "simulation_results_63690183_shard-002-of-003.csv",
 )
 
 
@@ -196,12 +196,12 @@ RDPG_MARGINALS_Z = ("uniform 0 0.5773502692",)
 RDPG_MARGINALS_Y = ("gaussian", "chi df=5", "cauchy", "pareto 1.5")
 SHARDED_FUNCTIONAL_FORMS = (
     "linear",
+    "piecewise",
     "sigmoid",
     "sine",
-    "radial",
-    "tanh_product",
     "abs_max",
-    "max",
+    "tanh_product",
+    "pareto",
 )
 RHO_SWEEP_MARGINALS_Y = ("gaussian", "chi df=5")
 
@@ -283,7 +283,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--functionals-only",
         action="store_true",
-        help="Create only figures for the sharded functional study.",
+        help="Create only figures for the sharded k=1 functional study (63690183).",
     )
     return parser.parse_args()
 
@@ -483,9 +483,11 @@ def prepare_rdpg_copula_results(results_dir: Path) -> pd.DataFrame:
 def prepare_sharded_functional_results(
     results_dir: Path,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Read the sharded functional study and split it by predictor distribution."""
+    """Read the k=1 functional study and split it by predictor distribution."""
     data = process_results(read_result_batch(results_dir, FUNCTIONAL_RESULT_FILES))
-    bernoulli = data[data["dgp_name"] == "BernoulliNetwork"].copy()
+    bernoulli = data[
+        (data["dgp_name"] == "BernoulliNetwork") & (data["k"] == 1)
+    ].copy()
     gaussian = bernoulli[
         bernoulli["predictor_distribution"] == "gaussian"
     ].copy()
@@ -494,7 +496,7 @@ def prepare_sharded_functional_results(
     ].copy()
     if gaussian.empty or uniform.empty:
         raise ValueError(
-            "Functional result batch must contain Bernoulli-network rows for "
+            "Functional result batch must contain k=1 Bernoulli-network rows for "
             "both gaussian and uniform_rdpg predictors."
         )
     return gaussian, uniform
@@ -694,13 +696,14 @@ def plot_scatter_panel(
     category: str,
     categories: tuple[str, ...],
     y_mean: str = "Rejection_mean",
+    methods: tuple[str, ...] = METHODS,
     category_labeler: Callable[[object], str] = display_label,
 ) -> None:
     assert_unique(data, [category, "method"], "Scatter panel")
     base_positions = np.arange(len(categories), dtype=float)
-    offsets = dict(zip(METHODS, np.linspace(-0.25, 0.25, len(METHODS))))
+    offsets = dict(zip(methods, np.linspace(-0.25, 0.25, len(methods))))
 
-    for method in METHODS:
+    for method in methods:
         subset = data[data["method"] == method].set_index(category)
         subset = subset.reindex(categories)
         mean = pd.to_numeric(subset[y_mean], errors="coerce").to_numpy(dtype=float)
@@ -1121,94 +1124,38 @@ def aggregate_sharded_functional_results(data: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def plot_sharded_functional_distribution(
-    data: pd.DataFrame,
-    output_dir: Path,
-    *,
-    predictor_name: str,
-    filename: str,
-) -> None:
-    """Plot a separate functional grid for every available positive SNR."""
-    aggregated = aggregate_sharded_functional_results(data)
-    for snr, snr_data in aggregated.groupby("rho", sort=True):
-        plot_sharded_functional_snr(
-            snr_data,
-            output_dir,
-            predictor_name=predictor_name,
-            filename=f"{filename}_snr_{snr:g}",
-            snr=snr,
-        )
-
-
-def plot_sharded_functional_snr(
-    aggregated: pd.DataFrame,
-    output_dir: Path,
-    *,
-    predictor_name: str,
-    filename: str,
-    snr: float,
-) -> None:
-    """Plot the selected functional alternatives at one SNR level."""
-    assert_unique(
-        aggregated,
-        ["n", "method", "functional_form"],
-        f"{predictor_name} sharded functional curves",
-    )
-    fig, axes = plt.subplots(
-        3,
-        3,
-        figsize=(8.0, 7.0),
-        sharex=True,
-        sharey=True,
-        squeeze=False,
-        layout="constrained",
-    )
-    for index, functional_form in enumerate(SHARDED_FUNCTIONAL_FORMS):
-        row, column = divmod(index, 3)
-        ax = axes[row, column]
-        plot_line_panel(
-            ax,
-            aggregated[aggregated["functional_form"] == functional_form],
-            y_mean="Rejection_mean",
-            y_sem="Rejection_sem",
-            methods=RDPG_METHODS,
-        )
-        style_probability_axis(ax)
-        ax.set_title(display_label(functional_form))
-        if index + 3 >= len(SHARDED_FUNCTIONAL_FORMS):
-            ax.tick_params(axis="x", labelbottom=True)
-
-    for ax in axes.flat[len(SHARDED_FUNCTIONAL_FORMS):]:
-        ax.set_visible(False)
-
-    fig.suptitle(
-        f"Power by network size — Bernoulli network, {predictor_name} predictors"
-        f"\nSNR = {snr:g}"
-    )
-    fig.supxlabel(r"Network size, $n$")
-    fig.supylabel("Power")
-    add_shared_legend(fig, lines=True, methods=RDPG_METHODS)
-    save_figure(fig, output_dir, filename)
-
-
 def plot_sharded_functional_figures(
     gaussian: pd.DataFrame,
     uniform: pd.DataFrame,
     output_dir: Path,
 ) -> None:
-    """Create functional-study figures for Gaussian and uniform RDPG predictors."""
-    plot_sharded_functional_distribution(
-        gaussian,
-        output_dir,
-        predictor_name="Gaussian",
-        filename="28_functional_forms_gaussian_predictors",
-    )
-    plot_sharded_functional_distribution(
-        uniform,
-        output_dir,
-        predictor_name="uniform RDPG",
-        filename="29_functional_forms_uniform_rdpg_predictors",
-    )
+    """Plot n=300 alternatives separately for each predictor and fixed SNR."""
+    for data, predictor, prefix in (
+        (gaussian, "Gaussian", "28_functional_forms_gaussian_predictors"),
+        (uniform, "uniform RDPG", "29_functional_forms_uniform_rdpg_predictors"),
+    ):
+        aggregated = aggregate_sharded_functional_results(data[data["n"] == 300])
+        if aggregated.empty:
+            raise ValueError(f"No n=300 functional results for {predictor} predictors.")
+        for snr, subset in aggregated.groupby("rho", sort=True):
+            fig, axes = plt.subplots(
+                1, 1, figsize=(7.0, 2.9), squeeze=False, layout="constrained",
+            )
+            ax = axes[0, 0]
+            plot_scatter_panel(
+                ax, subset, category="functional_form",
+                categories=SHARDED_FUNCTIONAL_FORMS, methods=RDPG_METHODS,
+            )
+            style_probability_axis(ax)
+            for boundary in np.arange(len(SHARDED_FUNCTIONAL_FORMS) - 1) + 0.5:
+                ax.axvline(boundary, color="#D9D9D9", linewidth=0.6, zorder=0)
+            fig.suptitle(
+                f"{predictor} predictors — $n=300$, $k=1$, SNR = {snr:g}"
+            )
+            fig.supxlabel("Functional alternative")
+            fig.supylabel("Power")
+            add_shared_legend(fig, lines=False, methods=RDPG_METHODS)
+            save_figure(fig, output_dir, f"{prefix}_n300_k1_snr_{snr:g}")
 
 
 def plot_rho_sweep_network(
