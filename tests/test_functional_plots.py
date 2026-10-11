@@ -40,7 +40,7 @@ def test_functional_plots_cover_each_snr_and_predictor(monkeypatch, tmp_path):
     plots.plot_sharded_functional_figures(data, data, tmp_path)
 
     assert set(calls) == {
-        f"{prefix}_n300_k1_snr_{snr:g}"
+        f"{prefix}_n300_k1_true_latent_snr_{snr:g}"
         for prefix in ("28_functional_forms_gaussian_predictors",
                        "29_functional_forms_uniform_rdpg_predictors")
         for snr in [0.1, 0.2, 0.3, 0.4, 0.5]

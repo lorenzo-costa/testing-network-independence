@@ -1155,7 +1155,7 @@ def plot_sharded_functional_figures(
             fig.supxlabel("Functional alternative")
             fig.supylabel("Power")
             add_shared_legend(fig, lines=False, methods=RDPG_METHODS)
-            save_figure(fig, output_dir, f"{prefix}_n300_k1_snr_{snr:g}")
+            save_figure(fig, output_dir, f"{prefix}_n300_k1_true_latent_snr_{snr:g}")
 
 
 def plot_rho_sweep_network(
