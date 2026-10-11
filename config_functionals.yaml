@@ -43,7 +43,13 @@ simulation:
       kwargs:
         global_scale : 10.0
     - name: abs_max
-      kwargs: {}
+      kwargs:
+        center: 0.0
+        input_scale: 1.0
+      kwargs_by_predictor_distribution:
+        uniform_rdpg:
+          center: 0.5
+          input_scale: 3.4641016151377544  # sqrt(12)
     - name: pareto
       kwargs: {}
 

@@ -43,6 +43,37 @@ def test_unknown_functional_is_rejected():
         FunctionalGenerator(n=5, k=2, ky=1, functional_form="invalid")
 
 
+def test_abs_max_supports_centered_scaled_wedge():
+    generator = FunctionalGenerator(
+        n=3,
+        k=1,
+        functional_form="abs_max",
+        function_params={"center": 0.5, "input_scale": np.sqrt(12.0)},
+    )
+    z = np.array([[0.0], [0.5], [1.0]])
+
+    signal = generator._evaluate_function(z)
+
+    np.testing.assert_allclose(signal, [np.sqrt(3.0), 0.0, np.sqrt(3.0)])
+
+
+@pytest.mark.parametrize(
+    "params, message",
+    [
+        ({"center": [0.0, 0.5]}, "center for abs_max"),
+        ({"input_scale": 0.0}, "input_scale must be positive"),
+        ({"input_scale": np.inf}, "input_scale must be positive"),
+    ],
+)
+def test_abs_max_validates_wedge_parameters(params, message):
+    generator = FunctionalGenerator(
+        n=3, k=1, functional_form="abs_max", function_params=params
+    )
+
+    with pytest.raises(ValueError, match=message):
+        generator._evaluate_function(np.array([[0.0], [0.5], [1.0]]))
+
+
 @pytest.mark.parametrize(
     "covariance, message",
     [

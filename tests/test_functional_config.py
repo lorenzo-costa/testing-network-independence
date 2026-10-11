@@ -105,3 +105,21 @@ def test_threshold_override_reaches_only_uniform_predictors(tmp_path, paired_swe
         "threshold" not in row["function_params"]
         for row in design if row["functional_form"] != "threshold"
     )
+
+
+def test_abs_max_is_centered_and_scaled_only_for_uniform_predictors():
+    design = build_factorial_design(load_config(CONFIG_PATH))
+    rows = [row for row in design if row["functional_form"] == "abs_max"]
+
+    for distribution, expected in [
+        ("gaussian", [0.0, 0.5, 1.0]),
+        ("uniform_rdpg", [np.sqrt(3.0), 0.0, np.sqrt(3.0)]),
+    ]:
+        row = next(
+            row for row in rows
+            if row["predictor_distribution"] == distribution
+        )
+        factory, _ = row["setup"]
+        sampler = factory(**dict(row, n=3)).latent_sampler
+        signal = sampler._evaluate_function(np.array([[0.0], [0.5], [1.0]]))
+        np.testing.assert_allclose(signal, expected)

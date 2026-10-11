@@ -44,8 +44,9 @@ class FunctionalGenerator:
     function_params : dict, optional
         Parameters specific to the selected functional.  Useful keys include
         ``weights``, ``frequency``, ``threshold``, ``active_features``,
-        ``alpha`` and ``scale`` (for ``pareto_index``), and ``switch_feature``
-        (for ``piecewise``).
+        ``alpha`` and ``scale`` (for ``pareto_index``), ``switch_feature``
+        (for ``piecewise``), and ``center`` and ``input_scale`` (for
+        ``abs_max``).
     column_covariance : ndarray, optional
         ``k y k`` covariance matrix used for Gaussian predictors.  The
         identity is used by default.
@@ -354,12 +355,27 @@ class FunctionalGenerator:
         return np.max(Z, axis=1)
 
     def _functional_abs_max(self, Z: np.ndarray) -> np.ndarray:
-        return np.max(np.abs(Z), axis=1)
+        center = np.asarray(self.function_params.get("center", 0.0), dtype=float)
+        if center.ndim > 1 or (center.ndim == 1 and center.shape != (self.kz,)):
+            raise ValueError(
+                "center for abs_max must be a scalar or have shape "
+                f"({self.kz},), got {center.shape}."
+            )
+        input_scale = float(self.function_params.get("input_scale", 1.0))
+        if not np.isfinite(input_scale) or input_scale <= 0:
+            raise ValueError("input_scale must be positive and finite for abs_max.")
+        return np.max(np.abs(input_scale * (Z - center)), axis=1)
 
     def _functional_tanh_product(self, Z: np.ndarray) -> np.ndarray:
         scale = float(self.function_params.get("input_scale", 1.0))
         global_scale = float(self.function_params.get("global_scale", 1.0))
-        return np.prod(np.tanh(scale * Z), axis=1) * global_scale
+        center = np.asarray(self.function_params.get("center", 0.0), dtype=float)
+        if center.ndim > 1 or (center.ndim == 1 and center.shape != (self.kz,)):
+            raise ValueError(
+                "center for tanh_product must be a scalar or have shape "
+                f"({self.kz},), got {center.shape}."
+            )
+        return np.prod(np.tanh(scale * (Z - center)), axis=1) * global_scale
 
     def _functional_sparse_nonlinear(self, Z: np.ndarray) -> np.ndarray:
         active = self._active_columns()

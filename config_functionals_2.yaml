@@ -1,0 +1,98 @@
+# Functional alternatives with four predictors and a scalar response.
+# All 15 forms for both distributions; max and abs_max coincide for uniform RDPG.
+simulation:
+  nsim: 100
+  seed: 1
+  n: [100, 300]
+  k: [4]
+  ky: [1]
+  snr: [0.1, 0.3, 0.4]  # Var(f(Z)) / (Var(f(Z)) + Var(noise))
+  alpha: [0.05]
+  edge_var: [3]
+  predictor_distribution: [gaussian, uniform_rdpg]
+
+  functionals:
+    - name: linear
+      kwargs: {}
+    - name: nonlinear_additive
+      kwargs:
+        quadratic_scale: 1.0
+    - name: sparse_nonlinear
+      kwargs:
+        active_count: 1
+        quadratic_scale: 1.0
+    - name: interaction
+      kwargs: {}
+    - name: radial
+      kwargs: {}
+    - name: threshold
+      kwargs:
+        threshold: 0.0
+      kwargs_by_predictor_distribution:
+        uniform_rdpg:
+          threshold: 0.5
+    - name: sigmoid
+      kwargs:
+        global_scale: 10.0
+    - name: piecewise
+      kwargs:
+        threshold: 0.0
+      kwargs_by_predictor_distribution:
+        uniform_rdpg:
+          threshold: 0.5
+    - name: sine
+      kwargs:
+        global_scale: 10.0
+    # Retain both max and abs_max, including their uniform-RDPG duplicate.
+    - name: max
+      kwargs: {}
+    - name: abs_max
+      kwargs: {}
+    - name: tanh_product
+      kwargs:
+        global_scale: 10.0
+    - name: hierarchical
+      kwargs: {}
+    - name: manifold
+      kwargs: {}
+    - name: pareto
+      kwargs: {}
+
+methods:
+  npermutations: [200]
+  use_true_latent: [True]
+  list:
+    - name: MultivariateACTest
+      kwargs:
+        M: 1
+        use_permutation_coeff: false
+    - name: MultivariateACTest
+      kwargs:
+        M: 0.5
+        use_permutation_coeff: false
+    - name: MultivariateACTest
+      kwargs:
+        adaptive_m: true
+        use_permutation_coeff: false
+    - name: DiffusionCorrelation
+      kwargs: {}
+    - name: RVtest
+      kwargs:
+        approximation: asymptotic
+    - name: RVtest
+      kwargs:
+        approximation: permutation
+        permutation_type: latent
+    - name: CanonicalCorrelation
+      kwargs: {}
+
+setups:
+  - dgp: BernoulliNetwork
+    solver: ASE
+    rdpg: auto
+
+metrics:
+  compute_all: true
+
+output:
+  results_dir: results
