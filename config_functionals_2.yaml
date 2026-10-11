@@ -1,5 +1,5 @@
 # Functional alternatives with four predictors and a scalar response.
-# All 15 forms for both distributions; max and abs_max coincide for uniform RDPG.
+# Eleven forms for both distributions, with standardized interaction.
 simulation:
   nsim: 100
   seed: 1
@@ -13,50 +13,84 @@ simulation:
 
   functionals:
     - name: linear
-      kwargs: {}
-    - name: nonlinear_additive
       kwargs:
-        quadratic_scale: 1.0
-    - name: sparse_nonlinear
-      kwargs:
-        active_count: 1
-        quadratic_scale: 1.0
+        weights: [0.5, 0.5, 0.5, 0.5]
+        normalize_index: true
     - name: interaction
-      kwargs: {}
+      # Standardize the interaction to theoretical mean 0 and variance 1.
+      kwargs:
+        output_center: 0.0
+        output_sd: 2.449489742783178  # sqrt(6), for N_4(0, I)
+      kwargs_by_predictor_distribution:
+        uniform_rdpg:
+          output_center: 0.6366197723675814  # 2 / pi
+          output_sd: 0.29780151684571465
     - name: radial
       kwargs: {}
     - name: threshold
       kwargs:
+        weights: [0.5, 0.5, 0.5, 0.5]
+        normalize_index: true
         threshold: 0.0
       kwargs_by_predictor_distribution:
         uniform_rdpg:
           threshold: 0.5
     - name: sigmoid
       kwargs:
-        global_scale: 10.0
-    - name: piecewise
-      kwargs:
+        weights: [0.5, 0.5, 0.5, 0.5]
+        normalize_index: true
         threshold: 0.0
+        slope: 5.0
+        global_scale: 10.0
       kwargs_by_predictor_distribution:
         uniform_rdpg:
           threshold: 0.5
+          slope: 17.0
+    - name: piecewise
+      kwargs:
+        weights: [0.5, 0.5, 0.5, 0.5]
+        normalize_index: true
+        switch_feature: 0
+        threshold: 0.5
     - name: sine
       kwargs:
+        weights: [0.5, 0.5, 0.5, 0.5]
+        normalize_index: true
+        frequency: 5.0
         global_scale: 10.0
-    # Retain both max and abs_max, including their uniform-RDPG duplicate.
+      kwargs_by_predictor_distribution:
+        uniform_rdpg:
+          frequency: 30.0
     - name: max
       kwargs: {}
     - name: abs_max
-      kwargs: {}
+      kwargs:
+        center: 0.0
+        input_scale: 1.0
+      kwargs_by_predictor_distribution:
+        uniform_rdpg:
+          center: 0.5
+          input_scale: 6.0
     - name: tanh_product
       kwargs:
+        input_scale: 1.0
         global_scale: 10.0
-    - name: hierarchical
-      kwargs: {}
-    - name: manifold
-      kwargs: {}
+        center: 0.0
+      kwargs_by_predictor_distribution:
+        uniform_rdpg:
+          input_scale: 6.0
+          center: 0.5
     - name: pareto
-      kwargs: {}
+      kwargs:
+        weights: [0.5, 0.5, 0.5, 0.5]
+        normalize_index: true
+        alpha: 1.2
+        scale: 1.0
+        tail_clip: 1e-12
+      kwargs_by_predictor_distribution:
+        uniform_rdpg:
+          alpha: 0.2
+          scale: 0.05
 
 methods:
   npermutations: [200]

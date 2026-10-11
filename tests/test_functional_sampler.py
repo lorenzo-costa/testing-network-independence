@@ -43,6 +43,40 @@ def test_unknown_functional_is_rejected():
         FunctionalGenerator(n=5, k=2, ky=1, functional_form="invalid")
 
 
+def test_interaction_supports_output_standardization():
+    generator = FunctionalGenerator(
+        n=2,
+        k=4,
+        functional_form="interaction",
+        function_params={"output_center": 2.0, "output_sd": 0.5},
+    )
+    z = np.array([
+        [1.0, 1.0, 1.0, 1.0],
+        [1.0, 0.0, 0.0, 0.0],
+    ])
+
+    signal = generator._evaluate_function(z)
+
+    np.testing.assert_allclose(signal, [8.0, -4.0])
+
+
+@pytest.mark.parametrize(
+    "params, message",
+    [
+        ({"output_center": np.inf}, "output_center must be finite"),
+        ({"output_sd": 0.0}, "output_sd must be positive"),
+        ({"output_sd": np.inf}, "output_sd must be positive"),
+    ],
+)
+def test_interaction_validates_output_standardization(params, message):
+    generator = FunctionalGenerator(
+        n=2, k=4, functional_form="interaction", function_params=params
+    )
+
+    with pytest.raises(ValueError, match=message):
+        generator._evaluate_function(np.ones((2, 4)))
+
+
 def test_abs_max_supports_centered_scaled_wedge():
     generator = FunctionalGenerator(
         n=3,

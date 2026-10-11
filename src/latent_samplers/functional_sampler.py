@@ -45,8 +45,8 @@ class FunctionalGenerator:
         Parameters specific to the selected functional.  Useful keys include
         ``weights``, ``frequency``, ``threshold``, ``active_features``,
         ``alpha`` and ``scale`` (for ``pareto_index``), ``switch_feature``
-        (for ``piecewise``), and ``center`` and ``input_scale`` (for
-        ``abs_max``).
+        (for ``piecewise``), ``output_center`` and ``output_sd`` (for
+        ``interaction``), and ``center`` and ``input_scale`` (for ``abs_max``).
     column_covariance : ndarray, optional
         ``k y k`` covariance matrix used for Gaussian predictors.  The
         identity is used by default.
@@ -323,7 +323,14 @@ class FunctionalGenerator:
         if self.kz < 2:
             raise ValueError("interaction requires kz >= 2.")
         pair_sum = 0.5 * (np.sum(Z, axis=1) ** 2 - np.sum(Z**2, axis=1))
-        return pair_sum / np.sqrt(self.kz * (self.kz - 1) / 2.0)
+        output_center = float(self.function_params.get("output_center", 0.0))
+        default_sd = np.sqrt(self.kz * (self.kz - 1) / 2.0)
+        output_sd = float(self.function_params.get("output_sd", default_sd))
+        if not np.isfinite(output_center):
+            raise ValueError("output_center must be finite for interaction.")
+        if not np.isfinite(output_sd) or output_sd <= 0:
+            raise ValueError("output_sd must be positive and finite for interaction.")
+        return (pair_sum - output_center) / output_sd
 
     def _functional_radial(self, Z: np.ndarray) -> np.ndarray:
         return np.sum(Z**2, axis=1)

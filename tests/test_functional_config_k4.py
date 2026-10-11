@@ -23,22 +23,37 @@ def test_k4_design_preserves_requested_functionals(tmp_path, paired_sweep):
     path = tmp_path / "functionals.yaml"
     path.write_text(yaml.safe_dump(raw))
     design = build_factorial_design(load_config(path))
-    assert len(design) == 30 * 2 * 3 * 7
+    assert len(design) == 22 * 2 * 3 * 7
     assert all(row["k"] == 4 and row["ky"] == 1 for row in design)
 
     for distribution, expected_count, threshold in [
-        ("gaussian", 15, 0.0), ("uniform_rdpg", 15, 0.5),
+        ("gaussian", 11, 0.0), ("uniform_rdpg", 11, 0.5),
     ]:
         rows = [row for row in design if row["predictor_distribution"] == distribution]
         by_form = {row["functional_form"]: row for row in rows}
         assert len(by_form) == expected_count
-        assert "max" in by_form
-        assert "abs_max" in by_form
-        for form in ("threshold", "piecewise"):
-            assert by_form[form]["function_params"]["threshold"] == threshold
-        assert by_form["sparse_nonlinear"]["function_params"]["active_count"] == 1
-        for form in ("nonlinear_additive", "sparse_nonlinear"):
-            assert by_form[form]["function_params"]["quadratic_scale"] == 1.0
+        assert set(by_form) == {
+            "linear", "interaction", "radial", "threshold", "sigmoid",
+            "piecewise", "sine", "max", "abs_max", "tanh_product", "pareto",
+        }
+        assert by_form["threshold"]["function_params"]["threshold"] == threshold
+        assert by_form["piecewise"]["function_params"]["threshold"] == 0.5
+        interaction_params = by_form["interaction"]["function_params"]
+        if distribution == "gaussian":
+            assert interaction_params == {
+                "output_center": 0.0,
+                "output_sd": pytest.approx(np.sqrt(6.0)),
+            }
+        else:
+            interaction_variance = (
+                1.0 / 8.0
+                + 1.0 / np.pi
+                - 7.0 / (2.0 * np.pi**2)
+            )
+            assert interaction_params == {
+                "output_center": pytest.approx(2.0 / np.pi),
+                "output_sd": pytest.approx(np.sqrt(interaction_variance)),
+            }
 
         signals = {}
         for form, row in by_form.items():
@@ -50,7 +65,4 @@ def test_k4_design_preserves_requested_functionals(tmp_path, paired_sweep):
             signals[form] = sampler._evaluate_function(z)
             assert np.var(signals[form]) > 0
         for left, right in combinations(signals, 2):
-            if distribution == "uniform_rdpg" and {left, right} == {"max", "abs_max"}:
-                np.testing.assert_array_equal(signals[left], signals[right])
-                continue
             assert not np.allclose(signals[left], signals[right]), (left, right)

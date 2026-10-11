@@ -17,31 +17,38 @@ simulation:
   edge_var: [3]           
   predictor_distribution: [gaussian, uniform_rdpg]
 
-  # Shared k=1 list; abs_max is intentionally retained for both distributions.
+  # Functional settings for k=1.
   functionals:
+    - name: linear
+      kwargs:
+        weights: [0.5]
+        normalize_index: true
+    - name: piecewise
+      kwargs:
+        weights: [0.5]
+        normalize_index: true
+        switch_feature: 0
+        threshold: 0.5
     - name: sigmoid
       kwargs:
-        global_scale : 10.0
-    - name: sine
-      kwargs:
-        global_scale : 10.0
-    - name: linear
-      kwargs: {}
-    # Represents nonlinear_additive, sparse_nonlinear, and manifold at k=1.
-    - name: nonlinear_additive
-      kwargs:
-        quadratic_scale: 1.0
-    - name: radial
-      kwargs: {}
-    - name: threshold
-      kwargs:
+        weights: [0.5]
+        normalize_index: true
         threshold: 0.0
+        slope: 5.0
+        global_scale: 10.0
       kwargs_by_predictor_distribution:
         uniform_rdpg:
           threshold: 0.5
-    - name: tanh_product
+          slope: 17.0
+    - name: sine
       kwargs:
-        global_scale : 10.0
+        weights: [0.5]
+        normalize_index: true
+        frequency: 5.0
+        global_scale: 10.0
+      kwargs_by_predictor_distribution:
+        uniform_rdpg:
+          frequency: 30.0
     - name: abs_max
       kwargs:
         center: 0.0
@@ -49,9 +56,27 @@ simulation:
       kwargs_by_predictor_distribution:
         uniform_rdpg:
           center: 0.5
-          input_scale: 3.4641016151377544  # sqrt(12)
+          input_scale: 6.0
+    - name: tanh_product
+      kwargs:
+        input_scale: 1.0
+        global_scale: 10.0
+        center: 0.0
+      kwargs_by_predictor_distribution:
+        uniform_rdpg:
+          input_scale: 6.0
+          center: 0.5
     - name: pareto
-      kwargs: {}
+      kwargs:
+        weights: [0.5]
+        normalize_index: true
+        alpha: 1.0
+        scale: 2.0
+        tail_clip: 1e-12
+      kwargs_by_predictor_distribution:
+        uniform_rdpg:
+          alpha: 0.2
+          scale: 0.05
 
 # -----------------------------------------------------------------------------
 # Testing Methods

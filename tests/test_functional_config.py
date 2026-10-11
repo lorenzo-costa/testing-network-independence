@@ -69,7 +69,7 @@ def test_snr_and_rho_cannot_conflict(tmp_path):
 
 
 @pytest.mark.parametrize("paired_sweep", [False, True])
-def test_threshold_override_reaches_only_uniform_predictors(tmp_path, paired_sweep):
+def test_piecewise_settings_reach_both_predictors(tmp_path, paired_sweep):
     raw = yaml.safe_load(CONFIG_PATH.read_text())
     if paired_sweep:
         distributions = raw["simulation"].pop("predictor_distribution")
@@ -81,29 +81,29 @@ def test_threshold_override_reaches_only_uniform_predictors(tmp_path, paired_swe
     path.write_text(yaml.safe_dump(raw))
     config = load_config(path)
     design = build_factorial_design(config)
-    threshold_rows = [row for row in design if row["functional_form"] == "threshold"]
+    piecewise_rows = [row for row in design if row["functional_form"] == "piecewise"]
 
     for distribution, threshold, expected in [
-        ("gaussian", 0.0, [1.0, 1.0, 1.0]),
-        ("uniform_rdpg", 0.5, [0.0, 0.0, 1.0]),
+        ("gaussian", 0.5, [-0.25, -0.5, 0.75]),
+        ("uniform_rdpg", 0.5, [-0.25, -0.5, 0.75]),
     ]:
-        rows = [row for row in threshold_rows if row["predictor_distribution"] == distribution]
+        rows = [row for row in piecewise_rows if row["predictor_distribution"] == distribution]
         assert rows
         assert all(row["function_params"]["threshold"] == threshold for row in rows)
         row = rows[0]
         factory, _ = row["setup"]
         sampler = factory(**dict(row, n=3)).latent_sampler
         signal = sampler._evaluate_function(np.array([[0.25], [0.5], [0.75]]))
-        np.testing.assert_array_equal(signal, expected)
+        np.testing.assert_allclose(signal, expected)
 
     descriptor = next(
         entry for entry in config["simulation"]["functionals"]
-        if entry["functional_form"] == "threshold"
+        if entry["functional_form"] == "piecewise"
     )
-    assert descriptor["function_params"]["threshold"] == 0.0
+    assert descriptor["function_params"]["threshold"] == 0.5
     assert all(
         "threshold" not in row["function_params"]
-        for row in design if row["functional_form"] != "threshold"
+        for row in design if row["functional_form"] not in {"piecewise", "sigmoid"}
     )
 
 
@@ -113,7 +113,7 @@ def test_abs_max_is_centered_and_scaled_only_for_uniform_predictors():
 
     for distribution, expected in [
         ("gaussian", [0.0, 0.5, 1.0]),
-        ("uniform_rdpg", [np.sqrt(3.0), 0.0, np.sqrt(3.0)]),
+        ("uniform_rdpg", [3.0, 0.0, 3.0]),
     ]:
         row = next(
             row for row in rows
