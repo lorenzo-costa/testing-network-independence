@@ -98,7 +98,7 @@ FUNCTIONAL_K4_RESULT_FILES = tuple(
     for shard in range(3)
 )
 FUNCTIONAL_ESTIMATED_RESULT_FILES = tuple(
-    f"simulation_results_63702295_shard-{shard:03d}-of-003.csv"
+    f"simulation_results_63775035_shard-{shard:03d}-of-003.csv"
     for shard in range(3)
 )
 FUNCTIONAL_K4_FORMS = (
@@ -216,6 +216,10 @@ SHARDED_FUNCTIONAL_FORMS = (
     "abs_max",
     "tanh_product",
     "pareto",
+)
+ESTIMATED_FUNCTIONAL_FORMS = (
+    "linear", "piecewise", "threshold", "sigmoid", "sine", "abs_max",
+    "tanh_product", "pareto",
 )
 RHO_SWEEP_MARGINALS_Y = ("gaussian", "chi df=5")
 
@@ -1163,7 +1167,11 @@ def plot_sharded_functional_figures(
     *, k: int = 1, latent: str = "true",
 ) -> None:
     """Plot n=300 alternatives separately for each predictor and fixed SNR."""
-    forms = {1: SHARDED_FUNCTIONAL_FORMS, 4: FUNCTIONAL_K4_FORMS}[k]
+    forms = {
+        (1, "true"): SHARDED_FUNCTIONAL_FORMS,
+        (1, "estimated"): ESTIMATED_FUNCTIONAL_FORMS,
+        (4, "true"): FUNCTIONAL_K4_FORMS,
+    }[(k, latent)]
     for data, predictor, prefix in (
         (gaussian, "Gaussian", "28_functional_forms_gaussian_predictors"),
         (uniform, "uniform RDPG", "29_functional_forms_uniform_rdpg_predictors"),
@@ -1202,7 +1210,11 @@ def plot_sharded_functional_grid(
     *, k: int = 1, latent: str = "true",
 ) -> None:
     """Compare n=100/300 and both predictor distributions at each SNR."""
-    forms = {1: SHARDED_FUNCTIONAL_FORMS, 4: FUNCTIONAL_K4_FORMS}[k]
+    forms = {
+        (1, "true"): SHARDED_FUNCTIONAL_FORMS,
+        (1, "estimated"): ESTIMATED_FUNCTIONAL_FORMS,
+        (4, "true"): FUNCTIONAL_K4_FORMS,
+    }[(k, latent)]
     distributions = {
         "Gaussian": aggregate_sharded_functional_results(gaussian, forms=forms),
         "uniform RDPG": aggregate_sharded_functional_results(uniform, forms=forms),
