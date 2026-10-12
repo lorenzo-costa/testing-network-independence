@@ -32,7 +32,7 @@ def test_snr_config_sweeps_predictors_and_reaches_sampler(tmp_path, snr):
         len(expected_snrs) * len(distributions) * len(forms)
         * len(raw["simulation"]["n"]) * len(raw["methods"]["list"])
     )
-    assert all("noise_scale" not in row for row in design)
+    assert all(row["noise_scale"] == 0.0 for row in design)
     for rho in expected_snrs:
         row = next(row for row in design if row["rho"] == rho)
         factory, _ = row["setup"]
@@ -73,6 +73,7 @@ def test_piecewise_settings_reach_both_predictors(tmp_path, paired_sweep):
     raw = yaml.safe_load(CONFIG_PATH.read_text())
     if paired_sweep:
         distributions = raw["simulation"].pop("predictor_distribution")
+        raw["simulation"].pop("noise_scale", None)
         raw["simulation"]["predictor_noise_sweeps"] = [
             {"predictor_distribution": distribution, "noise_scale": 0.0}
             for distribution in distributions
@@ -103,7 +104,7 @@ def test_piecewise_settings_reach_both_predictors(tmp_path, paired_sweep):
     assert descriptor["function_params"]["threshold"] == 0.5
     assert all(
         "threshold" not in row["function_params"]
-        for row in design if row["functional_form"] not in {"piecewise", "sigmoid"}
+        for row in design if row["functional_form"] not in {"piecewise", "sigmoid", "threshold"}
     )
 
 
@@ -133,6 +134,7 @@ def test_functional_solver_matches_network_link(tmp_path, paired_sweep):
     raw = yaml.safe_load(CONFIG_PATH.read_text())
     if paired_sweep:
         distributions = raw["simulation"].pop("predictor_distribution")
+        raw["simulation"].pop("noise_scale", None)
         raw["simulation"]["predictor_noise_sweeps"] = [
             {"predictor_distribution": distribution, "noise_scale": 0.0}
             for distribution in distributions
@@ -169,3 +171,25 @@ def test_scalar_functional_solver_remains_supported(tmp_path):
     design = build_factorial_design(load_config(path))
     assert design
     assert all(row["setup"][1] is ASE for row in design)
+
+
+def test_explicit_functional_sampler_options_reach_sampler(tmp_path):
+    raw = yaml.safe_load(CONFIG_PATH.read_text())
+    raw["simulation"].update(
+        predictor_distribution=["gaussian"], predictor_df=9.0, center_latent=True,
+    )
+    path = tmp_path / "functionals.yaml"
+    path.write_text(yaml.safe_dump(raw))
+    design = build_factorial_design(load_config(path))
+    for row in design:
+        factory, _ = row["setup"]
+        sampler = factory(**dict(row, n=12)).latent_sampler
+        assert sampler.predictor_df == 9.0
+        assert sampler.center_latent is True
+        np.testing.assert_array_equal(sampler.column_covariance, [[1.0]])
+        assert sampler.noise_type == "additive"
+        assert sampler.noise_scale == 0.0
+        assert sampler.rho == 1.0
+        z, y = sampler.sample_latent()
+        np.testing.assert_allclose(z.mean(axis=0), 0.0, atol=1e-14)
+        np.testing.assert_allclose(y[:, 0], sampler._evaluate_function(z))

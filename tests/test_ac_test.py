@@ -262,7 +262,7 @@ def test_ac_permutations_remain_global_when_x_is_none(monkeypatch):
 def test_adaptive_m_grid_is_rounded_deduplicated_and_capped():
     np.testing.assert_array_equal(
         MultivariateACTest._adaptive_m_grid(10),
-        [2, 3, 5, 8],
+        [1, 2, 3, 5, 8],
     )
     np.testing.assert_array_equal(MultivariateACTest._adaptive_m_grid(2), [1])
 
@@ -303,9 +303,9 @@ def test_adaptive_test_uses_sample_standardization_and_corrected_pvalue(
 ):
     s_statistics = np.array(
         [
-            [4.0, 2.0, 8.0, 5.0],
-            [1.0, 3.0, 4.0, 7.0],
-            [2.0, 5.0, 3.0, 6.0],
+            [9.0, 4.0, 2.0, 8.0, 5.0],
+            [0.0, 1.0, 3.0, 4.0, 7.0],
+            [0.0, 2.0, 5.0, 3.0, 6.0],
         ]
     )
     values = iter(s_statistics.ravel())
@@ -335,11 +335,13 @@ def test_adaptive_test_uses_sample_standardization_and_corrected_pvalue(
     expected_stds = s_statistics.std(axis=0, ddof=1)
     expected_z = (s_statistics - expected_means) / expected_stds
     expected_a = expected_z.max(axis=1)
+    # The one-neighbor candidate determines the observed adaptive maximum.
+    assert expected_z[0].argmax() == 0
     expected_pvalue = (
         1 + np.count_nonzero(expected_a[1:] >= expected_a[0])
     ) / 3
 
-    np.testing.assert_array_equal(method.adaptive_m_values, [2, 3, 5, 8])
+    np.testing.assert_array_equal(method.adaptive_m_values, [1, 2, 3, 5, 8])
     np.testing.assert_allclose(method.adaptive_s_statistics, s_statistics)
     np.testing.assert_allclose(method.adaptive_m_means, expected_means)
     np.testing.assert_allclose(method.adaptive_m_stds, expected_stds)

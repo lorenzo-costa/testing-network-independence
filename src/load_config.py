@@ -662,6 +662,10 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
         if sim.get("functionals") is not None:
             names.append("_functional")
             vals.append(sim["functionals"])
+            for option in ("predictor_df", "center_latent"):
+                if option in sim:
+                    names.append(option)
+                    vals.append(_as_sweep(sim[option], f"simulation.{option}"))
         if "predictor_noise_sweeps" in sim:
             names.append("_predictor_noise")
             vals.append(sim["predictor_noise_sweeps"])
