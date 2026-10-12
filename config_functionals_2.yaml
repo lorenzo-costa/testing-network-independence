@@ -94,7 +94,7 @@ simulation:
 
 methods:
   npermutations: [200]
-  use_true_latent: [True]
+  use_true_latent: [True, False]
   list:
     - name: MultivariateACTest
       kwargs:
