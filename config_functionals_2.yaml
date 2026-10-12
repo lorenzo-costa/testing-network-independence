@@ -6,7 +6,7 @@ simulation:
   n: [100, 300]
   k: [4]
   ky: [1]
-  snr: [0.1, 0.3, 0.4]  # Var(f(Z)) / (Var(f(Z)) + Var(noise))
+  snr: [0.1, 0.3, 0.5, 0.7]  # Var(f(Z)) / (Var(f(Z)) + Var(noise))
   alpha: [0.05]
   edge_var: [3]
   predictor_distribution: [gaussian, uniform_rdpg]
@@ -122,7 +122,10 @@ methods:
 
 setups:
   - dgp: BernoulliNetwork
-    solver: ASE
+    # Match the estimator to the link selected by rdpg: auto.
+    solver:
+      uniform_rdpg: ASE
+      gaussian: pgd_fit_wrapper
     rdpg: auto
 
 metrics:
