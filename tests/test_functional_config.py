@@ -123,3 +123,49 @@ def test_abs_max_is_centered_and_scaled_only_for_uniform_predictors():
         sampler = factory(**dict(row, n=3)).latent_sampler
         signal = sampler._evaluate_function(np.array([[0.0], [0.5], [1.0]]))
         np.testing.assert_allclose(signal, expected)
+
+
+@pytest.mark.parametrize("paired_sweep", [False, True])
+def test_functional_solver_matches_network_link(tmp_path, paired_sweep):
+    from src.solvers.weighted_network import ASE
+    from src.solvers.MaMa_uuuuu import pgd_fit_wrapper
+
+    raw = yaml.safe_load(CONFIG_PATH.read_text())
+    if paired_sweep:
+        distributions = raw["simulation"].pop("predictor_distribution")
+        raw["simulation"]["predictor_noise_sweeps"] = [
+            {"predictor_distribution": distribution, "noise_scale": 0.0}
+            for distribution in distributions
+        ]
+    path = tmp_path / "functionals.yaml"
+    path.write_text(yaml.safe_dump(raw))
+    design = build_factorial_design(load_config(path))
+    expected = {"uniform_rdpg": ASE, "gaussian": pgd_fit_wrapper}
+    assert {row["predictor_distribution"] for row in design} == set(expected)
+    for row in design:
+        factory, solver = row["setup"]
+        distribution = row["predictor_distribution"]
+        assert solver is expected[distribution]
+        network = factory(**dict(row, n=5))
+        assert network._uses_rdpg_link() == (distribution == "uniform_rdpg")
+
+
+def test_missing_functional_solver_mapping_is_rejected(tmp_path):
+    raw = yaml.safe_load(CONFIG_PATH.read_text())
+    del raw["setups"][0]["solver"]["gaussian"]
+    path = tmp_path / "functionals.yaml"
+    path.write_text(yaml.safe_dump(raw))
+    with pytest.raises(ValueError, match="No functional solver.*gaussian"):
+        build_factorial_design(load_config(path))
+
+
+def test_scalar_functional_solver_remains_supported(tmp_path):
+    from src.solvers.weighted_network import ASE
+
+    raw = yaml.safe_load(CONFIG_PATH.read_text())
+    raw["setups"][0]["solver"] = "ASE"
+    path = tmp_path / "functionals.yaml"
+    path.write_text(yaml.safe_dump(raw))
+    design = build_factorial_design(load_config(path))
+    assert design
+    assert all(row["setup"][1] is ASE for row in design)

@@ -93,6 +93,20 @@ FUNCTIONAL_RESULT_FILES = (
 )
 
 
+FUNCTIONAL_K4_RESULT_FILES = tuple(
+    f"simulation_results_63702129_shard-{shard:03d}-of-003.csv"
+    for shard in range(3)
+)
+FUNCTIONAL_ESTIMATED_RESULT_FILES = tuple(
+    f"simulation_results_63702295_shard-{shard:03d}-of-003.csv"
+    for shard in range(3)
+)
+FUNCTIONAL_K4_FORMS = (
+    "linear", "interaction", "radial", "threshold", "sigmoid", "piecewise",
+    "sine", "max", "abs_max", "tanh_product", "pareto",
+)
+
+
 COLUMNS_TO_REPLACE = (
     "RelativeFrobeniusNorm_x",
     "RelativeFrobeniusNorm_z",
@@ -283,9 +297,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--functionals-only",
         action="store_true",
-        help="Create only figures for the sharded k=1 functional study (63690183).",
+        help="Create only figures for the selected sharded functional study.",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--functional-k", type=int, choices=(1, 4), default=1,
+        help="Predictor dimension for the sharded functional study (default: 1).",
+    )
+    parser.add_argument(
+        "--functional-latent", choices=("true", "estimated"), default="true",
+        help="Latent positions used in the functional study (default: true).",
+    )
+    args = parser.parse_args()
+    if args.functional_k == 4 and args.functional_latent == "estimated":
+        parser.error("No k=4 estimated-latent result batch is configured.")
+    return args
 
 
 def configure_plot_style() -> None:
@@ -481,12 +506,17 @@ def prepare_rdpg_copula_results(results_dir: Path) -> pd.DataFrame:
 
 
 def prepare_sharded_functional_results(
-    results_dir: Path,
+    results_dir: Path, *, k: int = 1, latent: str = "true",
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Read the k=1 functional study and split it by predictor distribution."""
-    data = process_results(read_result_batch(results_dir, FUNCTIONAL_RESULT_FILES))
+    """Read the selected functional study and split by predictor distribution."""
+    files = {
+        (1, "true"): FUNCTIONAL_RESULT_FILES,
+        (4, "true"): FUNCTIONAL_K4_RESULT_FILES,
+        (1, "estimated"): FUNCTIONAL_ESTIMATED_RESULT_FILES,
+    }[(k, latent)]
+    data = process_results(read_result_batch(results_dir, files))
     bernoulli = data[
-        (data["dgp_name"] == "BernoulliNetwork") & (data["k"] == 1)
+        (data["dgp_name"] == "BernoulliNetwork") & (data["k"] == k)
     ].copy()
     gaussian = bernoulli[
         bernoulli["predictor_distribution"] == "gaussian"
@@ -496,7 +526,7 @@ def prepare_sharded_functional_results(
     ].copy()
     if gaussian.empty or uniform.empty:
         raise ValueError(
-            "Functional result batch must contain k=1 Bernoulli-network rows for "
+            f"Functional result batch must contain k={k} Bernoulli-network rows for "
             "both gaussian and uniform_rdpg predictors."
         )
     return gaussian, uniform
@@ -1109,11 +1139,13 @@ def plot_rdpg_copula_figures(data: pd.DataFrame, output_dir: Path) -> None:
     save_figure(fig, output_dir, "27_rdpg_copulas_by_n_ky3")
 
 
-def aggregate_sharded_functional_results(data: pd.DataFrame) -> pd.DataFrame:
+def aggregate_sharded_functional_results(
+    data: pd.DataFrame, *, forms: tuple[str, ...] = SHARDED_FUNCTIONAL_FORMS,
+) -> pd.DataFrame:
     """Aggregate power separately for each SNR, functional, and method."""
     filtered = data[
         (data["rho"] != 0.0)
-        & data["functional_form"].isin(SHARDED_FUNCTIONAL_FORMS)
+        & data["functional_form"].isin(forms)
         & data["method"].isin(RDPG_METHODS)
     ].copy()
     return aggregate_results(
@@ -1128,34 +1160,83 @@ def plot_sharded_functional_figures(
     gaussian: pd.DataFrame,
     uniform: pd.DataFrame,
     output_dir: Path,
+    *, k: int = 1, latent: str = "true",
 ) -> None:
     """Plot n=300 alternatives separately for each predictor and fixed SNR."""
+    forms = {1: SHARDED_FUNCTIONAL_FORMS, 4: FUNCTIONAL_K4_FORMS}[k]
     for data, predictor, prefix in (
         (gaussian, "Gaussian", "28_functional_forms_gaussian_predictors"),
         (uniform, "uniform RDPG", "29_functional_forms_uniform_rdpg_predictors"),
     ):
-        aggregated = aggregate_sharded_functional_results(data[data["n"] == 300])
+        aggregated = aggregate_sharded_functional_results(data[data["n"] == 300], forms=forms)
         if aggregated.empty:
             raise ValueError(f"No n=300 functional results for {predictor} predictors.")
         for snr, subset in aggregated.groupby("rho", sort=True):
             fig, axes = plt.subplots(
-                1, 1, figsize=(7.0, 2.9), squeeze=False, layout="constrained",
+                1, 1, figsize=(7.0 if k == 1 else 10.0, 2.9), squeeze=False, layout="constrained",
             )
             ax = axes[0, 0]
             plot_scatter_panel(
                 ax, subset, category="functional_form",
-                categories=SHARDED_FUNCTIONAL_FORMS, methods=RDPG_METHODS,
+                categories=forms, methods=RDPG_METHODS,
             )
             style_probability_axis(ax)
-            for boundary in np.arange(len(SHARDED_FUNCTIONAL_FORMS) - 1) + 0.5:
+            for boundary in np.arange(len(forms) - 1) + 0.5:
                 ax.axvline(boundary, color="#D9D9D9", linewidth=0.6, zorder=0)
             fig.suptitle(
-                f"{predictor} predictors — $n=300$, $k=1$, SNR = {snr:g}"
+                f"{predictor} predictors — $n=300$, $k={k}$, SNR = {snr:g}"
             )
+            ax.set_title(f"{latent.capitalize()} latent positions", fontsize=9)
             fig.supxlabel("Functional alternative")
             fig.supylabel("Power")
             add_shared_legend(fig, lines=False, methods=RDPG_METHODS)
-            save_figure(fig, output_dir, f"{prefix}_n300_k1_true_latent_snr_{snr:g}")
+            save_figure(fig, output_dir, f"{prefix}_n300_k{k}_{latent}_latent_snr_{snr:g}")
+
+    plot_sharded_functional_grid(gaussian, uniform, output_dir, k=k, latent=latent)
+
+
+def plot_sharded_functional_grid(
+    gaussian: pd.DataFrame,
+    uniform: pd.DataFrame,
+    output_dir: Path,
+    *, k: int = 1, latent: str = "true",
+) -> None:
+    """Compare n=100/300 and both predictor distributions at each SNR."""
+    forms = {1: SHARDED_FUNCTIONAL_FORMS, 4: FUNCTIONAL_K4_FORMS}[k]
+    distributions = {
+        "Gaussian": aggregate_sharded_functional_results(gaussian, forms=forms),
+        "uniform RDPG": aggregate_sharded_functional_results(uniform, forms=forms),
+    }
+    snrs = sorted(set().union(*(set(data["rho"]) for data in distributions.values())))
+    for snr in snrs:
+        fig, axes = plt.subplots(
+            2, 2, figsize=(12.0 if k == 1 else 17.0, 7.4),
+            sharex=True, sharey=True, squeeze=False, layout="constrained",
+        )
+        for column, (predictor, data) in enumerate(distributions.items()):
+            for row, n in enumerate((100, 300)):
+                ax = axes[row, column]
+                subset = data[(data["rho"] == snr) & (data["n"] == n)]
+                if subset.empty:
+                    plt.close(fig)
+                    raise ValueError(f"No results for {predictor}, n={n}, SNR={snr}.")
+                plot_scatter_panel(
+                    ax, subset, category="functional_form",
+                    categories=forms, methods=RDPG_METHODS,
+                )
+                style_probability_axis(ax)
+                for boundary in np.arange(len(forms) - 1) + 0.5:
+                    ax.axvline(boundary, color="#D9D9D9", linewidth=0.6, zorder=0)
+                ax.set_title(f"{predictor} predictors, $n={n}$")
+                ax.tick_params(axis="x", labelbottom=True, labelrotation=25)
+        fig.suptitle(
+            f"Power across functional alternatives — $k={k}$, SNR = {snr:g}"
+            f"\n{latent.capitalize()} latent positions"
+        )
+        fig.supxlabel("Functional alternative")
+        fig.supylabel("Power")
+        add_shared_legend(fig, lines=False, methods=RDPG_METHODS)
+        save_figure(fig, output_dir, f"28_functional_alternatives_k{k}_{latent}_latent_snr_{snr:g}")
 
 
 def plot_rho_sweep_network(
@@ -1442,8 +1523,8 @@ def main() -> None:
         print(f"Saved RDPG copula figure as PNG to {output_dir}")
         return
     if args.functionals_only:
-        gaussian, uniform = prepare_sharded_functional_results(results_dir)
-        plot_sharded_functional_figures(gaussian, uniform, output_dir)
+        gaussian, uniform = prepare_sharded_functional_results(results_dir, k=args.functional_k, latent=args.functional_latent)
+        plot_sharded_functional_figures(gaussian, uniform, output_dir, k=args.functional_k, latent=args.functional_latent)
         print(f"Saved functional-study figures as PNG to {output_dir}")
         return
 
@@ -1531,10 +1612,10 @@ def main() -> None:
     )
     plot_rdpg_copula_figures(prepare_rdpg_copula_results(results_dir), output_dir)
     functional_gaussian, functional_uniform = prepare_sharded_functional_results(
-        results_dir
+        results_dir, k=args.functional_k, latent=args.functional_latent
     )
     plot_sharded_functional_figures(
-        functional_gaussian, functional_uniform, output_dir
+        functional_gaussian, functional_uniform, output_dir, k=args.functional_k, latent=args.functional_latent
     )
 
     print(f"Saved 29 figures as PNG to {output_dir}")

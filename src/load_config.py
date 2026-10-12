@@ -490,7 +490,9 @@ def load_config(path: str = "config.yaml") -> dict:
         approximation   -- list of strings or None when absent (multiness )
         use_true_latent -- list of bools or None when not applicable
     setups : list
-        (partial(DGP, ...), Solver) tuples for the H1 run.
+        (partial(DGP, ...), Solver) tuples for the H1 run. Functional
+        setups may instead map predictor distributions to these tuples;
+        build_factorial_design selects the matching tuple for each row.
     null_setups : dict | None
         {"rho": [...], "setups": [...]} for H0 runs, or None.
     extra_params : dict
@@ -531,8 +533,21 @@ def load_config(path: str = "config.yaml") -> dict:
         setups = _resolve_lee2019_setups(raw["setups"])
     elif exp_type == "sbm":
         setups = _resolve_sbm_setups(raw["setups"])
+    elif exp_type == "functionals":
+        setups = []
+        for entry in raw["setups"]:
+            if isinstance(entry["solver"], dict):
+                if not entry["solver"]:
+                    raise ValueError("Functional solver mapping must not be empty")
+                resolved = {
+                    distribution: _resolve_copula_setup(dict(entry, solver=name))
+                    for distribution, name in entry["solver"].items()
+                }
+                setups.append(resolved)
+            else:
+                setups.append(_resolve_copula_setup(entry))
     else:
-        # standard, diff_marginals, multiness, functionals, asymptotic
+        # standard, diff_marginals, multiness, asymptotic
         # all use copula-style setup entries
         setups = [_resolve_copula_setup(e) for e in raw["setups"]]
 
@@ -685,6 +700,14 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             predictor_noise = row.pop("_predictor_noise", None)
             if predictor_noise is not None:
                 row.update(predictor_noise)
+            if exp == "functionals" and isinstance(row["setup"], dict):
+                distribution = row.get("predictor_distribution", "gaussian")
+                if distribution not in row["setup"]:
+                    raise ValueError(
+                        f"No functional solver configured for predictor_distribution "
+                        f"{distribution!r}"
+                    )
+                row["setup"] = row["setup"][distribution]
             functional = row.pop("_functional", None)
             if functional is not None:
                 row["functional_form"] = functional["functional_form"]
