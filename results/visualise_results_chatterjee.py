@@ -93,13 +93,18 @@ FUNCTIONAL_RESULT_FILES = (
 )
 
 
+# This batch contains both true and estimated latent positions.
 FUNCTIONAL_K4_RESULT_FILES = tuple(
-    f"simulation_results_63702129_shard-{shard:03d}-of-003.csv"
+    f"simulation_results_63775054_shard-{shard:03d}-of-003.csv"
     for shard in range(3)
 )
 FUNCTIONAL_ESTIMATED_RESULT_FILES = tuple(
     f"simulation_results_63775035_shard-{shard:03d}-of-003.csv"
     for shard in range(3)
+)
+FUNCTIONAL_ESTIMATED_SINE_RESULT_FILES = tuple(
+    f"simulation_results_63782707_shard-{shard:03d}-of-002.csv"
+    for shard in range(2)
 )
 FUNCTIONAL_K4_FORMS = (
     "linear", "interaction", "radial", "threshold", "sigmoid", "piecewise",
@@ -312,8 +317,6 @@ def parse_args() -> argparse.Namespace:
         help="Latent positions used in the functional study (default: true).",
     )
     args = parser.parse_args()
-    if args.functional_k == 4 and args.functional_latent == "estimated":
-        parser.error("No k=4 estimated-latent result batch is configured.")
     return args
 
 
@@ -516,9 +519,28 @@ def prepare_sharded_functional_results(
     files = {
         (1, "true"): FUNCTIONAL_RESULT_FILES,
         (4, "true"): FUNCTIONAL_K4_RESULT_FILES,
+        (4, "estimated"): FUNCTIONAL_K4_RESULT_FILES,
         (1, "estimated"): FUNCTIONAL_ESTIMATED_RESULT_FILES,
     }[(k, latent)]
     data = process_results(read_result_batch(results_dir, files))
+    if k == 4:
+        use_true_latent = data["args"].map(lambda args: args.get("use_true_latent"))
+        if not use_true_latent.isin([True, False, "True", "False"]).all():
+            raise ValueError("The k=4 batch must identify true or estimated latent positions.")
+        data = data[use_true_latent.isin([True, "True"]) == (latent == "true")].copy()
+    if (k, latent) == (1, "estimated"):
+        sine = process_results(
+            read_result_batch(results_dir, FUNCTIONAL_ESTIMATED_SINE_RESULT_FILES)
+        )
+        unexpected_forms = set(sine["functional_form"].dropna()) - {"sine"}
+        if unexpected_forms:
+            raise ValueError(
+                "Estimated-latent sine replacement batch contains other functional "
+                f"forms: {sorted(unexpected_forms)}"
+            )
+        data = pd.concat(
+            [data[data["functional_form"] != "sine"], sine], ignore_index=True
+        )
     bernoulli = data[
         (data["dgp_name"] == "BernoulliNetwork") & (data["k"] == k)
     ].copy()
@@ -1171,6 +1193,7 @@ def plot_sharded_functional_figures(
         (1, "true"): SHARDED_FUNCTIONAL_FORMS,
         (1, "estimated"): ESTIMATED_FUNCTIONAL_FORMS,
         (4, "true"): FUNCTIONAL_K4_FORMS,
+        (4, "estimated"): FUNCTIONAL_K4_FORMS,
     }[(k, latent)]
     for data, predictor, prefix in (
         (gaussian, "Gaussian", "28_functional_forms_gaussian_predictors"),
@@ -1214,6 +1237,7 @@ def plot_sharded_functional_grid(
         (1, "true"): SHARDED_FUNCTIONAL_FORMS,
         (1, "estimated"): ESTIMATED_FUNCTIONAL_FORMS,
         (4, "true"): FUNCTIONAL_K4_FORMS,
+        (4, "estimated"): FUNCTIONAL_K4_FORMS,
     }[(k, latent)]
     distributions = {
         "Gaussian": aggregate_sharded_functional_results(gaussian, forms=forms),
