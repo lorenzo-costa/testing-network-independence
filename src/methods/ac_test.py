@@ -77,8 +77,6 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
     coefficient and permutation options retain their usual behavior.
     """
 
-    _ADAPTIVE_EXPONENTS = (0.3, 0.5, 0.7, 0.9)
-
     def __init__(
         self,
         k=None,
@@ -92,6 +90,7 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
         use_permutation_coeff=False,
         use_right_neighbor=False,
         adaptive_m=False,
+        adaptive_exponents=None,
         block_size=2048,
         n_jobs=1,
         batch_size=32,
@@ -103,6 +102,10 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
         self.use_permutation_coeff = use_permutation_coeff
         self.use_right_neighbor = use_right_neighbor
         self.adaptive_m = bool(adaptive_m)
+        self.adaptive_exponents = (adaptive_exponents
+            if adaptive_exponents is not None
+            else (0.3, 0.5, 0.7, 0.9))
+        
         self.block_size = block_size
         self._ignore_X = _ignore_X
         super().__init__(
@@ -138,12 +141,11 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
             self.adaptive_m_stds = self.statistic_standard_deviations
             self.adaptive_z_statistics = self.standardized_statistics
 
-    @classmethod
-    def _adaptive_m_grid(cls, n):
+    def _adaptive_m_grid(self, n):
         """Return the adaptive M grid, always including one nearest neighbor."""
         capped = (
             min(round(n**exponent), n - 1)
-            for exponent in cls._ADAPTIVE_EXPONENTS
+            for exponent in self.adaptive_exponents
         )
         return np.asarray(list(dict.fromkeys([1, *capped])), dtype=int)
 
