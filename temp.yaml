@@ -21,13 +21,13 @@ simulation:
   functionals:
     - name: sine
       kwargs:
-        weights: [0.5]
+        weights: [0.5, 0.5, 0.5, 0.5]
         normalize_index: true
-        frequency: 5.0
+        frequency: 3.0
         global_scale: 10.0
       kwargs_by_predictor_distribution:
         uniform_rdpg:
-          frequency: 30.0
+          frequency: 15.0
 
 # -----------------------------------------------------------------------------
 # Testing Methods
