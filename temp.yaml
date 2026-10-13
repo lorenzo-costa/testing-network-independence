@@ -33,7 +33,7 @@ simulation:
 # Testing Methods
 # -----------------------------------------------------------------------------
 methods:
-  npermutations: [100]      
+  npermutations: [200]      
   use_true_latent: [False]
 
   # List of test methods to benchmark. 'kwargs' are passed to the method constructor.
