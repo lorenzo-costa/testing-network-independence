@@ -4,7 +4,7 @@ simulation:
   nsim: 100
   seed: 1
   n: [100, 300]
-  k: [4]
+  k: [3]
   ky: [1]
   snr: [0.1, 0.3, 0.5, 0.7]  # Var(f(Z)) / (Var(f(Z)) + Var(noise))
   alpha: [0.05]
@@ -14,7 +14,7 @@ simulation:
   functionals:
     - name: linear
       kwargs:
-        weights: [0.5, 0.5, 0.5, 0.5]
+        weights: [0.5, 0.5, 0.5]
         normalize_index: true
     - name: interaction
       # Standardize the interaction to theoretical mean 0 and variance 1.
@@ -29,7 +29,7 @@ simulation:
       kwargs: {}
     - name: threshold
       kwargs:
-        weights: [0.5, 0.5, 0.5, 0.5]
+        weights: [0.5, 0.5, 0.5]
         normalize_index: true
         threshold: 0.0
       kwargs_by_predictor_distribution:
@@ -37,7 +37,7 @@ simulation:
           threshold: 0.5
     - name: sigmoid
       kwargs:
-        weights: [0.5, 0.5, 0.5, 0.5]
+        weights: [0.5, 0.5, 0.5]
         normalize_index: true
         threshold: 0.0
         slope: 5.0
@@ -48,13 +48,13 @@ simulation:
           slope: 17.0
     - name: piecewise
       kwargs:
-        weights: [0.5, 0.5, 0.5, 0.5]
+        weights: [0.5, 0.5, 0.5]
         normalize_index: true
         switch_feature: 0
         threshold: 0.5
     - name: sine
       kwargs:
-        weights: [0.5, 0.5, 0.5, 0.5]
+        weights: [0.5, 0.5, 0.5]
         normalize_index: true
         frequency: 5.0
         global_scale: 10.0
@@ -82,7 +82,7 @@ simulation:
           center: 0.5
     - name: pareto
       kwargs:
-        weights: [0.5, 0.5, 0.5, 0.5]
+        weights: [0.5, 0.5, 0.5]
         normalize_index: true
         alpha: 1.2
         scale: 1.0
