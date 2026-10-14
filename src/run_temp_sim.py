@@ -156,6 +156,13 @@ def build_design():
                             "hypothesis": "null",
                         }
                     )
+    for row in design:
+        # Hand-built designs declare their DGP inputs explicitly. The method
+        # settings are retained on the row for construction and output only.
+        row["_generation_keys"] = tuple(
+            key for key in row
+            if key not in {"method", "test_label", "alpha", "npermutations", "use_true_latent"}
+        )
     return design
 
 
