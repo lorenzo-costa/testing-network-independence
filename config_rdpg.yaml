@@ -32,7 +32,7 @@ simulation:
 # -----------------------------------------------------------------------------
 methods:
   npermutations: [500]      # Number of permutations used in permutation-based tests
-  use_true_latent: [False]
+  use_true_latent: [False, True]
 
 
   # List of test methods to benchmark. 'kwargs' are passed to the method constructor.
