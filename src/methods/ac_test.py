@@ -90,7 +90,7 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
         use_permutation_coeff=False,
         use_right_neighbor=False,
         adaptive_m=False,
-        adaptive_exponents = None
+        adaptive_exponents = None,
         block_size=2048,
         n_jobs=1,
         batch_size=32,
