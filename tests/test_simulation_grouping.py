@@ -1,11 +1,13 @@
 """Regression tests for one dataset and embedding per replicate/data group."""
 
 from functools import partial
+from pathlib import Path
+import time
 
 import numpy as np
 import pytest
 
-from src.helper_functions.simulation_functions import run_simulation, shard_row_count
+from src.helper_functions.simulation_functions import _groups, run_simulation, shard_row_count
 from src.load_config import build_factorial_design, load_config
 from src.methods._base_class import BaseEstimationMethod
 
@@ -65,6 +67,67 @@ class CaptureMethod(BaseEstimationMethod):
 
     def get_estimated(self):
         return self.captured
+
+
+class ConstructorDimensionMethod(CaptureMethod):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.k = 3
+
+
+class ConstructorSolverMethod(CaptureMethod):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.solver = second_solver
+
+
+class ConstructorOracleMethod(CaptureMethod):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.use_true_latent = True
+
+
+class PreEmbeddedDGP(CountingDGP):
+    def generate(self):
+        data = super().generate()
+        data["estimated_Z"] = np.full((self.n, self.k), 7.0)
+        return data
+
+
+class ReturnRawAMethod:
+    def __init__(self, **kwargs):
+        pass
+
+    def get_name(self):
+        return "raw-A"
+
+    def fit(self, data, **kwargs):
+        self.data = data
+
+    def get_estimated(self):
+        return self.data["A"]
+
+
+class MutatingMetric:
+    def get_name(self):
+        return "mutating"
+
+    def __call__(self, result, is_null=None):
+        result[...] = 0
+        return None
+
+
+class WaitForCallbackMethod(CaptureMethod):
+    def fit(self, data, callback_marker=None, **kwargs):
+        deadline = time.monotonic() + 5
+        while not Path(callback_marker).exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert Path(callback_marker).exists()
+        super().fit(data, **kwargs)
+
+
+def capture_factory(**kwargs):
+    return CaptureMethod(**kwargs)
 
 
 class CaptureMetric:
@@ -195,6 +258,92 @@ def test_callbacks_and_schema_match_design_rows():
     assert all(set(result) == {"capture", "args", "density"} for result in seen)
     assert all(result["args"]["dgp_name"] == "CountingDGP" for result in seen)
     assert [result["args"]["method_name"] for result in seen] == ["a", "b", "a", "b"]
+
+
+def test_constructor_dimension_and_factory_use_actual_method_embedding_settings():
+    SOLVER_CALLS.clear()
+    altered = row("altered")
+    altered["method"] = partial(ConstructorDimensionMethod, label="altered")
+    factory = row("factory")
+    factory["method"] = partial(capture_factory, label="factory")
+    ordinary = row("ordinary")
+    results = run([altered, factory, ordinary])
+    assert SOLVER_CALLS == [(3, 0), (2, 0)]
+    assert results[0]["capture"]["estimated_Z"].shape[1] == 3
+    np.testing.assert_array_equal(results[1]["capture"]["estimated_Z"],
+                                  results[2]["capture"]["estimated_Z"])
+
+
+def test_constructor_solver_and_oracle_settings_control_embedding():
+    SOLVER_CALLS.clear()
+    solver_row = row("constructor-solver")
+    solver_row["method"] = partial(ConstructorSolverMethod, label="constructor-solver")
+    oracle_row = row("constructor-oracle")
+    oracle_row["method"] = partial(ConstructorOracleMethod, label="constructor-oracle")
+    results = run([solver_row, oracle_row])
+    assert SOLVER_CALLS == [(2, 5)]
+    np.testing.assert_array_equal(results[1]["capture"]["tested_Z"],
+                                  results[1]["capture"]["Z"])
+
+
+def test_dgp_supplied_embedding_is_preserved():
+    SOLVER_CALLS.clear()
+    supplied = row("supplied")
+    supplied["setup"] = (PreEmbeddedDGP, counting_solver)
+    result = run([supplied])[0]
+    assert SOLVER_CALLS == []
+    assert np.all(result["capture"]["estimated_Z"] == 7)
+
+
+def test_density_is_measured_after_fit_and_before_metrics():
+    raw = row("raw")
+    raw["method"] = ReturnRawAMethod
+    result = run_simulation(1, [raw], [MutatingMetric()], rng=np.random.default_rng(19))[0]
+    assert result["density"] == 0
+
+
+def test_generation_keys_keep_bool_and_int_distinct():
+    design = [row("boolean", strength=True), row("integer", strength=1)]
+    assert len(_groups(design)) == 2
+
+
+def test_distinct_local_dgp_callables_do_not_share_data():
+    def make_dgp(offset):
+        def factory(**kwargs):
+            kwargs["strength"] += offset
+            return CountingDGP(**kwargs)
+        return factory
+
+    first = row("first")
+    second = row("second")
+    first["setup"] = (make_dgp(0), counting_solver)
+    second["setup"] = (make_dgp(1), counting_solver)
+    assert len(_groups([first, second])) == 2
+
+
+def test_multirow_design_requires_explicit_generation_metadata():
+    first, second = row("first"), row("second", solver_kwargs={"offset": 2})
+    del first["_generation_keys"]
+    del second["_generation_keys"]
+    with pytest.raises(ValueError, match="Multirow designs require"):
+        run([first, second])
+
+
+@pytest.mark.parametrize("parallel", [False, True])
+def test_callback_is_invoked_before_next_method_finishes(parallel, tmp_path):
+    marker = tmp_path / "callback-ran"
+    first, second = row("first"), row("second")
+    second["method"] = partial(WaitForCallbackMethod, label="second")
+    seen = []
+
+    def callback(result):
+        seen.append(result)
+        if len(seen) == 1:
+            marker.touch()
+
+    run([first, second], parallel=parallel, n_jobs=2,
+        method_params={"callback_marker": str(marker)}, result_callback=callback)
+    assert [result["args"]["method_name"] for result in seen] == ["first", "second"]
 
 
 def test_direct_data_branch_rejected_cleanly():

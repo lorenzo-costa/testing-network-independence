@@ -4,20 +4,14 @@ from collections import OrderedDict
 from copy import deepcopy
 from functools import partial
 import hashlib
-from multiprocessing import Pool, cpu_count
+from multiprocessing import Pool, SimpleQueue, cpu_count
+from queue import Queue as ThreadQueue
+from threading import Thread
 
 import numpy as np
 from tqdm import tqdm
 
 from src.methods._base_class import BaseEstimationMethod
-
-
-# Compatibility for hand-built designs. Designs from load_config carry explicit
-# _generation_keys, and custom designs can provide those keys as well.
-_LEGACY_METHOD_COLUMNS = frozenset({
-    "method", "alpha", "npermutations", "df", "approximation",
-    "use_true_latent", "force_k", "test_label",
-})
 
 
 def _canonical(value):
@@ -26,24 +20,32 @@ def _canonical(value):
         return ("partial", _canonical(value.func), _canonical(value.args),
                 _canonical(value.keywords or {}))
     if isinstance(value, dict):
-        return ("dict", tuple(sorted((str(k), _canonical(v)) for k, v in value.items())))
+        entries = ((_canonical(k), _canonical(v)) for k, v in value.items())
+        return ("dict", tuple(sorted(entries, key=repr)))
     if isinstance(value, (list, tuple)):
         return (type(value).__name__, tuple(_canonical(v) for v in value))
     if isinstance(value, np.ndarray):
         return ("array", value.dtype.str, value.shape, value.tobytes().hex())
     if isinstance(value, np.generic):
         return _canonical(value.item())
-    if value is None or isinstance(value, (str, int, float, bool, bytes)):
-        return value
+    if isinstance(value, float):
+        return ("float", value.hex())
+    if value is None or isinstance(value, (str, int, bool, bytes)):
+        return (type(value).__name__, value)
     if callable(value):
         if hasattr(value, "__qualname__"):
-            return ("callable", value.__module__, value.__qualname__)
+            name = (value.__module__, value.__qualname__)
+            # Separate independently created local functions/classes. Their
+            # names alone do not identify captured state or mutable behavior.
+            if "<locals>" in value.__qualname__ or value.__name__ == "<lambda>":
+                return ("local-callable", *name, id(value))
+            return ("callable", *name)
         if hasattr(value, "__dict__"):
             return ("callable-object", type(value).__module__,
-                    type(value).__qualname__, _canonical(vars(value)))
+                    type(value).__qualname__, id(value))
     if hasattr(value, "__dict__"):
         return ("object", type(value).__module__, type(value).__qualname__,
-                _canonical(vars(value)))
+                id(value))
     raise TypeError(f"Cannot form a deterministic simulation key for {type(value)!r}")
 
 
@@ -52,8 +54,9 @@ def _generation_args(row):
         return {key: row[key] for key in row["_generation_keys"]}
     if "_generation_args" in row:
         return row["_generation_args"]
-    return {key: value for key, value in row.items()
-            if key not in _LEGACY_METHOD_COLUMNS and not key.startswith("_")}
+    # A lone legacy scenario needs no grouping decision. Preserve all of its
+    # original arguments instead of guessing which custom fields affect a DGP.
+    return {key: value for key, value in row.items() if not key.startswith("_")}
 
 
 def _data_key(row):
@@ -65,6 +68,14 @@ def _data_key(row):
 
 def _groups(factorial_design):
     """Group rows by their DGP callable and explicit generation parameters."""
+    if len(factorial_design) > 1 and any(
+        "_generation_keys" not in row and "_generation_args" not in row
+        for row in factorial_design
+    ):
+        raise ValueError(
+            "Multirow designs require _generation_keys or _generation_args "
+            "on every row; DGP inputs cannot be inferred from method options"
+        )
     groups = OrderedDict()
     for row in factorial_design:
         if "setup" not in row:
@@ -87,33 +98,18 @@ def _child_rng(entropy, replicate, data_key, purpose, detail=None):
     return np.random.default_rng(seed)
 
 
-def _method_class(method):
-    while isinstance(method, partial):
-        method = method.func
-    return method
-
-
-def _method_option(row, name, default=None):
-    if name in row:
-        return row[name]
-    method = row["method"]
-    while isinstance(method, partial):
-        if name in (method.keywords or {}):
-            return method.keywords[name]
-        method = method.func
-    return default
-
-
-def _embedding_key(row, data):
-    _, solver = row["setup"]
-    dimension = row.get("force_k", row.get("k"))
+def _embedding_key(method, data):
+    solver = method.solver
+    dimension = method.k
     if dimension is None:
+        if data.get("Z") is None:
+            raise ValueError("Number of dimensions (k) must be specified.")
         dimension = np.asarray(data["Z"]).shape[1]
-    options = row.get("solver_kwargs", {})
-    return _canonical((solver, dimension, options)), dimension, options
+    return _canonical((solver, dimension)), dimension, solver
 
 
-def _run_group(rows, metrics, method_params, entropy, replicate, data_key):
+def _run_group(rows, metrics, method_params, entropy, replicate, data_key,
+               result_callback=None):
     """Generate one dataset and cache all embeddings used by its methods."""
     generation = _generation_args(rows[0])
     dgp_type, _ = rows[0]["setup"]
@@ -124,29 +120,11 @@ def _run_group(rows, metrics, method_params, entropy, replicate, data_key):
     data = dgp.generate()
     dgp_name = dgp.get_name()
     is_null = getattr(dgp, "is_null", None)
-    density = (data["A"] == 0).sum() / data["A"].size
     embeddings = {}
     results = []
     method_occurrences = {}
 
     for row in rows:
-        method_type = _method_class(row["method"])
-        needs_embedding = (isinstance(method_type, type)
-                           and issubclass(method_type, BaseEstimationMethod)
-                           and not _method_option(row, "use_true_latent", False))
-        method_data = deepcopy(data)  # No method can change another method's input.
-        embedding_key = None
-        if needs_embedding:
-            embedding_key, dimension, options = _embedding_key(row, data)
-            if embedding_key not in embeddings:
-                _, solver = row["setup"]
-                embeddings[embedding_key] = solver(
-                    deepcopy(data["A"]), k=dimension,
-                    rng=_child_rng(entropy, replicate, data_key, "embedding", embedding_key),
-                    **options,
-                )[0]
-            method_data["estimated_Z"] = deepcopy(embeddings[embedding_key])
-
         # Include method and embedding settings in the child stream. Duplicate
         # identical rows receive distinct streams via their occurrence number.
         method_identity = _canonical({key: value for key, value in row.items()
@@ -169,13 +147,28 @@ def _run_group(rows, metrics, method_params, entropy, replicate, data_key):
             args["k"] = row["force_k"]
         method = args["method"](**args)
         args["method_name"] = method.get_name()
+        method_data = deepcopy(data)  # No method can change another method's input.
+        if (isinstance(method, BaseEstimationMethod)
+                and not method.use_true_latent
+                and "estimated_Z" not in method_data):
+            embedding_key, dimension, effective_solver = _embedding_key(method, data)
+            if embedding_key not in embeddings:
+                embeddings[embedding_key] = effective_solver(
+                    deepcopy(data["A"]), k=dimension,
+                    rng=_child_rng(entropy, replicate, data_key, "embedding", embedding_key),
+                )[0]
+            method_data["estimated_Z"] = deepcopy(embeddings[embedding_key])
         method.fit(method_data, **(method_params or {}))
         estimated = method.get_estimated()
+        density = (method_data["A"] == 0).sum() / method_data["A"].size
         out = {metric.get_name(): metric(estimated, is_null=is_null)
                for metric in metrics}
         out["args"] = args
         out["density"] = density
-        results.append(out)
+        if result_callback is None:
+            results.append(out)
+        else:
+            result_callback(out)
     return results
 
 
@@ -187,9 +180,24 @@ def run_scenario(metrics, args, seed, method_params=None):
     return _run_group([args], metrics, method_params, entropy, 0, _data_key(args))[0]
 
 
+_RESULT_QUEUE = None
+
+
+def _initialize_result_queue(queue):
+    global _RESULT_QUEUE
+    _RESULT_QUEUE = queue
+
+
 def _group_wrapper(task):
     rows, metrics, method_params, entropy, replicate, data_key = task
     return _run_group(rows, metrics, method_params, entropy, replicate, data_key)
+
+
+def _stream_group_wrapper(task):
+    rows, metrics, method_params, entropy, replicate, data_key = task
+    _run_group(rows, metrics, method_params, entropy, replicate, data_key,
+               result_callback=lambda result: _RESULT_QUEUE.put(("result", result)))
+    _RESULT_QUEUE.put(("done", None))
 
 
 def _validate_shard(shard_index, num_shards):
@@ -268,13 +276,69 @@ def run_simulation(
 
     if parallel:
         chunk_size = max(1, local_total // (n_jobs * batch_size))
-        with Pool(processes=n_jobs) as pool:
-            with tqdm(total=local_total, desc="Running data groups") as progress:
-                for group_results in pool.imap_unordered(_group_wrapper, tasks,
-                                                          chunksize=chunk_size):
-                    consume(group_results)
-                    progress.update(1)
+        if result_callback is None:
+            with Pool(processes=n_jobs) as pool:
+                with tqdm(total=local_total, desc="Running data groups") as progress:
+                    for group_results in pool.imap_unordered(_group_wrapper, tasks,
+                                                              chunksize=chunk_size):
+                        consume(group_results)
+                        progress.update(1)
+        else:
+            # SimpleQueue sends each row synchronously. The forwarding thread
+            # lets the parent receive those rows while the completion thread
+            # advances the pool iterator and reports worker failures.
+            queue = SimpleQueue()
+            inbox = ThreadQueue()
+
+            def forward_results():
+                while True:
+                    message = queue.get()
+                    inbox.put(message)
+                    if message[0] == "finished":
+                        return
+
+            forwarder = Thread(target=forward_results, daemon=True)
+            forwarder.start()
+            try:
+                with Pool(processes=n_jobs, initializer=_initialize_result_queue,
+                          initargs=(queue,)) as pool:
+                    worker_error = []
+
+                    def drain_completions():
+                        try:
+                            for _ in pool.imap_unordered(_stream_group_wrapper, tasks,
+                                                         chunksize=chunk_size):
+                                pass
+                        except BaseException as exc:
+                            worker_error.append(exc)
+                        finally:
+                            queue.put(("finished", None))
+
+                    coordinator = Thread(target=drain_completions, daemon=True)
+                    coordinator.start()
+                    completed = 0
+                    with tqdm(total=local_total, desc="Running data groups") as progress:
+                        while True:
+                            kind, payload = inbox.get()
+                            if kind == "result":
+                                result_callback(payload)
+                            elif kind == "done":
+                                completed += 1
+                                progress.update(1)
+                            else:
+                                break
+                    coordinator.join()
+                    forwarder.join()
+                    if worker_error:
+                        raise worker_error[0]
+                    if completed != local_total:
+                        raise RuntimeError("Simulation workers stopped before all groups completed")
+            finally:
+                queue.close()
     else:
         for task in tqdm(tasks, total=local_total, desc="Running data groups"):
-            consume(_group_wrapper(task))
+            if result_callback is None:
+                consume(_group_wrapper(task))
+            else:
+                _run_group(*task, result_callback=result_callback)
     return results
