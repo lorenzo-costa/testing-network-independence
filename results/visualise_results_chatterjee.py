@@ -86,6 +86,10 @@ RDPG_COPULA_RESULT_FILES = (
     "simulation_results_63203393_shard-002-of-003.csv",
 )
 
+RDPG_COPULA_RESULT_FILES = (
+    "simulation_results_63945707.csv",
+)
+
 FUNCTIONAL_RESULT_FILES = (
     "simulation_results_63690183_shard-000-of-003.csv",
     "simulation_results_63690183_shard-001-of-003.csv",
@@ -1162,7 +1166,7 @@ def plot_rdpg_copula_figures(data: pd.DataFrame, output_dir: Path) -> None:
     fig.supxlabel(r"Network size, $n$")
     fig.supylabel("Power")
     add_shared_legend(fig, lines=True, methods=RDPG_METHODS)
-    save_figure(fig, output_dir, "27_rdpg_copulas_by_n_ky3")
+    save_figure(fig, output_dir, "27_rdpg_copulas_by_n_ky3_v2")
 
 
 def aggregate_sharded_functional_results(
