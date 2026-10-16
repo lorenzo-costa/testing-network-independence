@@ -189,7 +189,7 @@ class FunctionalGenerator:
             raise ValueError(
                 "center_latent must be False for uniform_rdpg because centering "
                 "does not preserve valid RDPG inner products."
-            )
+            ) 
 
         if column_covariance is None:
             column_covariance = np.eye(self.kz)
