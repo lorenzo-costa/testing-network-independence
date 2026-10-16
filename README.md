@@ -128,6 +128,7 @@ factorial_design = [
         "edge_var": 1,
         "npermutations": 100,
         "df": 3,
+        "_generation_keys": ("setup", "n", "k", "rho", "marginals", "edge_var"),
     }
 ]
 
@@ -144,6 +145,25 @@ print(results[0])
 ---
 
 ## Running Simulations
+
+Each Monte Carlo replicate generates one dataset for every unique DGP and set
+of generation arguments. All method rows in that group receive copies of the
+same `A`, `Z`, `Y`, and `X`; methods using estimated latent positions also
+receive a copy of a cached `estimated_Z`. The cache key uses the constructed
+method's solver (including any solver options) and effective dimension. Oracle methods
+use the generated `Z` and do not trigger an embedding. Copies prevent a method
+or solver from changing inputs used by another method.
+
+YAML designs label generation columns automatically. Hand-built designs with
+multiple rows must list generation inputs in `_generation_keys` (including
+`setup`) or supply `_generation_args` on every row. The runner raises an error
+when that information is missing because it cannot infer which custom fields
+affect a DGP. This metadata is internal
+and does not appear in result arguments. Data, embedding, and method RNGs come
+from separate deterministic child streams based on the root RNG, replicate,
+and configuration, so reordering methods does not change generated data.
+Simulation shards distribute whole replicate/data groups; all shards together
+still contain one result for every original design row and replicate.
 
 The recommended workflow is YAML-driven. All experiment parameters — DGPs, solvers, methods, grid values, and output paths — are specified in `config.yaml`, and a single script runs both H0 and H1 simulations.
 

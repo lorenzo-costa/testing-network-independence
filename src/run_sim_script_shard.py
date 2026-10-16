@@ -5,7 +5,7 @@ from datetime import datetime
 import os
 from pathlib import Path
 
-from src.helper_functions.simulation_functions import run_simulation
+from src.helper_functions.simulation_functions import run_simulation, shard_row_count
 from src.helper_functions.simulation_output import CSV_BATCH_SIZE, CsvResultWriter
 from src.helper_functions.simulation_settings import execution_options
 from src.load_config import build_factorial_design_multi, load_config
@@ -80,7 +80,9 @@ def main(argv=None):
     factorial = build_factorial_design_multi(configs)
     simulation = configs[0]["simulation"]
     global_total = simulation["nsim"] * len(factorial)
-    local_total = len(range(args.shard_index, global_total, args.num_shards))
+    local_total = shard_row_count(
+        simulation["nsim"], factorial, args.shard_index, args.num_shards
+    )
     options = execution_options(configs[0])
     if args.n_jobs is not None:
         options["n_jobs"] = args.n_jobs
@@ -88,7 +90,7 @@ def main(argv=None):
 
     print(
         f"Shard {args.shard_index + 1}/{args.num_shards}: "
-        f"{local_total} of {global_total} scenarios, {n_jobs or 'all'} local workers."
+        f"{local_total} of {global_total} method rows, {n_jobs or 'all'} local workers."
     )
     started = datetime.now()
     output_path = _output_path(configs[0], args.shard_index, args.num_shards)

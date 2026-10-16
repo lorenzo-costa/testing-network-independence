@@ -13,7 +13,7 @@ Supports six experiment types, auto-detected from YAML structure:
 Public API
 ----------
     cfg          = load_config("config.yaml")      # auto-detects type
-    h1, h0       = build_factorial_design(cfg)     # h0 is None for lee2019
+    design       = build_factorial_design(cfg)
     df           = flatten_args_columns(df)        # common post-processing
 """
 
@@ -585,15 +585,25 @@ def load_config(path: str = "config.yaml") -> dict:
 # =============================================================================
 
 
-def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | None]:
+def _build_single_design(exp: str, cfg: dict) -> list[dict]:
     """
-    Build the H1/H0 parameter rows for a single experiment type.
+    Build method rows and label their data-generation arguments.
     All types draw from the same cfg; extra_params branches are simply
     ignored when the corresponding type is not active.
     """
     sim = cfg["simulation"]
     mth = cfg["methods"]
     sets = cfg["setups"]
+
+    def _label_generation_args(rows, method_names):
+        # The grid builder knows which columns came from method controls. Keep
+        # that distinction explicit instead of guessing from DGP signatures,
+        # many of which accept arbitrary **kwargs.
+        for row in rows:
+            row["_generation_keys"] = tuple(
+                name for name in row if name not in method_names
+            )
+        return rows
 
     def _standard_rows(setups_list, rho_list, include_marginals=None):
         if include_marginals is None:
@@ -720,7 +730,12 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
                 row["function_params"].update(
                     overrides.get(row.get("predictor_distribution", "gaussian"), {})
                 )
-        return rows
+        method_names = {"method", "alpha", "npermutations", "df"}
+        if mth["approximation"] is not None:
+            method_names.add("approximation")
+        if mth["use_true_latent"] is not None:
+            method_names.add("use_true_latent")
+        return _label_generation_args(rows, method_names)
 
     # -- Multiness ------------------------------------------------------------
     if exp == "multiness":
@@ -759,7 +774,10 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             vals.append(mth["use_true_latent"])
 
         h1 = [dict(zip(names, v)) for v in iproduct(*vals)]
-        return h1
+        method_names = {"method", "alpha", "npermutations", "df"}
+        if mth["use_true_latent"] is not None:
+            method_names.add("use_true_latent")
+        return _label_generation_args(h1, method_names)
 
     # -- Lee 2019 -------------------------------------------------------------
     if exp == "lee2019":
@@ -794,7 +812,11 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             names.append("use_true_latent")
             vals.append(mth["use_true_latent"])
 
-        return [dict(zip(names, v)) for v in iproduct(*vals)]
+        rows = [dict(zip(names, v)) for v in iproduct(*vals)]
+        method_names = {"method", "alpha", "npermutations", "df"}
+        if mth["use_true_latent"] is not None:
+            method_names.add("use_true_latent")
+        return _label_generation_args(rows, method_names)
 
     # -- Covariate-aware SBM ---------------------------------------------------
     if exp == "sbm":
@@ -860,7 +882,13 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             names.append("use_true_latent")
             vals.append(mth["use_true_latent"])
 
-        return [dict(zip(names, v)) for v in iproduct(*vals)]
+        rows = [dict(zip(names, v)) for v in iproduct(*vals)]
+        method_names = {"method", "alpha", "npermutations", "df"}
+        if mth["approximation"] is not None:
+            method_names.add("approximation")
+        if mth["use_true_latent"] is not None:
+            method_names.add("use_true_latent")
+        return _label_generation_args(rows, method_names)
 
     # -- Mixed conditional-null study -----------------------------------------
     if exp == "conditioning_mixed":
@@ -890,17 +918,15 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
     return h1
 
 
-def build_factorial_design(cfg: dict) -> tuple[list[dict], list[dict] | None]:
+def build_factorial_design(cfg: dict) -> list[dict]:
     """
-    Build the combined parameter grid for one or more experiment types.
+    Build method rows for one or more experiment types.
 
     cfg["experiment_type"] may now be a string (single type, backward-compatible)
     or a list of strings (multiple types whose rows are concatenated).
 
-    Returns
-    -------
-    (factorial_h1, factorial_h0)
-        factorial_h0 is None when no type in the list produces H0 rows.
+    Each row includes internal ``_generation_keys`` metadata so the runner
+    groups by DGP inputs while retaining every original method row.
     """
     exp_types = cfg["experiment_type"]
     if isinstance(exp_types, str):
@@ -917,11 +943,11 @@ def build_factorial_design(cfg: dict) -> tuple[list[dict], list[dict] | None]:
 
 def build_factorial_design_multi(
     cfgs: list[dict],
-) -> tuple[list[dict], list[dict] | None]:
+) -> list[dict]:
     """
     Build a combined factorial design from a list of independently loaded configs.
     Each cfg is resolved for its own single experiment type.
-    Rows from all types are concatenated; H0 rows are concatenated where present.
+    Rows from all types are concatenated with their generation-key metadata.
     """
     all_h1 = []
     for cfg in cfgs:

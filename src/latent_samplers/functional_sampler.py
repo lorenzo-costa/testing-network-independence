@@ -1,11 +1,11 @@
-r"""Functional data-generating processes for vector predictors and scalar responses.
+r"""Functional data-generating processes for scalar or component-wise responses.
 
 This module follows the output convention used by ``copula_sampler.py``:
 
 * ``Z`` is the predictor matrix, so row ``i`` is the vector-valued predictor
   :math:`Z_i \in R^k`.
-* ``Y`` is the response matrix.  Here it has one column, and ``Y[:, 0]`` is the
-  scalar response customarily denoted by :math:`Y`.
+* ``Y`` is the response matrix, with one column for a scalar response or
+  ``k`` columns for a component-wise response.
 
 The default models are deterministic: ``Y[:, 0] = f(Z)``.  Hence, with
 ``noise_scale=0`` and ``rho=None`` they are useful alternatives for testing a dependence
@@ -15,6 +15,7 @@ statistic that should attain its functional-dependence maximum when
 
 from __future__ import annotations
 
+from copy import copy
 from typing import Callable, Dict, Optional, Sequence, Union
 
 import numpy as np
@@ -26,7 +27,7 @@ Functional = Union[str, Callable[[np.ndarray], ArrayLike]]
 
 
 class FunctionalGenerator:
-    """Sample vector predictors ``Z`` and a scalar functional response ``Y``.
+    """Sample vector predictors ``Z`` and a functional response ``Y``.
 
     Parameters
     ----------
@@ -34,13 +35,20 @@ class FunctionalGenerator:
         Number of sampled observations.
     k : int
         Dimension of the vector predictor ``Z``.
+    ky : int, default=1
+        Response dimension: either 1 for a scalar response or ``k`` to apply
+        the functional separately to each predictor column.  In component-wise
+        mode, parameters follow the one-dimensional contract and index
+        normalization uses unit variance for every column.  ``interaction``
+        and ``hierarchical`` cannot be used in this mode when ``k > 1``.
     functional : str or callable, default="linear"
         Functional relationship used to construct the response.  Supported
         strings are ``linear``, ``nonlinear_additive``, ``interaction``,
         ``radial``, ``threshold``, ``sigmoid``, ``piecewise``, ``oscillatory``,
         ``max``, ``abs_max``, ``tanh_product``, ``sparse_nonlinear``,
         ``hierarchical``, ``manifold``, and ``pareto_index``.  A callable must
-        accept an ``(n, k)`` array and return a length-``n`` vector.
+        accept an ``(n, k)`` array and return shape ``(n,)`` or ``(n, 1)``.
+        In component-wise mode it is called once per column with shape ``(n, 1)``.
     function_params : dict, optional
         Parameters specific to the selected functional.  Useful keys include
         ``weights``, ``frequency``, ``threshold``, ``active_features``,
@@ -70,7 +78,8 @@ class FunctionalGenerator:
         drawn with this target variance; its realized sample variance may
         differ.  ``rho=1`` or a constant signal produces no noise.  For a
         constant signal the variance ratio is undefined.  Ignored for
-        multiplicative noise.
+        multiplicative noise.  Component-wise responses use independent noise
+        vectors and calibrate the noise variance separately for each column.
     noise_type : {"additive", "multiplicative"}, default="additive"
         Additive noise uses ``Y = f(Z) + sigma*epsilon``.  Multiplicative
         noise uses ``Y = f(Z) * exp(sigma*epsilon)`` and is especially useful
@@ -85,9 +94,8 @@ class FunctionalGenerator:
     Notes
     -----
     ``sample_latent()`` returns ``(Z, Y)`` with shapes ``(n, k)`` and
-    ``(n, 1)``.  The name ``Y`` is retained for compatibility with the existing
-    sampler interface; mathematically, ``Y[:, 0]`` is the scalar response
-    :math:`Y`.
+    ``(n, ky)``.  With ``ky=1`` the functional can combine predictor columns;
+    with ``ky=k > 1`` each response depends only on its corresponding column.
     """
 
     AVAILABLE_FUNCTIONALS = (
@@ -160,11 +168,12 @@ class FunctionalGenerator:
 
         self.n = int(n)
         self.kz = int(k)
-        if ky != 1:
+        if ky != 1 and ky != self.kz:
             raise ValueError(
-                f"FunctionalGenerator only supports scalar responses (ky=1), received ky={ky}."
+                "FunctionalGenerator supports either a scalar response (ky=1) "
+                f"or a component-wise response (ky=k); received k={k}, ky={ky}."
             )
-        self.ky = 1       # response is scalar
+        self.ky = int(ky)
         self.functional_form = functional_form
         self.function_params = dict(function_params or {})
         self.predictor_distribution = predictor_distribution
@@ -188,6 +197,11 @@ class FunctionalGenerator:
         self._validate_covariance()
 
         self._functional_name = self._normalize_functional_name(functional_form)
+        if self.ky > 1 and self._functional_name in {"interaction", "hierarchical"}:
+            raise ValueError(
+                f"The '{self._functional_name}' functional cannot be applied "
+                "component-wise to scalar inputs."
+            )
         self.is_null = False
 
     def _normalize_functional_name(self, functional):
@@ -308,6 +322,20 @@ class FunctionalGenerator:
                 "Adjust its parameters (for example, increase tail_clip)."
             )
         return y
+
+    def _evaluate_componentwise(self, Z: np.ndarray) -> np.ndarray:
+        """Reuse scalar functionals without changing the predictor generator.
+
+        This temporary evaluation context uses the one-dimensional parameter
+        contract and unit covariance.  No predictors are sampled through it,
+        and the original generator's dimension and covariance stay unchanged.
+        """
+        scalar = copy(self)
+        scalar.kz = scalar.ky = 1
+        scalar.column_covariance = np.eye(1)
+        return np.column_stack([
+            scalar._evaluate_function(Z[:, [j]]) for j in range(self.kz)
+        ])
 
     def _functional_linear(self, Z: np.ndarray) -> np.ndarray:
         return self._index(Z)
@@ -461,16 +489,22 @@ class FunctionalGenerator:
         -------
         Z : ndarray, shape (n, k)
             Vector-valued predictor samples.
-        Y : ndarray, shape (n, 1)
-            Response samples.  ``Y[:, 0]`` is the mathematical scalar response
-            :math:`Y` and is intentionally named ``Y`` for compatibility with
-            the surrounding codebase.
+        Y : ndarray, shape (n, ky)
+            Scalar or component-wise response samples.
         """
         Z = self._sample_predictors()
-        y = self._add_noise(self._evaluate_function(Z))
-        if not np.isfinite(y).all():
+        if self.ky == 1:
+            y = self._add_noise(self._evaluate_function(Z))
+            Y = y.reshape(self.n, 1)
+        else:
+            if not np.isfinite(Z).all():
+                raise FloatingPointError("Predictor generation produced non-finite values.")
+            signal = self._evaluate_componentwise(Z)
+            Y = np.column_stack([
+                self._add_noise(signal[:, j]) for j in range(self.ky)
+            ])
+        if not np.isfinite(Y).all():
             raise FloatingPointError("Noise generation produced non-finite values.")
-        Y = y.reshape(self.n, 1)
         return Z, Y
 
     # Compatibility aliases for pipelines that use private sampler hooks.
@@ -488,7 +522,9 @@ class FunctionalGenerator:
             if self.noise_type == "additive" and self.rho is not None
             else f"noise{self.noise_scale:g}"
         )
+        response_dimension = f"ky{self.ky}_" if self.ky != 1 else ""
         return (
             f"functional_{name}_n{self.n}_k{self.kz}_"
+            f"{response_dimension}"
             f"predictors_{self.predictor_distribution}_{noise}"
         )

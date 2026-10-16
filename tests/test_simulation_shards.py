@@ -1,58 +1,23 @@
 import csv
 
-import numpy as np
-
-from src.helper_functions import simulation_functions
 from src.helper_functions.simulation_output import CsvResultWriter
+from tests.test_simulation_grouping import row, normalized, run
 
 
-def _fake_run_scenario(metrics, args, seed, method_params=None):
-    return {
-        "scenario": args["scenario"],
-        "marker": int(np.random.default_rng(seed).integers(0, 2**31)),
-    }
-
-
-def test_shards_cover_the_same_deterministic_scenarios(monkeypatch):
-    monkeypatch.setattr(simulation_functions, "run_scenario", _fake_run_scenario)
-    design = [{"scenario": "first"}, {"scenario": "second"}]
-
-    whole = simulation_functions.run_simulation(
-        nsim=3,
-        factorial_design=design,
-        metrics=[],
-        rng=np.random.default_rng(22),
-    )
-    shards = [
-        simulation_functions.run_simulation(
-            nsim=3,
-            factorial_design=design,
-            metrics=[],
-            rng=np.random.default_rng(22),
-            shard_index=shard_index,
-            num_shards=4,
-        )
-        for shard_index in range(4)
-    ]
-
+def test_shards_cover_the_same_deterministic_rows():
+    design = [row("first"), row("second"), row("different-data", strength=0.8)]
+    whole = run(design, nsim=3, seed=22)
+    shards = [run(design, nsim=3, seed=22,
+                  shard_index=index, num_shards=4) for index in range(4)]
     combined = [result for shard in shards for result in shard]
-    assert {(row["scenario"], row["marker"]) for row in combined} == {
-        (row["scenario"], row["marker"]) for row in whole
-    }
+    assert len(combined) == len(whole)
+    assert normalized(combined) == normalized(whole)
 
 
-def test_result_callback_streams_rows_without_retaining_them(monkeypatch):
-    monkeypatch.setattr(simulation_functions, "run_scenario", _fake_run_scenario)
+def test_result_callback_streams_rows_without_retaining_them():
     written = []
-
-    returned = simulation_functions.run_simulation(
-        nsim=2,
-        factorial_design=[{"scenario": "only"}],
-        metrics=[],
-        rng=np.random.default_rng(9),
-        result_callback=written.append,
-    )
-
+    returned = run([row("only")], nsim=2, seed=9,
+                   result_callback=written.append)
     assert returned is None
     assert len(written) == 2
 

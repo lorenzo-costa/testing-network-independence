@@ -90,6 +90,7 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
         use_permutation_coeff=False,
         use_right_neighbor=False,
         adaptive_m=False,
+        adaptive_exponents = None,
         adaptive_exponents=None,
         block_size=2048,
         n_jobs=1,
@@ -141,6 +142,7 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
             self.adaptive_m_stds = self.statistic_standard_deviations
             self.adaptive_z_statistics = self.standardized_statistics
 
+    def _adaptive_m_grid(self, n):
     def _adaptive_m_grid(self, n):
         """Return the adaptive M grid, always including one nearest neighbor."""
         capped = (
