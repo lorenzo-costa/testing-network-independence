@@ -6,6 +6,7 @@ from .copula_sampler import CopulaGenerator
 from .conditional_independence_copula_sampler import (
     ConditionalIndependenceCopulaSampler,
 )
+from .conditional_gaussian_sampler import ConditionalGaussianSampler
 from .post_nonlinear_noise_sampler import PostNonLinearNoiseSampler
 
 try:
@@ -40,6 +41,9 @@ class LatentSampler:
     conditional_copula : str or True, optional
         Select the conditional copula sampler. A string names the copula model;
         with True, ``copula_model`` is used and defaults to ``"gaussian"``.
+    conditional_gaussian : True, optional
+        Select the categorical joint Gaussian sampler. Requires ``means``,
+        ``covariances``, and ``class_probabilities`` in keyword arguments.
     copula_model : str
         Type of copula to use for generating dependence structure. If not None, function sample from Copula
     hyppo_sim : str
@@ -70,6 +74,7 @@ class LatentSampler:
         functional_form=None,
         sbm_covariate_sampling=None,
         rng=None,
+        conditional_gaussian=None,
         **kwargs,
     ):
         if rng is None:
@@ -83,6 +88,7 @@ class LatentSampler:
         self.ky = int(ky)
 
         sampler_options = [
+            ("conditional_gaussian", conditional_gaussian),
             ("conditional_copula", conditional_copula),
             ("post_nonlinear_noise", post_nonlinear_noise),
             ("sbm_covariate_sampling", sbm_covariate_sampling),
@@ -94,7 +100,7 @@ class LatentSampler:
             (
                 "copula_model",
                 copula_model
-                if conditional_copula is None and post_nonlinear_noise is None
+                if conditional_gaussian is None and conditional_copula is None and post_nonlinear_noise is None
                 else None,
             ),
         ]
@@ -126,6 +132,13 @@ class LatentSampler:
                 copula_model=self._conditional_copula_model(value, copula_model),
                 rng=rng,
                 **kwargs,
+            ),
+            "conditional_gaussian": lambda value: ConditionalGaussianSampler(
+                n=n,
+                k=k,
+                ky=ky,
+                rng=rng,
+                **self._conditional_gaussian_kwargs(value, kwargs),
             ),
             "post_nonlinear_noise": lambda value: PostNonLinearNoiseSampler(
                 n=n,
@@ -161,6 +174,7 @@ class LatentSampler:
 
         self.copula_model = copula_model
         self.conditional_copula = conditional_copula
+        self.conditional_gaussian = conditional_gaussian
         self.post_nonlinear_noise = post_nonlinear_noise
         self.latent_sim = latent_sim
         self.dim_common = dim_common
@@ -205,9 +219,21 @@ class LatentSampler:
         }
         return {key: value for key, value in kwargs.items() if key in allowed}
 
+    @staticmethod
+    def _conditional_gaussian_kwargs(activation, kwargs):
+        if activation is not True:
+            raise ValueError("conditional_gaussian must be True when selected.")
+        return {
+            key: kwargs[key]
+            for key in ("means", "covariances", "class_probabilities")
+            if key in kwargs
+        }
+
     def _sample_latent(self):
         """Return ``(Z, Y, X)``; ``X`` is ``None`` when not generated.
         Hierarchy of generation is:
+        - if conditional_gaussian is specified, generate (Z, Y, X) from the
+          explicitly configured category Gaussians.
         - if conditional_copula is specified, generate (Z, Y, X) by stratum and
           retain X on this wrapper.
         - if functional_form is specified, use that to generate (Z, Y) directly.
@@ -218,7 +244,9 @@ class LatentSampler:
         """
         Z, Y, X = None, None, None
 
-        if self.conditional_copula is not None:
+        if self.conditional_gaussian is not None:
+            Z, Y, X = self.latent_sampler.sample_latent()
+        elif self.conditional_copula is not None:
             Z, Y, X = self.latent_sampler._sample_latent_conditional_copula()
         elif self.post_nonlinear_noise is not None:
             Z, Y, X = self.latent_sampler._sample_latent_post_nonlinear_noise()
@@ -248,7 +276,7 @@ class LatentSampler:
             Z, Y = self.latent_sampler._sample_latent_copula()
         else:
             raise ValueError(
-                "No valid latent generation method specified. Please provide one of: conditional_copula, post_nonlinear_noise, latent_sim, dim_common, block_probs_type, or copula_model."
+                "No valid latent generation method specified. Please provide one of: conditional_gaussian, conditional_copula, post_nonlinear_noise, latent_sim, dim_common, block_probs_type, or copula_model."
             )
 
         Z = np.asarray(Z)

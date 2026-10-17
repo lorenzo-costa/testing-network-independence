@@ -242,6 +242,35 @@ the observed `Y` shape. The test sets `conditional_generator.rng` to its RNG,
 holds the fitted latent positions and `X` fixed, and uses serial draws
 (`n_jobs=1`). The Monte Carlo results are available as `null_distribution`.
 
+For a known categorical conditional law, set `conditional_gaussian=True` on
+`GaussianNetwork` or `BernoulliNetwork`. Provide `means` with shape
+`(C, k + ky)`, positive definite `covariances` with shape
+`(C, k + ky, k + ky)`, and `class_probabilities` with length `C`.
+Category `c` has `[Z, Y] | X=c ~ N(means[c], covariances[c])`; the first `k`
+coordinates are `Z`. The cross covariance block controls conditional
+dependence, with zero giving a conditional null. Rows are independent given
+`X`, so the joint conditional density is the product of the row densities.
+The selected `dgp.latent_sampler` exposes `sample(X)` for Model-X draws,
+`conditional_distribution(c)` as a frozen SciPy Gaussian for `Y | X=c`, and
+`conditional_logpdf(Y, X)` as a vector of row log densities. For example:
+
+```python
+import numpy as np
+from src.dgp import GaussianNetwork
+
+dgp = GaussianNetwork(
+    n=100, k=1, ky=1, conditional_gaussian=True,
+    means=[[0.0, -1.0], [1.0, 2.0]],
+    covariances=[[[1.0, 0.0], [0.0, 1.0]],
+                 [[1.0, 0.3], [0.3, 2.0]]],
+    class_probabilities=[0.4, 0.6],
+    rng=np.random.default_rng(1),
+)
+data = dgp.generate()
+conditional_generator = dgp.latent_sampler
+log_p_y_given_x = conditional_generator.conditional_logpdf(data["Y"], data["X"]).sum()
+```
+
 Multivariate AC orthant counts use the exact recursive sorted-block algorithm
 from [Huang, Li and Wang, Section 5](https://arxiv.org/abs/2512.07443v2).
 It supports arbitrary response dimensions, using a single-threaded, cached
