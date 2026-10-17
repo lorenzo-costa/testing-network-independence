@@ -68,7 +68,7 @@ class EstimateAC(_ACMixin, BaseEstimationMethod):
 
 
 class MultivariateACTest(_ACMixin, BasePermutationTest):
-    """Permutation test using fixed-M or adaptive AC coefficients.
+    """Permutation or Model-X test using fixed-M or adaptive AC coefficients.
 
     With ``adaptive_m=True``, ``M`` is ignored. The test uses the rounded,
     capped, and deduplicated grid containing 1 and the powers of n with
@@ -90,15 +90,20 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
         use_permutation_coeff=False,
         use_right_neighbor=False,
         adaptive_m=False,
-        adaptive_exponents = None,
         adaptive_exponents=None,
         block_size=2048,
         n_jobs=1,
         batch_size=32,
         verbose=False,
+        test_type="permutation",
+        conditional_generator=None,
         _ignore_X=False, # temp for testing
         **kwargs,
     ):
+        if "approximation" in kwargs:
+            raise TypeError("'approximation' is no longer supported; use 'test_type'.")
+        if test_type == "model_X" and _ignore_X:
+            raise ValueError("Model-X requires the AC statistic to use conditioning X.")
         self.M = M
         self.use_permutation_coeff = use_permutation_coeff
         self.use_right_neighbor = use_right_neighbor
@@ -118,11 +123,13 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
             solver=solver,
             test_function=self._ac_statistic,
             rng=rng,
-            stratify_permutations=not _ignore_X,
+            stratify_permutations=test_type == "permutation" and not _ignore_X,
             one_sided=True,
             n_jobs=n_jobs,
             batch_size=batch_size,
             verbose=verbose,
+            test_type=test_type,
+            conditional_generator=conditional_generator,
         )
 
     def fit(self, data, **kwargs):
@@ -130,11 +137,11 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
         if self.adaptive_m:
             if self.npermutations < 1:
                 raise ValueError(
-                    "Adaptive M selection requires at least one permutation to "
+                    "Adaptive M selection requires at least one null draw to "
                     "compute sample standard deviations."
                 )
             self.adaptive_m_values = self._adaptive_m_grid(self.Y.shape[0])
-        self._fit_permutation()
+        self._fit_null()
 
         if self.adaptive_m: 
             self.adaptive_s_statistics = self.statistic_matrix
@@ -142,7 +149,6 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
             self.adaptive_m_stds = self.statistic_standard_deviations
             self.adaptive_z_statistics = self.standardized_statistics
 
-    def _adaptive_m_grid(self, n):
     def _adaptive_m_grid(self, n):
         """Return the adaptive M grid, always including one nearest neighbor."""
         capped = (
@@ -171,8 +177,9 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
         else:
             statistic_description = str(self.M)
 
+        test_label = "PermutationTest" if self.test_type == "permutation" else "ModelXTest"
         name = (
-            "MultivariateAC_PermutationTest_"
+            f"MultivariateAC_{test_label}_"
             f"{self.permutation_type}_{statistic_description}"
         )
         if self._ignore_X:

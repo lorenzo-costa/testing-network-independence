@@ -4,8 +4,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from src.load_config import _resolve_method, load_config
 from src.methods.ac_test import EstimateAC, MultivariateACTest
+from src.methods import ConditionalGenerator
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,6 +32,7 @@ def test_module_imports_ac_methods():
 
 
 def test_config_resolver_forwards_adaptive_m_option():
+    from src.load_config import _resolve_method
     resolved = _resolve_method(
         {
             "name": "MultivariateACTest",
@@ -51,6 +52,12 @@ def test_config_resolver_forwards_adaptive_m_option():
     }
 
 
+def test_old_approximation_key_is_rejected_by_config_resolver():
+    from src.load_config import _resolve_method
+    with pytest.raises(ValueError, match="use 'test_type'"):
+        _resolve_method({"name": "MultivariateACTest", "kwargs": {"approximation": "permutation"}})
+
+
 @pytest.mark.parametrize(
     ("filename", "expected_ky", "expected_permutation"),
     [
@@ -66,6 +73,7 @@ def test_ac_configs_set_expected_response_and_coefficient_permutation(
     expected_ky,
     expected_permutation,
 ):
+    from src.load_config import load_config
     config = load_config(ROOT / filename)
     ac_methods = [
         method
@@ -86,6 +94,7 @@ def test_ac_configs_set_expected_response_and_coefficient_permutation(
     ["config_gaussian.yaml", "config_maema.yaml"],
 )
 def test_univariate_power_configs_use_requested_grid_and_gaussian_copula(filename):
+    from src.load_config import load_config
     config = load_config(ROOT / filename)
 
     assert config["simulation"]["n"] == [50, 100, 200, 400]
@@ -125,7 +134,7 @@ def test_multivariate_ac_test_runs_permutations_by_itself():
     method.fit(latent_data())
     result = method.get_estimated()
 
-    assert len(method.permutation_distribution) == 3
+    assert len(method.null_distribution) == 3
     assert np.isfinite(result["test_stat"])
     assert 0.0 <= result["p-value"] <= 1.0
     assert isinstance(result["reject_null"], bool)
@@ -168,7 +177,7 @@ def test_adaptive_ac_test_runs_with_real_coefficients(y_columns):
     method.fit(data)
     result = method.get_estimated()
 
-    assert len(method.permutation_distribution) == 3
+    assert len(method.null_distribution) == 3
     assert method.adaptive_s_statistics.shape == (
         4,
         len(method.adaptive_m_values),
@@ -209,6 +218,85 @@ def test_ac_method_passes_x_as_conditioning_variable(monkeypatch, method_type):
     if method_type is MultivariateACTest:
         assert len(recorded) == 3
         assert all(conditioning is method.X for conditioning in recorded)
+
+
+def test_conditional_ac_model_x_uses_fixed_x_with_real_coefficient():
+    class FixedGenerator(ConditionalGenerator):
+        def __init__(self, responses):
+            self.responses = iter(responses)
+            self.x_seen = []
+
+        def sample(self, X):
+            self.x_seen.append(X.copy())
+            return next(self.responses)
+
+    data = latent_data()
+    data["Y"] = data["Y"][:, :1]
+    data["X"] = np.repeat([0, 1], 7).reshape(-1, 1)
+    generator = FixedGenerator([data["Y"] + 0.5, data["Y"] - 0.5])
+    method = MultivariateACTest(
+        use_true_latent=True, M=1, npermutations=2,
+        test_type="model_X", conditional_generator=generator,
+        rng=np.random.default_rng(23),
+    )
+    method.fit(data)
+
+    assert method.get_name() == "MultivariateAC_ModelXTest_covariate_1"
+    assert len(method.null_distribution) == 2
+    assert np.isfinite(method.test_stat_estimate)
+    assert 0 <= method.pvalue <= 1
+    assert len(generator.x_seen) == 2
+    for x in generator.x_seen:
+        np.testing.assert_array_equal(x, data["X"])
+    np.testing.assert_array_equal(method.X, data["X"])
+
+
+def test_adaptive_ac_model_x_reuses_vector_finalizer(monkeypatch):
+    seen_x = []
+
+    def deterministic_statistic(self, Z, Y, M, rng=None):
+        seen_x.append(self.X.copy())
+        return float(M * Y[0, 0] + Y[1, 0])
+
+    class FixedGenerator(ConditionalGenerator):
+        def __init__(self):
+            self.responses = iter([
+                np.array([[1.0], [2.0], *([[0.0]] * 8)]),
+                np.array([[2.0], [3.0], *([[0.0]] * 8)]),
+            ])
+
+        def sample(self, X):
+            return next(self.responses)
+
+    monkeypatch.setattr(MultivariateACTest, "_adaptive_s_statistic", deterministic_statistic)
+    data = {
+        "Z": np.ones((10, 1)),
+        "Y": np.array([[3.0], [1.0], *([[0.0]] * 8)]),
+        "X": np.arange(10).reshape(-1, 1),
+    }
+    method = MultivariateACTest(
+        use_true_latent=True, adaptive_m=True, npermutations=2,
+        test_type="model_X", conditional_generator=FixedGenerator(),
+    )
+    method.fit(data)
+    m_values = method.adaptive_m_values
+    matrix = np.stack((3 * m_values + 1, m_values + 2, 2 * m_values + 3)).astype(float)
+    standardized = (matrix - matrix.mean(axis=0)) / matrix.std(axis=0, ddof=1)
+    maxima = standardized.max(axis=1)
+    np.testing.assert_allclose(method.adaptive_s_statistics, matrix)
+    np.testing.assert_allclose(method.null_distribution, maxima[1:])
+    assert method.pvalue == pytest.approx((1 + np.count_nonzero(maxima[1:] >= maxima[0])) / 3)
+    assert len(seen_x) == 3 * len(m_values)
+    for x in seen_x:
+        np.testing.assert_array_equal(x, data["X"])
+
+
+def test_model_x_ac_cannot_ignore_conditioning_x():
+    with pytest.raises(ValueError, match="requires the AC statistic to use"):
+        MultivariateACTest(
+            use_true_latent=True, test_type="model_X", _ignore_X=True,
+            conditional_generator=object(),
+        )
 
 
 @pytest.mark.parametrize("permutation_type", ["covariate", "latent", "observed"])
@@ -260,11 +348,12 @@ def test_ac_permutations_remain_global_when_x_is_none(monkeypatch):
 
 
 def test_adaptive_m_grid_is_rounded_deduplicated_and_capped():
+    method = MultivariateACTest(use_true_latent=True)
     np.testing.assert_array_equal(
-        MultivariateACTest._adaptive_m_grid(10),
+        method._adaptive_m_grid(10),
         [1, 2, 3, 5, 8],
     )
-    np.testing.assert_array_equal(MultivariateACTest._adaptive_m_grid(2), [1])
+    np.testing.assert_array_equal(method._adaptive_m_grid(2), [1])
 
 
 def test_adaptive_s_statistic_preserves_options(monkeypatch):
@@ -347,7 +436,7 @@ def test_adaptive_test_uses_sample_standardization_and_corrected_pvalue(
     np.testing.assert_allclose(method.adaptive_m_stds, expected_stds)
     np.testing.assert_allclose(method.adaptive_z_statistics, expected_z)
     assert method.test_stat_estimate == pytest.approx(expected_a[0])
-    assert method.permutation_distribution == pytest.approx(expected_a[1:])
+    assert method.null_distribution == pytest.approx(expected_a[1:])
     assert method.pvalue == pytest.approx(expected_pvalue)
     assert len(method.permutation_indices) == 2
 
@@ -430,6 +519,6 @@ def test_parallel_adaptive_ac_matches_serial():
         serial.adaptive_s_statistics, parallel.adaptive_s_statistics
     )
     np.testing.assert_allclose(
-        serial.permutation_distribution, parallel.permutation_distribution
+        serial.null_distribution, parallel.null_distribution
     )
     assert serial.pvalue == parallel.pvalue

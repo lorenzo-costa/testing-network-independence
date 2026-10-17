@@ -15,8 +15,15 @@ def _initialize_permutation_worker(method):
 
 
 def _run_permutation_worker(task):
-    """Evaluate one indexed permutation in a process-pool worker."""
-    return _PERMUTATION_WORKER_METHOD._evaluate_permutation(task)
+    """Evaluate one indexed null draw in a process-pool worker."""
+    return _PERMUTATION_WORKER_METHOD._evaluate_null_draw(task)
+
+
+class ConditionalGenerator:
+    """Generate one response from the known conditional law given X."""
+
+    def sample(self, X):
+        raise NotImplementedError("Subclasses should implement sample(X).")
 
 
 class BaseMethod:
@@ -114,7 +121,7 @@ class BaseEstimationMethod(BaseMethod):
 
 
 class BasePermutationTest(BaseEstimationMethod):
-    """Permutation test for independence between network latent Z and observed Y."""
+    """Monte Carlo test for independence between network latent Z and observed Y."""
 
     def __init__(
         self,
@@ -131,8 +138,12 @@ class BasePermutationTest(BaseEstimationMethod):
         n_jobs=1,
         batch_size=32,
         verbose=False,
+        test_type="permutation",
+        conditional_generator=None,
         **kwargs,
     ):
+        if "approximation" in kwargs:
+            raise TypeError("'approximation' is no longer supported; use 'test_type'.")
         super().__init__(
             rng=rng,
             solver=solver,
@@ -141,6 +152,21 @@ class BasePermutationTest(BaseEstimationMethod):
         )
         if test_function is None:
             raise ValueError("Test function must be provided")
+        if test_type not in {"permutation", "model_X"}:
+            raise ValueError("test_type must be 'permutation' or 'model_X'.")
+        if test_type == "model_X":
+            if conditional_generator is None:
+                raise ValueError("Model-X requires a conditional_generator.")
+            if not callable(getattr(conditional_generator, "sample", None)):
+                raise TypeError("conditional_generator must define callable sample(X).")
+            if permutation_type != "covariate":
+                raise ValueError("permutation_type is incompatible with model_X.")
+            if stratify_permutations:
+                raise ValueError("stratify_permutations is incompatible with model_X.")
+            if n_jobs != 1:
+                raise ValueError("Model-X currently requires n_jobs=1.")
+        elif conditional_generator is not None:
+            raise ValueError("conditional_generator requires test_type='model_X'.")
         if permutation_type not in {"covariate", "latent", "observed"}:
             raise ValueError(
                 "Invalid permutation_type. Must be 'covariate', 'latent', or 'observed'."
@@ -170,6 +196,33 @@ class BasePermutationTest(BaseEstimationMethod):
         self.n_jobs = int(n_jobs)
         self.batch_size = int(batch_size)
         self.verbose = bool(verbose)
+        self.test_type = test_type
+        self.conditional_generator = conditional_generator
+
+    def _draw_null_data(self):
+        """Draw one permutation or one conditional response."""
+        if self.test_type == "permutation":
+            return self._draw_permutation()
+        try:
+            self.conditional_generator.rng = self.rng
+        except (AttributeError, TypeError) as exc:
+            raise TypeError(
+                "conditional_generator must allow its rng attribute to be set."
+            ) from exc
+        X = self.X.copy()
+        sampled = self.conditional_generator.sample(X)
+        try:
+            Y_null = np.asarray(sampled)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("conditional_generator.sample(X) returned an invalid Y.") from exc
+        if Y_null.ndim == 1:
+            Y_null = Y_null.reshape(-1, 1)
+        if Y_null.shape != self.Y.shape:
+            raise ValueError(
+                "conditional_generator.sample(X) must return Y with shape "
+                f"{self.Y.shape}; got {Y_null.shape}."
+            )
+        return Y_null.copy()
 
     def _draw_permutation(self):
         """Draw a global permutation or one restricted within rows of ``X``."""
@@ -211,18 +264,21 @@ class BasePermutationTest(BaseEstimationMethod):
             raise ValueError("Test statistics cannot be empty.")
         return statistic
 
-    def _evaluate_permutation(self, task):
-        """Evaluate one permutation task without mutating result state."""
-        permutation_number, permutation, rng, expected_shape = task
-        Z_stat, Y_stat = self._construct_permuted_data(permutation, rng)
+    def _evaluate_null_draw(self, task):
+        """Evaluate one indexed null draw without mutating result state."""
+        draw_number, draw, rng, expected_shape = task
+        if self.test_type == "model_X":
+            Z_stat, Y_stat = self.Zhat.copy(), draw.copy()
+        else:
+            Z_stat, Y_stat = self._construct_permuted_data(draw, rng)
         statistic = self._as_statistic_array(
             self._evaluate_test_statistic(Z_stat, Y_stat, rng)
         )
         if statistic.shape != expected_shape:
             raise ValueError(
-                "Observed and permuted test statistics must have the same shape."
+                "Observed and null test statistics must have the same shape."
             )
-        return permutation_number, statistic
+        return draw_number, statistic
 
     def _effective_n_jobs(self):
         """Resolve ``-1`` to all available CPUs."""
@@ -231,12 +287,12 @@ class BasePermutationTest(BaseEstimationMethod):
         return self.n_jobs
 
     def _collect_permutation_statistics(self, indexed_statistics):
-        """Collect unordered results in permutation order and report progress."""
+        """Collect unordered null results in draw order and report progress."""
         ordered_statistics = [None] * self.npermutations
         with tqdm(
             total=self.npermutations,
-            desc="Permutations",
-            unit="permutation",
+            desc="Permutations" if self.test_type == "permutation" else "Model-X draws",
+            unit="permutation" if self.test_type == "permutation" else "draw",
             disable=not self.verbose,
         ) as progress:
             for permutation_number, statistic in indexed_statistics:
@@ -245,19 +301,25 @@ class BasePermutationTest(BaseEstimationMethod):
 
         return ordered_statistics
 
-    def _compute_permutation_statistics(self):
-        """Evaluate the observed and permuted scalar or vector statistics."""
+    def _compute_null_statistics(self):
+        """Evaluate the observed and null scalar or vector statistics."""
+        if self.test_type == "model_X" and self.X is None:
+            raise ValueError("Model-X requires conditioning X in the input data.")
+        observed_Z = self.Zhat.copy() if self.test_type == "model_X" else self.Zhat
+        observed_Y = self.Y.copy() if self.test_type == "model_X" else self.Y
         observed = self._as_statistic_array(
-            self._evaluate_test_statistic(self.Zhat, self.Y, self.rng)
+            self._evaluate_test_statistic(observed_Z, observed_Y, self.rng)
         )
-        self.permutation_indices = [
-            self._draw_permutation() for _ in range(self.npermutations)
-        ]
+        if self.test_type == "permutation":
+            draws = [self._draw_null_data() for _ in range(self.npermutations)]
+            self.permutation_indices = draws
+        else:
+            draws = (self._draw_null_data() for _ in range(self.npermutations))
         task_rngs = self.rng.spawn(self.npermutations)
         tasks = (
-            (permutation_number, permutation, rng, observed.shape)
-            for permutation_number, (permutation, rng) in enumerate(
-                zip(self.permutation_indices, task_rngs)
+            (draw_number, draw, rng, observed.shape)
+            for draw_number, (draw, rng) in enumerate(
+                zip(draws, task_rngs)
             )
         )
 
@@ -268,11 +330,11 @@ class BasePermutationTest(BaseEstimationMethod):
             1,
             self.npermutations // (worker_count * self.batch_size),
         )
-        self.permutation_chunk_size = chunk_size
+        self.null_chunk_size = chunk_size
 
         if worker_count == 1:
-            statistics = map(self._evaluate_permutation, tasks)
-            permuted_statistics = self._collect_permutation_statistics(statistics)
+            statistics = map(self._evaluate_null_draw, tasks)
+            drawn_statistics = self._collect_permutation_statistics(statistics)
         else:
             if current_process().daemon:
                 raise RuntimeError(
@@ -290,46 +352,46 @@ class BasePermutationTest(BaseEstimationMethod):
                     tasks,
                     chunksize=chunk_size,
                 )
-                permuted_statistics = self._collect_permutation_statistics(
+                drawn_statistics = self._collect_permutation_statistics(
                     statistics
                 )
 
         if observed.ndim == 0:
-            permuted = np.asarray(permuted_statistics, dtype=float)
-        elif permuted_statistics:
-            permuted = np.stack(permuted_statistics)
+            null = np.asarray(drawn_statistics, dtype=float)
+        elif drawn_statistics:
+            null = np.stack(drawn_statistics)
         else:
-            permuted = np.empty((0, observed.size), dtype=float)
+            null = np.empty((0, observed.size), dtype=float)
 
         self.observed_statistics = observed
-        self.permuted_statistics = permuted
-        return observed, permuted
+        self.null_statistics = null
+        return observed, null
 
-    def _compute_pvalue_and_rejection(self, observed, permuted):
-        """Finalize scalar or max-standardized vector permutation statistics."""
+    def _compute_pvalue_and_rejection(self, observed, null_statistics):
+        """Finalize scalar or max-standardized vector null statistics."""
         observed = self._as_statistic_array(observed)
-        permuted = np.asarray(permuted, dtype=float)
+        null_statistics = np.asarray(null_statistics, dtype=float)
 
         if observed.ndim == 0:
-            if permuted.ndim != 1:
+            if null_statistics.ndim != 1:
                 raise ValueError(
-                    "Permuted scalar statistics must be one-dimensional."
+                    "Null scalar statistics must be one-dimensional."
                 )
             test_statistic = float(observed)
-            null = permuted
+            null = null_statistics
         else:
-            if permuted.ndim != 2 or permuted.shape[1:] != observed.shape:
+            if null_statistics.ndim != 2 or null_statistics.shape[1:] != observed.shape:
                 raise ValueError(
-                    "Permuted vector statistics must have shape "
+                    "Null vector statistics must have shape "
                     "(npermutations, nstatistics)."
                 )
-            if permuted.shape[0] < 1:
+            if null_statistics.shape[0] < 1:
                 raise ValueError(
-                    "Vector-valued permutation tests require at least one "
-                    "permutation for standardization."
+                    "Vector-valued tests require at least one null draw "
+                    "for standardization."
                 )
 
-            statistic_matrix = np.vstack((observed, permuted))
+            statistic_matrix = np.vstack((observed, null_statistics))
             means = statistic_matrix.mean(axis=0)
             standard_deviations = statistic_matrix.std(axis=0, ddof=1)
             invalid_standard_deviation = (
@@ -339,7 +401,7 @@ class BasePermutationTest(BaseEstimationMethod):
             if np.any(invalid_standard_deviation):
                 indices = np.flatnonzero(invalid_standard_deviation).tolist()
                 raise ValueError(
-                    "Permutation statistic standard deviation is zero or "
+                    "Null statistic standard deviation is zero or "
                     f"non-finite for component indices {indices}."
                 )
 
@@ -364,10 +426,14 @@ class BasePermutationTest(BaseEstimationMethod):
             )
 
         self.test_stat_estimate = test_statistic
-        self.permutation_distribution = null.tolist()
+        self.null_distribution = null.tolist()
         self.pvalue = float((1 + exceedances) / (null.size + 1))
         self.reject_null = bool(self.pvalue < self.alpha)
 
+    def _fit_null(self):
+        observed, null = self._compute_null_statistics()
+        self._compute_pvalue_and_rejection(observed, null)
+
     def _fit_permutation(self):
-        observed, permuted = self._compute_permutation_statistics()
-        self._compute_pvalue_and_rejection(observed, permuted)
+        """Keep the existing RV permutation path available."""
+        self._fit_null()

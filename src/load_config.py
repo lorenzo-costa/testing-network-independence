@@ -52,9 +52,7 @@ SOLVER_REGISTRY = {
 
 METHOD_REGISTRY = {
     "RVtest": RVTest,
-    "DiffusionCorrelation": DistanceCorrelationTest,
     "MultivariateACTest": MultivariateACTest,
-    "CanonicalCorrelation": CanonicalCorrelationTest,
     "MRQAP": MRQAP,
 }
 
@@ -73,6 +71,8 @@ def _resolve_method(entry: dict):
     """
     name = entry["name"]
     kwargs = entry.get("kwargs") or {}
+    if "approximation" in kwargs:
+        raise ValueError("'approximation' is no longer supported; use 'test_type'.")
     cls = METHOD_REGISTRY[name]
 
     return partial(cls, **kwargs) if kwargs else cls
@@ -290,13 +290,13 @@ def _resolve_sbm_block(sbm_cfg: dict) -> dict:
 
 def _resolve_methods_block(methods_cfg: dict) -> dict:
     """Parse the YAML methods block into a normalised dict for product sweeps."""
+    if "approximation" in methods_cfg:
+        raise ValueError("'approximation' is no longer supported; use 'test_type'.")
     return {
         "list": [_resolve_method(m) for m in methods_cfg["list"]],
         "npermutations": methods_cfg.get("npermutations", [200]),
         "df": methods_cfg.get("df", [3]),
-        "approximation": methods_cfg.get(
-            "approximation"
-        ),  # None when absent (e.g. multiness)
+        "test_type": methods_cfg.get("test_type"),
         "use_true_latent": methods_cfg.get("use_true_latent"),  # None when absent
     }
 
@@ -487,7 +487,7 @@ def load_config(path: str = "config.yaml") -> dict:
         list            -- resolved callables
         npermutations   -- list of ints
         df              -- list of ints (None for  multiness)
-        approximation   -- list of strings or None when absent (multiness )
+        test_type       -- list of strings or None when absent
         use_true_latent -- list of bools or None when not applicable
     setups : list
         (partial(DGP, ...), Solver) tuples for the H1 run. Functional
@@ -700,9 +700,9 @@ def _build_single_design(exp: str, cfg: dict) -> list[dict]:
                 )
             )
 
-        if mth["approximation"] is not None:
-            names.append("approximation")
-            vals.append(mth["approximation"])
+        if mth["test_type"] is not None:
+            names.append("test_type")
+            vals.append(mth["test_type"])
         if mth["use_true_latent"] is not None:
             names.append("use_true_latent")
             vals.append(mth["use_true_latent"])
@@ -731,8 +731,8 @@ def _build_single_design(exp: str, cfg: dict) -> list[dict]:
                     overrides.get(row.get("predictor_distribution", "gaussian"), {})
                 )
         method_names = {"method", "alpha", "npermutations", "df"}
-        if mth["approximation"] is not None:
-            method_names.add("approximation")
+        if mth["test_type"] is not None:
+            method_names.add("test_type")
         if mth["use_true_latent"] is not None:
             method_names.add("use_true_latent")
         return _label_generation_args(rows, method_names)
@@ -875,17 +875,17 @@ def _build_single_design(exp: str, cfg: dict) -> list[dict]:
             names.append("marginals")
             vals.append(sim["marginals"])
 
-        if mth["approximation"] is not None:
-            names.append("approximation")
-            vals.append(mth["approximation"])
+        if mth["test_type"] is not None:
+            names.append("test_type")
+            vals.append(mth["test_type"])
         if mth["use_true_latent"] is not None:
             names.append("use_true_latent")
             vals.append(mth["use_true_latent"])
 
         rows = [dict(zip(names, v)) for v in iproduct(*vals)]
         method_names = {"method", "alpha", "npermutations", "df"}
-        if mth["approximation"] is not None:
-            method_names.add("approximation")
+        if mth["test_type"] is not None:
+            method_names.add("test_type")
         if mth["use_true_latent"] is not None:
             method_names.add("use_true_latent")
         return _label_generation_args(rows, method_names)
@@ -980,7 +980,7 @@ def flatten_args_columns(df, extra_cols: dict = None):
     df["n"] = df["args"].apply(lambda x: x["n"])
     df["k"] = df["args"].apply(lambda x: x["k"])
     df["edge_var"] = df["args"].apply(lambda x: x.get("edge_var", "NA"))
-    df["approximation"] = df["args"].apply(lambda x: x.get("approximation", "NA"))
+    df["test_type"] = df["args"].apply(lambda x: x.get("test_type", "NA"))
     df["dgp"] = df["args"].apply(lambda x: x.get("dgp_name", "NA"))
     df["solver"] = df["args"].apply(lambda x: x.get("solver", "NA"))
     df["rho"] = df["args"].apply(lambda x: x.get("rho", "NA"))

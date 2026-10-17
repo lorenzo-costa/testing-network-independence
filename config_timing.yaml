@@ -32,17 +32,11 @@ methods:
     - name: RVtest
       kwargs:
         permutation_type: latent
-        approximation: permutation
+        test_type: permutation
 
     - name: RVtest
       kwargs:
-        approximation: asymptotic
-
-    - name: DiffusionCorrelation
-      kwargs: {}
-
-    - name: CanonicalCorrelation
-      kwargs: {}
+        test_type: asymptotic
 
     - name: MultivariateACTest
       kwargs:

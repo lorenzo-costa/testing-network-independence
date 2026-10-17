@@ -15,7 +15,7 @@ import pandas as pd
 
 from src.dgp import BernoulliNetwork
 from src.helper_functions.simulation_functions import run_simulation
-from src.methods import DistanceCorrelationTest, MultivariateACTest
+from src.methods import MultivariateACTest
 from src.metrics import ReturnMetric
 from src.solvers.weighted_network import ASE
 
@@ -39,7 +39,6 @@ PREDICTOR_DISTRIBUTIONS = ["gaussian"]
 # Carlo scenarios.
 TEST_METHODS = (
     ("AC (adaptive)", partial(MultivariateACTest, adaptive_m=True, n_jobs=1)),
-    ("MGC", partial(DistanceCorrelationTest, test_method="mgc", n_jobs=1)),
 )
 
 # These are the k=1 functionals and distribution-specific overrides from
@@ -201,8 +200,6 @@ def summarize(results):
     table.columns = [f"{method}_{metric}" for metric, method in table.columns]
     table = table.rename(
         columns={
-            "MGC_power": "MGC power",
-            "MGC_type_I_error": "MGC type I",
             "AC (adaptive)_power": "AC power",
             "AC (adaptive)_type_I_error": "AC type I",
         }
@@ -212,8 +209,6 @@ def summarize(results):
             "predictor",
             "functional",
             "snr",
-            "MGC power",
-            "MGC type I",
             "AC power",
             "AC type I",
         ]
@@ -238,8 +233,6 @@ def main():
     table = summarize(results)
     formatters = {
         "snr": "{:.1f}".format,
-        "MGC power": "{:.3f}".format,
-        "MGC type I": "{:.3f}".format,
         "AC power": "{:.3f}".format,
         "AC type I": "{:.3f}".format,
     }

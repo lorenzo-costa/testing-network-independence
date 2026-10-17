@@ -43,7 +43,6 @@ if __name__ == "__main__":
     method = [
         partial(RVPermutationTest, permutation_type="latent"),
         # QAP,
-        # DiffusionCorrelation,
         partial(
             PermutationTest,
             permutation_type="latent",
@@ -53,7 +52,6 @@ if __name__ == "__main__":
 
     npermutations = [100]
     metrics = [ComputeAll()]
-    approximation = ["F-distr"]
 
     dgp = ["bernoulli", "gaussian"]
     rho = [0.2]
@@ -94,7 +92,6 @@ if __name__ == "__main__":
         "marginals",
         "rho",
         "edge_var",
-        "approximation",
         "npermutations",
     ]
 
@@ -107,7 +104,6 @@ if __name__ == "__main__":
         marginals,
         rho,
         edge_var,
-        approximation,
         npermutations,
     )
 

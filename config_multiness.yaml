@@ -14,7 +14,7 @@
 # - shared_latent_type: replaces marginals, if Gaussian then shared latent dimensions
 # are Gaussian then orthogonalised, if one_hot then they are a one-hot vector
 # - copula models: gaussian, clayton, gumbel, student_t, mixture_uniform
-# - testing methods: RV and distance correlation
+# - testing methods: RV
 # - DGPs: GaussianNetwork, BernoulliNetwork
 # - Solvers: ASE for Gaussian, pgd_fit_wrapper for Bernoulli
 
@@ -48,11 +48,8 @@ methods:
     - name: RVtest
       kwargs:
         permutation_type: latent
-        approximation: permutation
+        test_type: permutation
 
-
-    - name: DiffusionCorrelation
-      kwargs: {}
 
 
 

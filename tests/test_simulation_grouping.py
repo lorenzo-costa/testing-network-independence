@@ -363,7 +363,7 @@ def test_existing_yaml_designs_label_generation_inputs(config_name):
         keys = set(item["_generation_keys"])
         assert {"setup", "n", "k"} <= keys
         assert not keys & {"method", "alpha", "npermutations", "df",
-                           "approximation", "use_true_latent"}
+                           "test_type", "use_true_latent"}
     assert all(len(item["_generation_keys"]) ==
                len(set(item["_generation_keys"])) for item in design)
 

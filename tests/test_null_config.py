@@ -35,7 +35,7 @@ def test_null_configs_cross_marginals_and_column_covariances(
     assert network_types == {expected_network}
     assert len(marginal_pairs) == 9
     assert len(covariance_matrices) == 3
-    assert len(design) == 486
+    assert len(design) == 405
 
 
 @pytest.mark.parametrize(

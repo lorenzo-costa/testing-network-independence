@@ -14,7 +14,7 @@
 # - marginals: Gaussian, uniform, Cauchy, Student-t, chi-squared, Pareto
 #   Pareto syntax: "pareto <shape> [scale]" (e.g. "pareto 2.5").
 # - copula models: gaussian, clayton, gumbel, student_t, mixture_uniform
-# - testing methods: RV, distance correlation, CCA, and multivariate AC
+# - testing methods: RV and multivariate AC
 # - DGPs: GaussianNetwork, BernoulliNetwork
 # - Solvers: ASE for Gaussian, pgd_fit_wrapper for Bernoulli
 
@@ -56,17 +56,11 @@ methods:
     - name: RVtest
       kwargs:
         permutation_type: latent
-        approximation: permutation
+        test_type: permutation
 
     - name: RVtest
       kwargs:
-        approximation: asymptotic
-
-    - name: DiffusionCorrelation
-      kwargs: {}
-
-    - name: CanonicalCorrelation
-      kwargs: {}
+        test_type: asymptotic
 
     - name: MultivariateACTest
       kwargs:

@@ -47,8 +47,6 @@ A simulation framework for testing statistical independence between two networks
 | `ObservedCVM` | CvM statistic computed directly on shared-neighbour counts — **no embedding required** |
 | `LLKRatioTest` | Likelihood-ratio test |
 | `QAP` | Quadratic Assignment Procedure |
-| `DiffusionCorrelation` | Diffusion-map based correlation test |
-| `CanonicalCorrelationTest` | Permutation test based on canonical correlations between estimated latent positions |
 
 ---
 
@@ -119,7 +117,7 @@ rng = np.random.default_rng(42)
 factorial_design = [
     {
         "setup": (partial(GaussianNetwork, copula_model="gaussian"), ASE),
-        "method": partial(RVtest, approximation="permutation", permutation_type="latent"),
+        "method": partial(RVtest, test_type="permutation", permutation_type="latent"),
         "n": 200,
         "k": 3,
         "rho": 0.2,
@@ -220,12 +218,10 @@ All methods inherit from `BaseMethod` and expose `fit(data)`, `get_estimated()`,
 
 | Class | Key parameters | Notes |
 |-------|---------------|-------|
-| `RVtest` | `approximation` (`'permutation'` / `'asymptotic'`), `permutation_type` (`'latent'` / `'observed'`), `npermutations`, `solver` | The asymptotic branch uses the Imhof method (`imhof.py`) to compute the p-value |
+| `RVtest` | `test_type` (`'permutation'` / `'asymptotic'`), `permutation_type` (`'latent'` / `'observed'`), `npermutations`, `solver` | The asymptotic branch uses the Imhof method (`imhof.py`) to compute the p-value |
 | `ObservedCVM` | `test_function` | CvM statistic on adjacency matrices; no embedding step needed |
 | `LLKRatioTest` | — | Likelihood-ratio test |
 | `QAP` | — | Quadratic Assignment Procedure |
-| `DiffusionCorrelation` | — | Diffusion-map based correlation |
-| `CanonicalCorrelationTest` | `permutation_type`, `solver` | Permutation test via canonical correlations of estimated latent positions |
 | `FitIndependent` | `solver`, `k` | Not a test; fits the solver independently to each network and stores embeddings |
 
 Permutation-based methods accept `n_jobs`, `batch_size`, and `verbose`.
@@ -239,6 +235,12 @@ permutation-level parallelism is enabled. Parallel workers return completed
 permutations as soon as they finish; results are restored to their original
 permutation order before p-values are calculated. Permutation p-values use the
 finite-sample correction `(1 + exceedances) / (npermutations + 1)`.
+
+`MultivariateACTest` also accepts `test_type="model_X"` and a
+`conditional_generator` with `sample(X)`. Each call must return a response with
+the observed `Y` shape. The test sets `conditional_generator.rng` to its RNG,
+holds the fitted latent positions and `X` fixed, and uses serial draws
+(`n_jobs=1`). The Monte Carlo results are available as `null_distribution`.
 
 Multivariate AC orthant counts use the exact recursive sorted-block algorithm
 from [Huang, Li and Wang, Section 5](https://arxiv.org/abs/2512.07443v2).

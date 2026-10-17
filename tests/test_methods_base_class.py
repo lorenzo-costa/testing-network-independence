@@ -3,7 +3,12 @@ import os
 import numpy as np
 import pytest
 
-from src.methods._base_class import BaseEstimationMethod, BaseMethod, BasePermutationTest
+from src.methods._base_class import (
+    BaseEstimationMethod,
+    BaseMethod,
+    BasePermutationTest,
+    ConditionalGenerator,
+)
 
 
 class RecordingSolver:
@@ -26,6 +31,143 @@ def process_id_statistic(z, y):
 def stochastic_solver(matrix, k, rng=None):
     values = np.asarray(matrix, dtype=float)[:, :k]
     return values + rng.normal(size=values.shape), np.ones(k)
+
+
+class SequenceGenerator(ConditionalGenerator):
+    def __init__(self, values):
+        self.values = iter(values)
+        self.received_x = []
+        self.received_rng = []
+
+    def sample(self, X):
+        self.received_x.append(X.copy())
+        self.received_rng.append(self.rng)
+        return next(self.values)
+
+
+def test_model_x_uses_original_observation_and_exact_conditional_draws():
+    solver = RecordingSolver()
+    generator = SequenceGenerator([[[0.0], [1.0], [0.0]], [[0.0], [0.0], [2.0]]])
+    seen = []
+    events = []
+    original_sample = generator.sample
+
+    def sample(X):
+        events.append("sample")
+        response = original_sample(X)
+        X[:] = -99
+        return response
+
+    generator.sample = sample
+
+    def statistic(z, y):
+        events.append("statistic")
+        seen.append((z.copy(), y.copy()))
+        return float(z[:, 0] @ y[:, 0])
+
+    data = {
+        "A": np.array([[1.0, 0.0, 0.0], [2.0, 0.0, 0.0], [3.0, 0.0, 0.0]]),
+        "Y": np.array([[4.0], [0.0], [0.0]]),
+        "X": np.array([[0], [1], [1]]),
+    }
+    method = BasePermutationTest(
+        solver=solver, k=1, test_function=statistic,
+        test_type="model_X", conditional_generator=generator,
+        npermutations=2, one_sided=True, rng=np.random.default_rng(11),
+    )
+    method._process_input(data)
+    method._fit_null()
+
+    assert len(solver.inputs) == 1
+    assert events == ["statistic", "sample", "statistic", "sample", "statistic"]
+    assert len(generator.received_x) == 2
+    assert all(rng is method.rng for rng in generator.received_rng)
+    for x in generator.received_x:
+        np.testing.assert_array_equal(x, data["X"])
+    for z, _ in seen:
+        np.testing.assert_array_equal(z, method.Zhat)
+    np.testing.assert_array_equal(seen[0][1], data["Y"])
+    np.testing.assert_array_equal(seen[1][1], [[0.0], [1.0], [0.0]])
+    np.testing.assert_array_equal(seen[2][1], [[0.0], [0.0], [2.0]])
+    assert method.test_stat_estimate == 4.0
+    assert method.null_distribution == [2.0, 6.0]
+    assert method.pvalue == pytest.approx(2 / 3)
+    np.testing.assert_array_equal(data["Y"], [[4.0], [0.0], [0.0]])
+    np.testing.assert_array_equal(data["X"], [[0], [1], [1]])
+
+
+@pytest.mark.parametrize("one_sided, expected_p", [(True, 1 / 3), (False, 2 / 3)])
+def test_model_x_scalar_sidedness(one_sided, expected_p):
+    generator = SequenceGenerator([[[-4.0], [0.0]], [[2.0], [0.0]]])
+    method = BasePermutationTest(
+        use_true_latent=True, test_function=lambda z, y: float(y[0, 0]),
+        test_type="model_X", conditional_generator=generator,
+        npermutations=2, one_sided=one_sided,
+    )
+    method._process_input({"Z": np.ones((2, 1)), "Y": [[3.0], [0.0]], "X": [[0], [1]]})
+    method._fit_null()
+    assert method.null_distribution == [-4.0, 2.0]
+    assert method.pvalue == pytest.approx(expected_p)
+
+
+def test_model_x_vector_statistic_reuses_standardized_maximum():
+    generator = SequenceGenerator([[[1.0], [3.0]], [[2.0], [2.0]]])
+    method = BasePermutationTest(
+        use_true_latent=True,
+        test_function=lambda z, y: np.asarray(y[:, 0], dtype=float),
+        test_type="model_X", conditional_generator=generator, npermutations=2,
+    )
+    method._process_input({"Z": np.ones((2, 1)), "Y": [[4.0], [1.0]], "X": [[0], [1]]})
+    method._fit_null()
+    matrix = np.array([[4.0, 1.0], [1.0, 3.0], [2.0, 2.0]])
+    standardized = (matrix - matrix.mean(axis=0)) / matrix.std(axis=0, ddof=1)
+    maxima = standardized.max(axis=1)
+    np.testing.assert_allclose(method.statistic_matrix, matrix)
+    np.testing.assert_allclose(method.null_distribution, maxima[1:])
+    assert method.test_stat_estimate == pytest.approx(maxima[0])
+    assert method.pvalue == pytest.approx((1 + np.count_nonzero(maxima[1:] >= maxima[0])) / 3)
+
+
+def test_model_x_generator_inherits_seeded_test_rng():
+    class RandomGenerator(ConditionalGenerator):
+        def sample(self, X):
+            return self.rng.normal(size=X.shape)
+
+    data = {"Z": np.arange(4.0).reshape(-1, 1),
+            "Y": np.ones((4, 1)), "X": np.ones((4, 1))}
+    distributions = []
+    for _ in range(2):
+        method = BasePermutationTest(
+            use_true_latent=True, test_function=dot_product_statistic,
+            test_type="model_X", conditional_generator=RandomGenerator(),
+            npermutations=4, rng=np.random.default_rng(123),
+        )
+        method._process_input(data)
+        method._fit_null()
+        distributions.append(method.null_distribution)
+    assert distributions[0] == pytest.approx(distributions[1])
+
+
+def test_model_x_requires_x_and_valid_generator_and_sample_shape():
+    with pytest.raises(ValueError, match="conditional_generator"):
+        BasePermutationTest(use_true_latent=True, test_function=dot_product_statistic, test_type="model_X")
+    with pytest.raises(TypeError, match="sample\\(X\\)"):
+        BasePermutationTest(use_true_latent=True, test_function=dot_product_statistic,
+                            test_type="model_X", conditional_generator=object())
+    with pytest.raises(ValueError, match="n_jobs=1"):
+        BasePermutationTest(use_true_latent=True, test_function=dot_product_statistic,
+                            test_type="model_X", conditional_generator=SequenceGenerator([]), n_jobs=2)
+
+    method = BasePermutationTest(use_true_latent=True, test_function=dot_product_statistic,
+                                 test_type="model_X", conditional_generator=SequenceGenerator([[[1.0]]]),
+                                 npermutations=1)
+    method._process_input({"Z": np.ones((2, 1)), "Y": np.ones((2, 1))})
+    with pytest.raises(ValueError, match="conditioning X"):
+        method._fit_null()
+
+    method._process_input({"Z": np.ones((2, 1)), "Y": np.ones((2, 1)), "X": np.ones((2, 1))})
+    with pytest.raises(ValueError, match="must return Y with shape"):
+        method._fit_null()
 
 
 def test_result_structure_contains_one_latent_and_observed_y():
@@ -136,7 +278,7 @@ def test_scalar_permutation_finalizer_uses_finite_permutation_correction():
     method._compute_pvalue_and_rejection(3.0, np.array([1.0, 2.0]))
 
     assert method.test_stat_estimate == 3.0
-    assert method.permutation_distribution == [1.0, 2.0]
+    assert method.null_distribution == [1.0, 2.0]
     assert method.pvalue == pytest.approx(1 / 3)
     assert method.reject_null is True
 
@@ -187,7 +329,7 @@ def test_vector_permutation_finalizer_standardizes_and_takes_maximum():
         method.standardized_statistics, expected_standardized
     )
     assert method.test_stat_estimate == pytest.approx(expected_maxima[0])
-    assert method.permutation_distribution == pytest.approx(expected_maxima[1:])
+    assert method.null_distribution == pytest.approx(expected_maxima[1:])
     assert method.pvalue == pytest.approx((1 + expected_exceedances) / 3)
 
 
@@ -248,8 +390,8 @@ def test_parallel_permutations_match_serial_permutations():
         ):
             np.testing.assert_array_equal(serial_perm, parallel_perm)
         np.testing.assert_allclose(
-            serial.permutation_distribution,
-            parallel.permutation_distribution,
+            serial.null_distribution,
+            parallel.null_distribution,
         )
         assert serial.test_stat_estimate == pytest.approx(
             parallel.test_stat_estimate
@@ -280,10 +422,10 @@ def test_observed_parallel_permutations_use_reproducible_child_rngs():
 
     serial, parallel = methods
     np.testing.assert_allclose(
-        serial.permuted_statistics, parallel.permuted_statistics
+        serial.null_statistics, parallel.null_statistics
     )
     np.testing.assert_allclose(
-        serial.permutation_distribution, parallel.permutation_distribution
+        serial.null_distribution, parallel.null_distribution
     )
     assert serial.pvalue == parallel.pvalue
 
@@ -306,7 +448,7 @@ def test_parallel_permutations_execute_in_worker_processes():
     method._fit_permutation()
 
     assert all(
-        process_id != main_process for process_id in method.permuted_statistics
+        process_id != main_process for process_id in method.null_statistics
     )
 
 
@@ -327,7 +469,7 @@ def test_parallel_permutations_compute_pool_chunk_size():
     )
     method._fit_permutation()
 
-    assert method.permutation_chunk_size == 4
+    assert method.null_chunk_size == 4
 
 
 def test_parallel_permutations_reject_nested_daemon_process(monkeypatch):

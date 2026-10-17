@@ -83,6 +83,8 @@ class RVTest(BasePermutationTest):
         verbose=False,
         **kwargs,
     ):
+        if "approximation" in kwargs:
+            raise TypeError("'approximation' is no longer supported; use 'test_type'.")
         super().__init__(
             k=k,
             npermutations=npermutations,

@@ -53,21 +53,15 @@ methods:
         adaptive_m: true
         use_permutation_coeff: false
       
-    - name: DiffusionCorrelation
-      kwargs: {}
+    - name: RVtest
+      kwargs:
+        test_type: asymptotic
 
     - name: RVtest
       kwargs:
-        approximation: asymptotic
-
-    - name: RVtest
-      kwargs:
-        approximation: permutation
+        test_type: permutation
         permutation_type: latent
     
-    - name: CanonicalCorrelation
-      kwargs: {}
-
 # -----------------------------------------------------------------------------
 # DGP & Solver Setups (H1: rho > 0)
 # Each entry pairs a data-generating process (network type + copula) with a solver.

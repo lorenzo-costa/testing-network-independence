@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
             "config_conditioning_null_gaussian.yaml",
             "conditioning_mixed",
             12,
-            396,
+            0,
             50,
             {0.0},
             [300],
@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
             "config_conditioning_null_bernoulli.yaml",
             "conditioning_mixed",
             12,
-            396,
+            0,
             50,
             {0.0},
             [300],
@@ -94,6 +94,9 @@ def test_conditioning_power_configs_load_and_build_complete_designs(
     assert config["methods"]["use_true_latent"] == [False]
     assert len(config["setups"]) == setup_count
     assert len(design) == design_count
+    if not design:
+        assert config["methods"]["list"] == []
+        return
     assert {row["rho"] for row in design} == expected_rho
     assert {row["method"].keywords["M"] for row in design} == {
         1,
@@ -191,62 +194,14 @@ def test_postlinear_config_covers_requested_covariance_settings(filename):
 )
 def test_null_configs_partition_sampler_specific_sweeps(filename):
     config = load_config(ROOT / filename)
-    design = build_factorial_design(config)
-    conditional_rows = [
-        row
-        for row in design
-        if row["setup"][0].keywords.get("conditional_copula") is not None
-    ]
-    post_nonlinear_rows = [
-        row
-        for row in design
-        if row["setup"][0].keywords.get("post_nonlinear_noise") is not None
-    ]
-
-    assert len(conditional_rows) == 324
-    assert len(post_nonlinear_rows) == 72
-    assert all(row["rho"] == 0.0 for row in design)
-    equicorrelated_z = np.full((3, 3), 0.5) + np.eye(3) * 0.5
-    equicorrelated_stratum = np.full((4, 4), 0.5) + np.eye(4) * 0.5
-    assert {
-        row["setup"][0].keywords["conditional_copula"]
-        for row in conditional_rows
-    } == {"gaussian"}
-    assert all("marginals" in row for row in conditional_rows)
-    assert all("marginals" not in row for row in post_nonlinear_rows)
-    assert all(
-        row["setup"][0].keywords["center_latent"] is False
-        for row in conditional_rows + post_nonlinear_rows
-    )
-    assert {
-        tuple(
-            np.asarray(row["setup"][0].keywords["column_covariance"]).ravel()
-        )
-        for row in conditional_rows
-    } == {
-        tuple(np.eye(3).ravel()),
-        tuple(equicorrelated_z.ravel()),
-    }
-    post_nonlinear_covariance_pairs = {
-        (
-            tuple(
-                np.asarray(
-                    row["setup"][0].keywords["column_covariance_z"]
-                ).ravel()
-            ),
-            tuple(
-                np.asarray(
-                    row["setup"][0].keywords["stratum_covariance"]
-                ).ravel()
-            ),
-        )
-        for row in post_nonlinear_rows
-    }
-    assert post_nonlinear_covariance_pairs == {
-        (tuple(column.ravel()), tuple(stratum.ravel()))
-        for column in (np.eye(3), equicorrelated_z)
-        for stratum in (np.eye(4), equicorrelated_stratum)
-    }
+    assert build_factorial_design(config) == []
+    assert config["methods"]["list"] == []
+    conditional_setups = [factory for factory, _ in config["setups"]
+                          if factory.keywords.get("conditional_copula") is not None]
+    post_nonlinear_setups = [factory for factory, _ in config["setups"]
+                             if factory.keywords.get("post_nonlinear_noise") is not None]
+    assert len(conditional_setups) == 4
+    assert len(post_nonlinear_setups) == 8
 
 
 @pytest.mark.parametrize(
@@ -268,21 +223,8 @@ def test_split_null_configs_select_one_network_type(
     filename, expected_dgp, expected_prefix
 ):
     config = load_config(ROOT / filename)
-    design = build_factorial_design(config)
-    conditional_rows = [
-        row
-        for row in design
-        if row["setup"][0].keywords.get("conditional_copula") is not None
-    ]
-    post_nonlinear_rows = [
-        row
-        for row in design
-        if row["setup"][0].keywords.get("post_nonlinear_noise") is not None
-    ]
-
+    assert build_factorial_design(config) == []
     assert len(config["setups"]) == 12
-    assert len(conditional_rows) == 324
-    assert len(post_nonlinear_rows) == 72
     assert all(factory.func is expected_dgp for factory, _ in config["setups"])
     assert config["output"]["file_prefix"] == expected_prefix
 
@@ -334,8 +276,6 @@ def test_split_alternative_configs_select_one_network_type(
 @pytest.mark.parametrize(
     "filename",
     [
-        "config_conditioning_null_gaussian.yaml",
-        "config_conditioning_null_bernoulli.yaml",
         "config_conditional_copula_gaussian.yaml",
         "config_conditional_copula_bernoulli.yaml",
         "config_postlinearnoise_gaussian.yaml",
@@ -364,6 +304,6 @@ def test_conditioning_config_representative_scenario_runs(filename):
     assert data["Y"].shape == (24, 1)
     assert data["X"].shape == (24, 1)
     assert np.isfinite(method.test_stat_estimate)
-    assert len(method.permutation_distribution) == 2
+    assert len(method.null_distribution) == 2
     if dgp_factory.keywords.get("post_nonlinear_noise") is not None:
         assert dgp.latent_sampler.function_type == row["function_type"]

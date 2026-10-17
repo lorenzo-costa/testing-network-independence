@@ -26,18 +26,7 @@ methods:
   npermutations: [300]
   df: [3]
   use_true_latent: [false]
-  list:
-    # - name: MultivariateACTest
-    #   kwargs:
-    #     M: 1
-    # - name: MultivariateACTest
-    #   kwargs:
-    #     M: sqrt
-    # - name: MultivariateACTest
-    #   kwargs:
-    #     M: half
-    - name: DiffusionCorrelation
-      kwargs: {}
+  list: []
 
 covariances:
   identity_z: &identity_z
