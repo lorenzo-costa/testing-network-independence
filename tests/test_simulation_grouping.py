@@ -353,8 +353,7 @@ def test_direct_data_branch_rejected_cleanly():
 
 
 @pytest.mark.parametrize("config_name", [
-    "config_gaussian.yaml", "config_functionals.yaml", "config_sbm.yaml",
-    "config_multiness.yaml",
+    "config_gaussian.yaml", "config_functionals.yaml",
 ])
 def test_existing_yaml_designs_label_generation_inputs(config_name):
     design = build_factorial_design(load_config(config_name))

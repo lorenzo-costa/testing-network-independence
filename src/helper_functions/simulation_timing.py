@@ -9,7 +9,7 @@ from src.helper_functions.simulation_functions import run_simulation
 from src.helper_functions.analyse_functions import aggregate_results
 from src.metrics import rv_coefficient_adjusted
 from src.solvers.MaMa_uuuuu import pgd_fit_wrapper
-from src.test_functions.rv_cca_coefficients import cvm_stat_multivariate
+from src.test_functions.rv_coefficients import cvm_stat_multivariate
 
 
 import numpy as np

@@ -553,7 +553,7 @@ def plot_heatmap(x_axis, y_axis, **kwargs):
     Parameters
     ----------
     x_axis : str
-        Column used for heatmap columns (e.g. ``'latent_sim'``).
+        Column used for heatmap columns (e.g. ``'functional_form'``).
     y_axis : str
         Column whose values fill the cells (e.g. ``'TrueRejection_mean'``).
     data : pd.DataFrame

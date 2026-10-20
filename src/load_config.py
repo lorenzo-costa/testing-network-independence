@@ -3,12 +3,9 @@ load_config.py
 --------------
 Universal config loader for all simulation experiments.
 
-Supports six experiment types, auto-detected from YAML structure:
+Supports experiment types auto-detected from YAML structure:
   - "standard"       -> main study + observed CVM sweep (same structure, different values)
-  - "lee2019"        -> latent functional-relationship study (Lee et al. 2019)
   - "diff_marginals" -> asymmetric per-network marginal distributions
-  - "sbm"            -> covariate-aware stochastic block model study
-  - "multiness"      -> multi-network study with common/individual latent dimensions
 
 Public API
 ----------
@@ -55,10 +52,6 @@ METHOD_REGISTRY = {
     "MultivariateACTest": MultivariateACTest,
     "MRQAP": MRQAP,
 }
-
-# Latent-sim shapes that do NOT accept sim_kwargs={'noise': True}
-_NO_NOISE_SIMS = {"multimodal_independence"}
-
 
 # =============================================================================
 # Internal resolvers
@@ -162,44 +155,6 @@ def _resolve_copula_setup(entry: dict):
     return (partial(dgp_cls, **dgp_kwargs), solver)
 
 
-def _resolve_lee2019_setups(setups_cfg: dict) -> list:
-    """
-    Expand gaussian_latent_sims / bernoulli_latent_sims name-lists into
-    (partial(DGP, latent_sim=...), partial(ASE, k=...)) tuples.
-    multimodal_independence is special-cased: it receives no sim_kwargs.
-    """
-    ase_k = setups_cfg.get("ase_k", None)
-    if ase_k is None:
-        solver = ASE
-    else:
-        solver = partial(ASE, k=ase_k)
-    rdpg = setups_cfg.get("bernoulli_rdpg", "minmax")
-    result = []
-
-    for sim_name in setups_cfg["gaussian_latent_sims"]:
-        if sim_name in _NO_NOISE_SIMS:
-            dgp = partial(GaussianNetwork, latent_sim=sim_name)
-        else:
-            dgp = partial(
-                GaussianNetwork, latent_sim=sim_name, sim_kwargs={"noise": True}
-            )
-        result.append((dgp, solver))
-
-    for sim_name in setups_cfg["bernoulli_latent_sims"]:
-        if sim_name in _NO_NOISE_SIMS:
-            dgp = partial(BernoulliNetwork, rdpg=rdpg, latent_sim=sim_name)
-        else:
-            dgp = partial(
-                BernoulliNetwork,
-                rdpg=rdpg,
-                latent_sim=sim_name,
-                sim_kwargs={"noise": True},
-            )
-        result.append((dgp, solver))
-
-    return result
-
-
 def _as_sweep(value, name: str) -> list:
     """Normalise a scalar or list-valued config field into a factorial sweep."""
     if value is None:
@@ -209,83 +164,6 @@ def _as_sweep(value, name: str) -> list:
             raise ValueError(f"{name} must not be an empty list")
         return value
     return [value]
-
-
-def _resolve_sbm_setups(setups_cfg: list) -> list:
-    """Resolve SBM DGP/solver pairs.
-
-    An SBM config may omit ``sbm: true`` in each setup because the top-level
-    ``sbm`` block already identifies the experiment.  The flag is injected
-    unconditionally here, while any other setup-specific DGP keyword arguments
-    are preserved.
-    """
-    if not isinstance(setups_cfg, list) or not setups_cfg:
-        raise TypeError("SBM setups must be a non-empty list of mappings")
-
-    resolved = []
-    for entry in setups_cfg:
-        if not isinstance(entry, dict):
-            raise TypeError("Each SBM setup must be a mapping")
-        try:
-            dgp_cls = DGP_REGISTRY[entry["dgp"]]
-            solver = SOLVER_REGISTRY[entry["solver"]]
-        except KeyError as exc:
-            raise ValueError(
-                "Each SBM setup must name a registered 'dgp' and 'solver'"
-            ) from exc
-
-        dgp_kwargs = {
-            key: value for key, value in entry.items() if key not in {"dgp", "solver"}
-        }
-        dgp_kwargs["sbm"] = True
-        resolved.append((partial(dgp_cls, **dgp_kwargs), solver))
-
-    return resolved
-
-
-def _resolve_sbm_block(sbm_cfg: dict) -> dict:
-    """Normalise optional SBM-specific sweeps.
-
-    ``assortativity`` defaults to ``0.5`` when it is not specified.  The
-    covariate-aware fields (``sbm_covariate_sampling`` and ``y_distribution``) are optional
-    as a pair so this loader accepts both the supplied covariate-aware setup and
-    earlier block/assignment-style SBM configurations.
-    """
-    if not isinstance(sbm_cfg, dict):
-        raise TypeError("sbm must be a mapping")
-
-    has_sampling = "sbm_covariate_sampling" in sbm_cfg
-    has_y_distribution = "y_distribution" in sbm_cfg
-    if has_sampling != has_y_distribution:
-        raise ValueError(
-            "sbm.sbm_covariate_sampling and sbm.y_distribution must be supplied together"
-        )
-
-    resolved = {
-        "assortativity": _as_sweep(
-            sbm_cfg.get("assortativity", 0.5), "sbm.assortativity"
-        )
-    }
-
-    for name in (
-        "sbm_covariate_sampling",
-        "y_distribution",
-        "sparsity_bias",
-        "prob_switch",
-        "assignment_mode",
-        "block_probs_type",
-        "block_probs",
-        "y_upper_bound",
-        "y_probabilities",
-        "softmax_intercept",
-        "softmax_slope",
-        "directed",
-        "self_loops",
-    ):
-        if name in sbm_cfg:
-            resolved[name] = _as_sweep(sbm_cfg[name], f"sbm.{name}")
-
-    return resolved
 
 
 def _resolve_methods_block(methods_cfg: dict) -> dict:
@@ -420,19 +298,12 @@ def _detect_experiment_type(raw: dict) -> str:
     Infer experiment type from YAML structure (no explicit tag required).
 
     Detection priority (most specific first):
-      1. "sbm"                  -- top-level ``sbm`` block is present
-      2. "lee2019"              -- setups contain ``gaussian_latent_sims``
-      3. "conditioning_mixed"   -- setups select both conditioning samplers
-      4. "post_nonlinear_noise" -- a setup selects that sampler
-      5. "conditional_copula"   -- a setup selects that sampler
-      6. Remaining legacy experiment types
+      1. "conditioning_mixed"   -- setups select both conditioning samplers
+      2. "post_nonlinear_noise" -- a setup selects that sampler
+      3. "conditional_copula"   -- a setup selects that sampler
+      4. Remaining experiment types
     """
-    if "sbm" in raw:
-        return "sbm"
-
     setups_raw = raw.get("setups", {})
-    if isinstance(setups_raw, dict) and "gaussian_latent_sims" in setups_raw:
-        return "lee2019"
 
     if isinstance(setups_raw, list):
         has_post_nonlinear = any(
@@ -447,9 +318,6 @@ def _detect_experiment_type(raw: dict) -> str:
             return "post_nonlinear_noise"
         if has_conditional_copula:
             return "conditional_copula"
-
-    if "dim_common" in raw.get("simulation", {}):
-        return "multiness"
 
     marginals = raw.get("simulation", {}).get("marginals", [])
     if marginals and isinstance(marginals[0], dict):
@@ -476,17 +344,15 @@ def load_config(path: str = "config.yaml") -> dict:
     Returned keys
     -------------
     experiment_type : str
-        One of "standard", "lee2019", "diff_marginals", "sbm", "multiness",
-        "functionals", or "asymptotic".
+        One of "standard", "diff_marginals", "functionals", or "asymptotic".
     simulation : dict
         Raw simulation block: nsim, n, k, rho, alpha, edge_var, marginals, seed.
-        multiness also carries: dim_common, dim_individual, shared_latent_type.
     rng : np.random.Generator
         Seeded RNG ready for use.
     methods : dict
         list            -- resolved callables
         npermutations   -- list of ints
-        df              -- list of ints (None for  multiness)
+        df              -- list of ints
         test_type       -- list of strings or None when absent
         use_true_latent -- list of bools or None when not applicable
     setups : list
@@ -496,8 +362,6 @@ def load_config(path: str = "config.yaml") -> dict:
     null_setups : dict | None
         {"rho": [...], "setups": [...]} for H0 runs, or None.
     extra_params : dict
-        lee2019   -> {"sparsity": {"make_sparse": [...], "sparsity_bias": [...]}}
-        multiness -> {}   (extra dims live directly in cfg["simulation"])
         others    -> {}
     metrics : list
     output : dict
@@ -529,11 +393,7 @@ def load_config(path: str = "config.yaml") -> dict:
     rng = np.random.default_rng(sim_raw["seed"])
 
     # -- Resolve setups -------------------------------------------------------
-    if exp_type == "lee2019":
-        setups = _resolve_lee2019_setups(raw["setups"])
-    elif exp_type == "sbm":
-        setups = _resolve_sbm_setups(raw["setups"])
-    elif exp_type == "functionals":
+    if exp_type == "functionals":
         setups = []
         for entry in raw["setups"]:
             if isinstance(entry["solver"], dict):
@@ -547,21 +407,13 @@ def load_config(path: str = "config.yaml") -> dict:
             else:
                 setups.append(_resolve_copula_setup(entry))
     else:
-        # standard, diff_marginals, multiness, asymptotic
+        # standard, diff_marginals, asymptotic
         # all use copula-style setup entries
         setups = [_resolve_copula_setup(e) for e in raw["setups"]]
 
     # -- Experiment-specific extra params -------------------------------------
     extra_params = {}
-    if exp_type == "lee2019":
-        sp = raw.get("sparsity", {"make_sparse": [False], "sparsity_bias": [1]})
-        extra_params["sparsity"] = {
-            "make_sparse": sp["make_sparse"],
-            "sparsity_bias": sp["sparsity_bias"],
-        }
-    elif exp_type == "sbm":
-        extra_params["sbm"] = _resolve_sbm_block(raw["sbm"])
-    elif exp_type == "asymptotic":
+    if exp_type == "asymptotic":
         extra_params["asymptotic"] = {
             "column_covariance": sim_raw.get("column_covariance"),
         }
@@ -730,159 +582,6 @@ def _build_single_design(exp: str, cfg: dict) -> list[dict]:
                 row["function_params"].update(
                     overrides.get(row.get("predictor_distribution", "gaussian"), {})
                 )
-        method_names = {"method", "alpha", "npermutations", "df"}
-        if mth["test_type"] is not None:
-            method_names.add("test_type")
-        if mth["use_true_latent"] is not None:
-            method_names.add("use_true_latent")
-        return _label_generation_args(rows, method_names)
-
-    # -- Multiness ------------------------------------------------------------
-    if exp == "multiness":
-        names = [
-            "setup",
-            "method",
-            "n",
-            "k",
-            "ky",
-            "alpha",
-            "rho",
-            "edge_var",
-            "npermutations",
-            "df",
-            "dim_common",
-            "dim_individual",
-            "shared_latent_type",
-        ]
-        vals = [
-            sets,
-            mth["list"],
-            sim["n"],
-            sim["k"],
-            sim.get("ky", [1]),
-            sim["alpha"],
-            sim["rho"],
-            sim["edge_var"],
-            mth["npermutations"],
-            mth["df"],
-            sim["dim_common"],
-            sim["dim_individual"],
-            sim["shared_latent_type"],
-        ]
-        if mth["use_true_latent"] is not None:
-            names.append("use_true_latent")
-            vals.append(mth["use_true_latent"])
-
-        h1 = [dict(zip(names, v)) for v in iproduct(*vals)]
-        method_names = {"method", "alpha", "npermutations", "df"}
-        if mth["use_true_latent"] is not None:
-            method_names.add("use_true_latent")
-        return _label_generation_args(h1, method_names)
-
-    # -- Lee 2019 -------------------------------------------------------------
-    if exp == "lee2019":
-        sp = cfg["extra_params"]["sparsity"]
-        names = [
-            "setup",
-            "method",
-            "n",
-            "k",
-            "ky",
-            "alpha",
-            "edge_var",
-            "npermutations",
-            "df",
-            "make_sparse",
-            "sparsity_bias",
-        ]
-        vals = [
-            sets,
-            mth["list"],
-            sim["n"],
-            sim["k"],
-            sim.get("ky", [1]),
-            sim["alpha"],
-            sim["edge_var"],
-            mth["npermutations"],
-            mth["df"],
-            sp["make_sparse"],
-            sp["sparsity_bias"],
-        ]
-        if mth["use_true_latent"] is not None:
-            names.append("use_true_latent")
-            vals.append(mth["use_true_latent"])
-
-        rows = [dict(zip(names, v)) for v in iproduct(*vals)]
-        method_names = {"method", "alpha", "npermutations", "df"}
-        if mth["use_true_latent"] is not None:
-            method_names.add("use_true_latent")
-        return _label_generation_args(rows, method_names)
-
-    # -- Covariate-aware SBM ---------------------------------------------------
-    if exp == "sbm":
-        sbm = cfg["extra_params"]["sbm"]
-        names = [
-            "setup",
-            "method",
-            "n",
-            "k",
-            "ky",
-            "alpha",
-            "rho",
-            "edge_var",
-            "npermutations",
-            "df",
-            "assortativity",
-        ]
-        vals = [
-            sets,
-            mth["list"],
-            sim["n"],
-            sim["k"],
-            sim.get("ky", [1]),
-            sim["alpha"],
-            sim.get("rho", [None]),
-            sim.get("edge_var", [None]),
-            mth["npermutations"],
-            mth["df"],
-            sbm["assortativity"],
-        ]
-
-        # Covariate-aware and legacy SBM controls are included only when the
-        # YAML supplies them, so neither family needs dummy parameters.
-        for name in (
-            "sbm_covariate_sampling",
-            "y_distribution",
-            "sparsity_bias",
-            "prob_switch",
-            "assignment_mode",
-            "block_probs_type",
-            "block_probs",
-            "y_upper_bound",
-            "y_probabilities",
-            "softmax_intercept",
-            "softmax_slope",
-            "directed",
-            "self_loops",
-        ):
-            if name in sbm:
-                names.append(name)
-                vals.append(sbm[name])
-
-        # A marginal sweep is not required for SBM configs, but preserve it
-        # when a hybrid config explicitly supplies one.
-        if "marginals" in sim:
-            names.append("marginals")
-            vals.append(sim["marginals"])
-
-        if mth["test_type"] is not None:
-            names.append("test_type")
-            vals.append(mth["test_type"])
-        if mth["use_true_latent"] is not None:
-            names.append("use_true_latent")
-            vals.append(mth["use_true_latent"])
-
-        rows = [dict(zip(names, v)) for v in iproduct(*vals)]
         method_names = {"method", "alpha", "npermutations", "df"}
         if mth["test_type"] is not None:
             method_names.add("test_type")

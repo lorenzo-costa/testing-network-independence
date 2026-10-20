@@ -42,7 +42,7 @@ def test_functional_power_is_not_pooled_across_snrs():
     data = pd.DataFrame({
         "rho": [0.1, 0.1, 0.5, 0.5],
         "n": [100] * 4,
-        "method": ["DC"] * 4,
+        "method": ["RVTest_permutation"] * 4,
         "functional_form": ["linear"] * 4,
         "Rejection": [False, False, True, True],
     })
@@ -82,7 +82,7 @@ def test_functional_plots_cover_each_snr_and_predictor(monkeypatch, tmp_path, k,
     data = pd.DataFrame({
         "rho": [0.1, 0.2, 0.3, 0.4, 0.5] * 2,
         "n": [100] * 5 + [300] * 5,
-        "method": ["DC"] * 10,
+        "method": ["RVTest_permutation"] * 10,
         "functional_form": ["linear"] * 10,
         "Rejection": [False] * 5 + [True] * 5,
     })

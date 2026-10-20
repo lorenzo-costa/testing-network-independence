@@ -180,7 +180,7 @@ The script automatically detects the experiment type from the YAML structure (se
 
 ### Data Generating Processes (`dgp.py`)
 
-`src/dgp.py` provides `GaussianNetwork` and `BernoulliNetwork`, both inheriting from `CopulaDGP` and `BaseSBM`. Key constructor arguments:
+`src/dgp.py` provides `GaussianNetwork` and `BernoulliNetwork`, both using `LatentSampler`. Key constructor arguments:
 
 | Argument | Type | Description |
 |----------|------|-------------|
@@ -191,11 +191,6 @@ The script automatically detects the experiment type from the YAML structure (se
 | `copula_model` | `str` | Dependency structure (see table above) |
 | `edge_var` | `float` | Edge noise variance (Gaussian network only) |
 | `column_covariance` | `ndarray` | Optional `k×k` covariance for the copula Gaussian factor |
-| `latent_sim` | `str` | Name of a `hyppo` simulation function (e.g. `'quadratic'`, `'spiral'`) used instead of the copula path |
-| `sim_kwargs` | `dict` | Extra keyword arguments forwarded to the `latent_sim` function |
-| `sbm` | `bool` | Use a stochastic block model to draw latent positions |
-| `dim_common` / `dim_individual` | `int` | For multi-network experiments: shared and private latent dimensions |
-| `shared_latent_type` | `str` | How shared dimensions are drawn: `'gaussian'` or `'one_hot'` |
 | `rdpg` | `str` | Normalisation strategy for `BernoulliNetwork` (`'max'`, `'spectral'`, `'minmax'`) |
 
 `generate()` returns a dict with keys `A`, `B` (adjacency matrices) and `Z`, `X` (true latent positions).
@@ -308,10 +303,7 @@ The experiment type is **auto-detected** from the YAML structure — no explicit
 | Type | Detection rule | Description |
 |------|---------------|-------------|
 | `standard` | Default | Main copula study with H0/H1 sweep |
-| `lee2019` | `setups` contains `gaussian_latent_sims` key | Latent functional-relationship study |
 | `diff_marginals` | First `marginals` entry is a dict | Asymmetric per-network marginal distributions |
-| `sbm` | Top-level `sbm:` key present | Stochastic block model misspecification study |
-| `multiness` | `simulation` block contains `dim_common` | Multi-network common/individual latent dimensions |
 
 Registries in `load_config.py` map YAML string names to classes — extend `DGP_REGISTRY`, `SOLVER_REGISTRY`, and `METHOD_REGISTRY` to add new components without touching the runner script.
 
@@ -341,6 +333,5 @@ matplotlib
 seaborn
 tqdm
 pyyaml
-hyppo          
 numba          
 ```

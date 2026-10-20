@@ -43,7 +43,6 @@ OLD_RESULT_FILES = (
     "simulation_results_20260723_1332.csv",  # Gaussian network
     "simulation_results_20260723_1407.csv",  # Bernoulli network
     "simulation_results_20260723_1155.csv",  # functional alternatives
-    "simulation_results_20260723_1322.csv",  # latent simulations
     "simulation_results_20260723_1554.csv",  # null simulations
 )
 
@@ -51,7 +50,6 @@ NEW_RESULT_FILES = (
     "simulation_results_20260726_0347.csv",  # Gaussian network
     "simulation_results_20260726_0353.csv",  # Bernoulli network
     "simulation_results_20260726_0339.csv",  # functional alternatives
-    "simulation_results_20260726_0342.csv",  # latent simulations
     "simulation_results_20260726_0400.csv",  # null simulations
 )
 
@@ -143,15 +141,12 @@ COLUMNS_TO_MATCH = (
     "make_sparse",
     "use_true_x",
     "use_true_z",
-    "latent_sim",
     "copula",
     "marginal_y",
     "marginal_z",
     "degree",
     "NN_number",
     "functional_form",
-    "sbm_covariate_sampling",
-    "assortativity",
     "x_distribution",
     "adaptive_m",
     "column_covariance",
@@ -161,54 +156,45 @@ COLUMNS_TO_MATCH = (
 )
 
 COLORS = {
-    "DC": "#0072B2",
     "AC_1": "#D55E00",
     "AC_sqrt": "#009E73",
     "AC_adaptive": "#CC79A7",
     "RVTest_permutation": "#E69F00",
     "RVTest_asymptotic": "#222222",
-    "CCA": "#56B4E9",
 }
 
 MARKERS = {
-    "DC": "x",
     "AC_1": "D",
     "AC_sqrt": "^",
     "AC_adaptive": "s",
     "RVTest_permutation": "v",
     "RVTest_asymptotic": "o",
-    "CCA": "P",
 }
 
 LINESTYLES = {
-    "DC": "-",
     "AC_1": "-",
     "AC_sqrt": "-",
     "AC_adaptive": "-",
     "RVTest_permutation": "-",
     "RVTest_asymptotic": "-",
-    "CCA": "-",
 }
 
 METHOD_LABELS = {
-    "DC": "DC",
     "AC_1": r"AC ($k=1$)",
     "AC_sqrt": r"AC ($k=\sqrt{n}$)",
     "AC_adaptive": "AC (adaptive)",
     "RVTest_permutation": "RV (permutation)",
     "RVTest_asymptotic": "RV (asymptotic)",
-    "CCA": "CCA",
 }
 
 METHODS = (
-    "DC",
     "AC_1",
     "AC_sqrt",
     "AC_adaptive",
     "RVTest_permutation",
     "RVTest_asymptotic",
 )
-RDPG_METHODS = (*METHODS, "CCA")
+RDPG_METHODS = METHODS
 
 COPULAS = ("gaussian", "student_t", "clayton", "mixture")
 MARGINALS_Z = ("gaussian", "chi df=5")
@@ -232,25 +218,6 @@ ESTIMATED_FUNCTIONAL_FORMS = (
 )
 RHO_SWEEP_MARGINALS_Y = ("gaussian", "chi df=5")
 
-LATENT_SIMULATIONS = (
-    "linear",
-    "exponential",
-    "cubic",
-    "step",
-    "circle",
-    "ellipse",
-    "spiral",
-    "quadratic",
-    "fourth_root",
-    "log",
-    "w_shaped",
-    "two_parabolas",
-    "bernoulli",
-    "square",
-    "diamond",
-    "sin_sixteen_pi",
-)
-
 FUNCTIONAL_FORMS = (
     "linear",
     "interaction",
@@ -264,10 +231,6 @@ FUNCTIONAL_FORMS = (
 
 CATEGORY_LABELS = {
     "student_t": "Student t",
-    "fourth_root": "Fourth\nroot",
-    "w_shaped": "W-shaped",
-    "two_parabolas": "Two\nparabolas",
-    "sin_sixteen_pi": r"$\sin(16\pi)$",
     "abs_max": "Absolute\nmaximum",
     "tanh_product": "Tanh\nproduct",
 }
@@ -583,12 +546,9 @@ def aggregate_alternative_results(data: pd.DataFrame) -> pd.DataFrame:
         "marginal_y",
         "marginal_z",
         "method",
-        "latent_sim",
         "make_sparse",
         "functional_form",
         "copula",
-        "sbm_covariate_sampling",
-        "assortativity",
         "x_distribution",
     ]
     return aggregate_results(
@@ -1366,82 +1326,6 @@ def plot_rho_sweep_figures(
     )
 
 
-def plot_latent_network(
-    data: pd.DataFrame,
-    output_dir: Path,
-    *,
-    network_name: str,
-    filename: str,
-    ky: int,
-) -> None:
-    data = data[
-        data["latent_sim"].isin(LATENT_SIMULATIONS)
-        & data["method"].isin(METHODS)
-        & (data["n"] == 300)
-    ].copy()
-    assert_unique(
-        data,
-        ["method", "latent_sim"],
-        f"{network_name} latent simulations",
-    )
-
-    category_rows = (
-        LATENT_SIMULATIONS[:8],
-        LATENT_SIMULATIONS[8:],
-    )
-    fig, axes = plt.subplots(
-        2,
-        1,
-        figsize=(7.0, 4.5),
-        sharey=True,
-        squeeze=False,
-        layout="constrained",
-    )
-    for row, categories in enumerate(category_rows):
-        ax = axes[row, 0]
-        panel = data[data["latent_sim"].isin(categories)]
-        plot_scatter_panel(
-            ax,
-            panel,
-            category="latent_sim",
-            categories=categories,
-        )
-        style_probability_axis(ax)
-        ax.set_title(f"({chr(ord('a') + row)})", loc="left")
-
-    fig.suptitle(
-        f"Power across latent dependence structures — {network_name}, "
-        f"$n=300$, $k_y={ky}$"
-    )
-    fig.supxlabel("Latent dependence structure")
-    fig.supylabel("Power")
-    add_shared_legend(fig, lines=False)
-    save_figure(fig, output_dir, filename)
-
-
-def plot_latent_simulation_figures(
-    alternative_gaussian: pd.DataFrame,
-    alternative_bernoulli: pd.DataFrame,
-    output_dir: Path,
-    *,
-    ky: int,
-) -> None:
-    plot_latent_network(
-        alternative_bernoulli,
-        output_dir,
-        network_name="Bernoulli binary network",
-        filename=f"07_binary_latent_simulations_n300_ky{ky}",
-        ky=ky,
-    )
-    plot_latent_network(
-        alternative_gaussian,
-        output_dir,
-        network_name="Gaussian weighted network",
-        filename=f"08_gaussian_latent_simulations_n300_ky{ky}",
-        ky=ky,
-    )
-
-
 def plot_functional_curves(
     data: pd.DataFrame,
     output_dir: Path,
@@ -1600,12 +1484,6 @@ def main() -> None:
         point_n=300,
         first_numbers=(3, 5),
         chi_squared_numbers=(17, 18),
-    )
-    plot_latent_simulation_figures(
-        alternative_gaussian,
-        alternative_bernoulli,
-        output_dir,
-        ky=1,
     )
     plot_functional_figures(
         alternative_bernoulli,
