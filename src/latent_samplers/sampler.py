@@ -6,7 +6,6 @@ from .copula_sampler import CopulaGenerator
 from .conditional_independence_copula_sampler import (
     ConditionalIndependenceCopulaSampler,
 )
-from .conditional_gaussian_sampler import ConditionalGaussianSampler
 from .post_nonlinear_noise_sampler import PostNonLinearNoiseSampler
 from .rdpg_sampler import RDPGGenerator
 from .functional_sampler import FunctionalGenerator
