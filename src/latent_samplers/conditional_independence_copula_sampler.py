@@ -31,6 +31,10 @@ class ConditionalIndependenceCopulaSampler:
     marginals : dict, optional
         Marginal specifications with exactly the required keys ``"z"`` and
         ``"y"``. Defaults to Gaussian marginals for both variables.
+    marginals_by_class : sequence of dict, optional
+        One ``{"z": ..., "y": ...}`` marginal specification per stratum.
+        Cannot be combined with ``marginals``, ``means``, or ``covariances``.
+        Supported by every copula family.
     copula_model : {"gaussian", "student_t", "clayton", "gumbel"}
         Copula family used in every stratum.
     copula_params : dict, optional
@@ -41,7 +45,8 @@ class ConditionalIndependenceCopulaSampler:
         Alias for ``class_probabilities``.
     center_latent : bool, default=True
         If true, center ``Z`` and ``Y`` separately within every sampled stratum.
-        Defaults to false when ``means`` or ``covariances`` are supplied.
+        Defaults to false when ``means``, ``covariances``, or
+        ``marginals_by_class`` are supplied.
     means : array-like, optional
         Gaussian-only category means for ``[Z, Y]``, shape ``(C, k + ky)``.
         May be combined with ``rho`` when ``covariances`` is omitted.
@@ -69,6 +74,7 @@ class ConditionalIndependenceCopulaSampler:
         rho=None,
         ky=1,
         marginals=None,
+        marginals_by_class=None,
         copula_model="gaussian",
         copula_params=None,
         class_probabilities=None,
@@ -91,13 +97,32 @@ class ConditionalIndependenceCopulaSampler:
             raise ValueError(f"copula_model must be one of {{{choices}}}.")
         self.copula_model = copula_model
 
-        if marginals is None:
-            marginals = {"z": "gaussian", "y": "gaussian"}
-        if not isinstance(marginals, dict):
-            raise TypeError("marginals must be a dictionary with keys 'z' and 'y'.")
-        if set(marginals) != {"z", "y"}:
-            raise ValueError("marginals must contain exactly the keys 'z' and 'y'.")
-        self.marginals = dict(marginals)
+        if marginals_by_class is not None:
+            if marginals is not None:
+                raise ValueError(
+                    "Specify either marginals or marginals_by_class, not both."
+                )
+            if means is not None or covariances is not None:
+                raise ValueError(
+                    "marginals_by_class cannot be combined with means or covariances."
+                )
+            if (
+                not isinstance(marginals_by_class, (list, tuple))
+                or len(marginals_by_class) != self.C
+            ):
+                raise ValueError(
+                    f"marginals_by_class must contain C={self.C} dictionaries."
+                )
+            self.marginals_by_class = tuple(
+                self._validate_marginals(entry, f"marginals_by_class[{category}]")
+                for category, entry in enumerate(marginals_by_class)
+            )
+            self.marginals = None
+        else:
+            if marginals is None:
+                marginals = {"z": "gaussian", "y": "gaussian"}
+            self.marginals = self._validate_marginals(marginals, "marginals")
+            self.marginals_by_class = None
 
         self._explicit_gaussian = means is not None or covariances is not None
         if self._explicit_gaussian:
@@ -177,7 +202,8 @@ class ConditionalIndependenceCopulaSampler:
         self.rho = self._normalize_rho(0 if rho is None else rho)
         self.class_probabilities = self._normalize_probabilities(class_probabilities)
         self.center_latent = (
-            not self._explicit_gaussian if center_latent is None else bool(center_latent)
+            not (self._explicit_gaussian or self.marginals_by_class is not None)
+            if center_latent is None else bool(center_latent)
         )
         self.rng = rng if rng is not None else np.random.default_rng()
         # Extra fields can arrive from a shared experiment configuration.  The
@@ -199,6 +225,14 @@ class ConditionalIndependenceCopulaSampler:
         if not isinstance(value, Integral) or isinstance(value, bool) or value < 1:
             raise ValueError(f"{name} must be a positive integer.")
         return int(value)
+
+    @staticmethod
+    def _validate_marginals(marginals, name):
+        if not isinstance(marginals, dict):
+            raise TypeError(f"{name} must be a dictionary with keys 'z' and 'y'.")
+        if set(marginals) != {"z", "y"}:
+            raise ValueError(f"{name} must contain exactly the keys 'z' and 'y'.")
+        return dict(marginals)
 
     def _normalize_rho(self, rho):
         if isinstance(rho, Real) and not isinstance(rho, bool):
@@ -240,20 +274,40 @@ class ConditionalIndependenceCopulaSampler:
             raise ValueError("class_probabilities must sum to 1.")
         return probabilities
 
+    def _labels(self, X):
+        labels = np.asarray(X)
+        if labels.ndim == 2 and labels.shape[1] == 1:
+            labels = labels[:, 0]
+        if labels.ndim != 1:
+            raise ValueError("X must have shape (n,) or (n, 1).")
+        if not np.issubdtype(labels.dtype, np.integer) or np.issubdtype(
+            labels.dtype, np.bool_
+        ):
+            raise ValueError("X must contain integer category labels.")
+        if np.any((labels < 0) | (labels >= self.C)):
+            raise ValueError(f"X labels must lie in 0, ..., {self.C - 1}.")
+        return labels
+
     def _validate_copula_configuration(self):
         """Delegate marginal and covariance validation to the base generator."""
-        CopulaGenerator(
-            n=1,
-            k=self.k,
-            ky=self.ky,
-            rho=self.rho[0],
-            marginals=self.marginals,
-            copula_model=self.copula_model,
-            copula_params=self.copula_params,
-            center_latent=False,
-            rng=self.rng,
-            **self.copula_kwargs,
+        specifications = (
+            self.marginals_by_class
+            if self.marginals_by_class is not None
+            else (self.marginals,)
         )
+        for category, marginals in enumerate(specifications):
+            CopulaGenerator(
+                n=1,
+                k=self.k,
+                ky=self.ky,
+                rho=self.rho[category],
+                marginals=marginals,
+                copula_model=self.copula_model,
+                copula_params=self.copula_params,
+                center_latent=False,
+                rng=self.rng,
+                **self.copula_kwargs,
+            )
 
     def _sample_stratum(self, size, rho, category):
         if self._joint_cholesky is not None:
@@ -277,7 +331,10 @@ class ConditionalIndependenceCopulaSampler:
             k=self.k,
             ky=self.ky,
             rho=rho,
-            marginals=self.marginals,
+            marginals=(
+                self.marginals_by_class[category]
+                if self.marginals_by_class is not None else self.marginals
+            ),
             copula_model=model,
             copula_params=self.copula_params,
             center_latent=self.center_latent,
@@ -320,8 +377,24 @@ class ConditionalIndependenceCopulaSampler:
     def _sample_latent(self):
         return self.sample_latent()
 
-    def sample(self):
-        return self.sample_latent()
+    def sample(self, X=None):
+        """Draw ``Y | X``; with no ``X``, return a fresh ``(Z, Y, X)`` sample.
+
+        With ``center_latent=True``, responses are centered within each supplied
+        stratum, just as in ``sample_latent``. These rows are therefore not
+        independent conditional on ``X``.
+        """
+        if X is None:
+            return self.sample_latent()
+
+        labels = self._labels(X)
+        Y = np.empty((labels.size, self.ky), dtype=float)
+        for category, correlation in enumerate(self.rho):
+            mask = labels == category
+            size = int(mask.sum())
+            if size:
+                _, Y[mask] = self._sample_stratum(size, correlation, category)
+        return Y
 
     def get_name(self):
         return (

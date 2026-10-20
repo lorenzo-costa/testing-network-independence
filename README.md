@@ -276,8 +276,38 @@ parameters default to `center_latent=False` so the specified population means
 and covariances are retained; `center_latent=True` is rejected in this mode.
 For example, `means=[[-2, -2], [2, 2]]`, `rho=[0, 0]`, and `k=ky=1`
 make `Z` and `Y` independent given `X` but dependent marginally. Unlike
-`conditional_gaussian=True`, this copula sampler does not currently expose
-`sample(X)` or conditional density methods for Model-X tests.
+`conditional_gaussian=True`, this copula sampler has no conditional density
+methods. It does expose `sample(X)` for Model-X draws: pass integer category
+labels with shape `(n,)` or `(n, 1)` to draw a response array of shape
+`(n, ky)`. With no argument, `sample()` still returns a fresh `(Z, Y, X)`.
+If `center_latent=True`, the returned responses are centered within the
+supplied strata, matching the data generator's joint `Y | X` law; responses
+within a stratum then share a sample mean and are not independent rows.
+
+To vary both marginals by category, pass `marginals_by_class` instead of
+`marginals`. Its length must equal `C`, and each entry has `"z"` and `"y"`
+distribution strings. It works with Gaussian, Student-t, Clayton, and Gumbel
+copulas, and defaults to `center_latent=False` so the specified distributions
+are preserved. For a one-dimensional Bernoulli RDPG conditional null:
+
+```python
+from src.dgp import BernoulliNetwork
+
+dgp = BernoulliNetwork(
+    n=100, k=1, ky=1, rdpg=True,
+    conditional_copula="gaussian", C=2, rho=[0, 0],
+    marginals_by_class=[
+        {"z": "uniform 0 0.4", "y": "gaussian"},
+        {"z": "uniform 0.6 1", "y": "pareto 2.5"},
+    ],
+)
+data = dgp.generate()
+model_x_generator = dgp.latent_sampler  # exposes sample(data["X"])
+```
+
+The Gaussian-only `means` and `covariances` options cannot be combined with
+`marginals_by_class`. A Student-t copula still has conditional dependence at
+`rho=0` because its coordinates share a random scale.
 
 Multivariate AC orthant counts use the exact recursive sorted-block algorithm
 from [Huang, Li and Wang, Section 5](https://arxiv.org/abs/2512.07443v2).

@@ -3,10 +3,12 @@ import importlib
 import numpy as np
 import pytest
 
+from src.dgp import BernoulliNetwork, GaussianNetwork
 from src.load_config import _resolve_copula_setup
 from src.latent_samplers.conditional_independence_copula_sampler import (
     ConditionalIndependenceCopulaSampler,
 )
+from src.methods.ac_test import MultivariateACTest
 
 
 MARGINALS = {"z": "gaussian", "y": "uniform -1 1"}
@@ -89,6 +91,110 @@ def test_gaussian_uses_the_matching_stratum_correlation():
     assert correlations[1] > 0.72
 
 
+STRATUM_MARGINALS = [
+    {"z": "uniform 0 0.4", "y": "gaussian"},
+    {"z": "uniform 0.6 1", "y": "pareto 2.5"},
+]
+
+
+def test_category_specific_marginals_generate_conditional_null_with_marginal_dependence():
+    sampler = ConditionalIndependenceCopulaSampler(
+        n=8000,
+        k=1,
+        C=2,
+        rho=[0, 0],
+        marginals_by_class=STRATUM_MARGINALS,
+        rng=np.random.default_rng(28),
+    )
+    Z, Y, X = sampler.sample_latent()
+    low = X[:, 0] == 0
+    high = ~low
+
+    assert sampler.center_latent is False
+    assert sampler.is_null is True
+    assert np.all((0 <= Z[low]) & (Z[low] <= 0.4))
+    assert np.all((0.6 <= Z[high]) & (Z[high] <= 1))
+    assert np.all(Y[high] >= 1)
+    assert abs(Y[low].mean()) < 0.06
+    assert np.corrcoef(Z[:, 0], Y[:, 0])[0, 1] > 0.3
+
+    fixed_X = np.array([[1], [0], [1], [0]])
+    sampled_Y = sampler.sample(fixed_X)
+    assert sampled_Y.shape == (4, 1)
+    assert np.all(sampled_Y[[0, 2]] >= 1)
+    np.testing.assert_array_equal(sampler.X, X)
+
+
+@pytest.mark.parametrize(
+    "copula_model, copula_params",
+    [
+        ("gaussian", None),
+        ("student_t", {"df": 5}),
+        ("clayton", None),
+        ("gumbel", None),
+    ],
+)
+def test_category_specific_marginals_work_with_each_copula(copula_model, copula_params):
+    sampler = ConditionalIndependenceCopulaSampler(
+        n=100,
+        k=1,
+        C=2,
+        rho=[0.1, 0.4],
+        marginals_by_class=STRATUM_MARGINALS,
+        copula_model=copula_model,
+        copula_params=copula_params,
+        rng=np.random.default_rng(29),
+    )
+    Z, Y, X = sampler.sample_latent()
+    assert np.all((0 <= Z[X[:, 0] == 0]) & (Z[X[:, 0] == 0] <= 0.4))
+    assert np.all((0.6 <= Z[X[:, 0] == 1]) & (Z[X[:, 0] == 1] <= 1))
+    assert np.all(Y[X[:, 0] == 1] >= 1)
+    assert np.isfinite(sampler.sample(X)).all()
+
+
+@pytest.mark.parametrize(
+    "extra, message",
+    [
+        ({"marginals_by_class": STRATUM_MARGINALS[:1]}, "C=2"),
+        ({"marginals_by_class": [STRATUM_MARGINALS[0], {"y": "gaussian"}]}, "marginals_by_class\\[1\\]"),
+        ({"marginals_by_class": [STRATUM_MARGINALS[0], {"z": "invalid", "y": "gaussian"}]}, "Unknown distribution"),
+        ({"marginals_by_class": STRATUM_MARGINALS, "marginals": MARGINALS}, "either marginals or marginals_by_class"),
+        ({"marginals_by_class": STRATUM_MARGINALS, "means": [[0, 0], [1, 1]]}, "cannot be combined"),
+    ],
+)
+def test_category_specific_marginal_validation(extra, message):
+    with pytest.raises((TypeError, ValueError), match=message):
+        ConditionalIndependenceCopulaSampler(n=10, k=1, C=2, **extra)
+
+
+def test_bernoulli_rdpg_with_category_marginals_runs_model_x():
+    dgp = BernoulliNetwork(
+        n=18,
+        k=1,
+        conditional_copula="gaussian",
+        rdpg=True,
+        C=2,
+        rho=[0, 0],
+        marginals_by_class=STRATUM_MARGINALS,
+        rng=np.random.default_rng(30),
+    )
+    data = dgp.generate()
+    assert np.all((0 <= data["Z"]) & (data["Z"] <= 1))
+    assert set(np.unique(data["A"])).issubset({0, 1})
+
+    method = MultivariateACTest(
+        use_true_latent=True,
+        M=1,
+        npermutations=3,
+        test_type="model_X",
+        conditional_generator=dgp.latent_sampler,
+        rng=np.random.default_rng(31),
+    )
+    method.fit(data)
+    assert len(method.null_distribution) == 3
+    assert np.isfinite(method.null_distribution).all()
+
+
 def test_gaussian_category_means_preserve_rho_and_create_marginal_dependence():
     sampler = ConditionalIndependenceCopulaSampler(
         n=12000,
@@ -132,6 +238,110 @@ def test_gaussian_category_covariances_control_full_joint_law():
         joint = np.column_stack((Z[X[:, 0] == category], Y[X[:, 0] == category]))
         np.testing.assert_allclose(joint.mean(axis=0), means[category], atol=0.08)
         np.testing.assert_allclose(np.cov(joint, rowvar=False), covariances[category], atol=0.1)
+
+
+def test_sample_given_x_uses_gaussian_response_marginals():
+    sampler = ConditionalIndependenceCopulaSampler(
+        n=10,
+        k=1,
+        ky=2,
+        C=2,
+        means=[[0, 1, 2], [0, -2, 4]],
+        covariances=[
+            [[1, 0, 0], [0, 2, 0.5], [0, 0.5, 1]],
+            [[1, 0.2, 0.3], [0.2, 1, -0.4], [0.3, -0.4, 3]],
+        ],
+        rng=np.random.default_rng(23),
+    )
+    X = np.repeat([[1]], 10000, axis=0)
+    Y = sampler.sample(X)
+
+    assert Y.shape == (10000, 2)
+    np.testing.assert_allclose(Y.mean(axis=0), [-2, 4], atol=0.08)
+    np.testing.assert_allclose(
+        np.cov(Y, rowvar=False), [[1, -0.4], [-0.4, 3]], atol=0.1
+    )
+    assert sampler.X is None  # Conditional draws do not replace a stored data set.
+
+
+def test_sample_given_x_reproduces_stratum_centering():
+    sampler = ConditionalIndependenceCopulaSampler(
+        n=10,
+        k=1,
+        C=2,
+        rho=[0, 0.5],
+        marginals={"z": "gaussian", "y": "exponential"},
+        rng=np.random.default_rng(24),
+    )
+    X = np.array([0, 1, 1, 0, 1, 0])
+    Y = sampler.sample(X)
+    assert Y.shape == (6, 1)
+    for category in range(2):
+        np.testing.assert_allclose(Y[X == category].mean(), 0, atol=1e-12)
+
+
+@pytest.mark.parametrize(
+    "copula_model, copula_params",
+    [
+        ("gaussian", None),
+        ("student_t", {"df": 5}),
+        ("clayton", None),
+        ("gumbel", None),
+    ],
+)
+def test_sample_given_x_supports_every_copula_family(copula_model, copula_params):
+    sampler = ConditionalIndependenceCopulaSampler(
+        n=10,
+        k=2,
+        ky=2,
+        C=2,
+        rho=[0, 0.4],
+        marginals={"z": "gaussian", "y": "uniform -1 1"},
+        copula_model=copula_model,
+        copula_params=copula_params,
+        center_latent=False,
+        rng=np.random.default_rng(27),
+    )
+    Y = sampler.sample(np.array([[0], [1], [1], [0], [1]]))
+    assert Y.shape == (5, 2)
+    assert np.isfinite(Y).all()
+
+
+@pytest.mark.parametrize("X, message", [
+    ([[0, 1]], "X must have shape"),
+    ([0.0, 1.0], "integer category labels"),
+    ([True, False], "integer category labels"),
+    ([-1, 0], "labels must lie"),
+    ([0, 2], "labels must lie"),
+])
+def test_sample_given_x_rejects_invalid_labels(X, message):
+    sampler = ConditionalIndependenceCopulaSampler(n=10, k=1, C=2)
+    with pytest.raises(ValueError, match=message):
+        sampler.sample(X)
+
+
+def test_conditional_copula_runs_model_x_test():
+    dgp = GaussianNetwork(
+        n=14,
+        k=1,
+        conditional_copula="gaussian",
+        C=2,
+        means=[[-2, -2], [2, 2]],
+        rho=[0, 0],
+        rng=np.random.default_rng(25),
+    )
+    data = dgp.generate()
+    method = MultivariateACTest(
+        use_true_latent=True,
+        M=1,
+        npermutations=3,
+        test_type="model_X",
+        conditional_generator=dgp.latent_sampler,
+        rng=np.random.default_rng(26),
+    )
+    method.fit(data)
+    assert len(method.null_distribution) == 3
+    assert np.isfinite(method.null_distribution).all()
 
 
 @pytest.mark.parametrize(
@@ -353,3 +563,19 @@ def test_config_resolver_forwards_gaussian_category_parameters():
     np.testing.assert_array_equal(dgp.latent_sampler.means, means)
     np.testing.assert_array_equal(dgp.latent_sampler.covariances, covariances)
     assert dgp.latent_sampler.is_null is True
+
+
+def test_config_resolver_forwards_category_marginals():
+    dgp_factory, _ = _resolve_copula_setup(
+        {
+            "dgp": "BernoulliNetwork",
+            "solver": "ASE",
+            "conditional_copula": "gaussian",
+            "rdpg": True,
+            "C": 2,
+            "marginals_by_class": STRATUM_MARGINALS,
+        }
+    )
+    dgp = dgp_factory(n=20, k=1, rho=[0, 0], rng=np.random.default_rng(32))
+    assert dgp.latent_sampler.marginals_by_class == tuple(STRATUM_MARGINALS)
+    assert dgp.latent_sampler.center_latent is False

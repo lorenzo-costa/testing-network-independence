@@ -101,6 +101,7 @@ def _resolve_copula_setup(entry: dict):
         "C",
         "rho",
         "marginals",
+        "marginals_by_class",
         "means",
         "covariances",
         "class_probabilities",
