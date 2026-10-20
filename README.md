@@ -266,6 +266,19 @@ conditional_generator = dgp.latent_sampler
 log_p_y_given_x = conditional_generator.conditional_logpdf(data["Y"], data["X"]).sum()
 ```
 
+The `conditional_copula="gaussian"` sampler also accepts category-specific
+`means` and optional full `covariances` for `[Z, Y]`, with the same shapes as
+above. This extension requires Gaussian `z` and `y` marginals. With means
+alone, `rho[c]` still controls dependence in category `c`. With full
+`covariances`, omit `rho`: the covariance cross block controls dependence, and
+a zero cross block in every category is a conditional null. Explicit Gaussian
+parameters default to `center_latent=False` so the specified population means
+and covariances are retained; `center_latent=True` is rejected in this mode.
+For example, `means=[[-2, -2], [2, 2]]`, `rho=[0, 0]`, and `k=ky=1`
+make `Z` and `Y` independent given `X` but dependent marginally. Unlike
+`conditional_gaussian=True`, this copula sampler does not currently expose
+`sample(X)` or conditional density methods for Model-X tests.
+
 Multivariate AC orthant counts use the exact recursive sorted-block algorithm
 from [Huang, Li and Wang, Section 5](https://arxiv.org/abs/2512.07443v2).
 It supports arbitrary response dimensions, using a single-threaded, cached

@@ -41,6 +41,14 @@ class ConditionalIndependenceCopulaSampler:
         Alias for ``class_probabilities``.
     center_latent : bool, default=True
         If true, center ``Z`` and ``Y`` separately within every sampled stratum.
+        Defaults to false when ``means`` or ``covariances`` are supplied.
+    means : array-like, optional
+        Gaussian-only category means for ``[Z, Y]``, shape ``(C, k + ky)``.
+        May be combined with ``rho`` when ``covariances`` is omitted.
+    covariances : array-like, optional
+        Gaussian-only full category covariance matrices for ``[Z, Y]``, shape
+        ``(C, k + ky, k + ky)``. These determine cross dependence, so ``rho``
+        must be omitted. Defaults to the existing rho-based construction.
     rng : numpy.random.Generator, optional
         Random number generator.
 
@@ -58,15 +66,17 @@ class ConditionalIndependenceCopulaSampler:
         n,
         k,
         C,
-        rho=0,
+        rho=None,
         ky=1,
         marginals=None,
         copula_model="gaussian",
         copula_params=None,
         class_probabilities=None,
         p=None,
-        center_latent=True,
+        center_latent=None,
         rng=None,
+        means=None,
+        covariances=None,
         **copula_kwargs,
     ):
         self.n = self._positive_integer(n, "n")
@@ -89,6 +99,63 @@ class ConditionalIndependenceCopulaSampler:
             raise ValueError("marginals must contain exactly the keys 'z' and 'y'.")
         self.marginals = dict(marginals)
 
+        self._explicit_gaussian = means is not None or covariances is not None
+        if self._explicit_gaussian:
+            if self.copula_model != "gaussian" or self.marginals != {
+                "z": "gaussian", "y": "gaussian"
+            }:
+                raise ValueError(
+                    "means and covariances require a gaussian copula with gaussian marginals."
+                )
+            if center_latent is True:
+                raise ValueError(
+                    "center_latent must be False with means or covariances."
+                )
+            if covariances is not None and rho is not None:
+                raise ValueError("Specify either covariances or rho, not both.")
+            if covariances is not None and any(
+                key in copula_kwargs
+                for key in ("column_covariance", "column_covariance_y", "cross_covariance")
+            ):
+                raise ValueError(
+                    "covariances cannot be combined with column or cross covariance options."
+                )
+
+        dimension = self.k + self.ky
+        if means is None:
+            self.means = np.zeros((self.C, dimension))
+        else:
+            self.means = np.asarray(means, dtype=float)
+            if self.means.shape != (self.C, dimension):
+                raise ValueError(f"means must have shape ({self.C}, {dimension}).")
+            if not np.isfinite(self.means).all():
+                raise ValueError("means must contain only finite values.")
+
+        self.covariances = None
+        self._joint_cholesky = None
+        if covariances is not None:
+            self.covariances = np.asarray(covariances, dtype=float)
+            if self.covariances.shape != (self.C, dimension, dimension):
+                raise ValueError(
+                    f"covariances must have shape ({self.C}, {dimension}, {dimension})."
+                )
+            if not np.isfinite(self.covariances).all():
+                raise ValueError("covariances must contain only finite values.")
+            if not np.allclose(
+                self.covariances,
+                self.covariances.swapaxes(-1, -2),
+                atol=1e-12,
+                rtol=0,
+            ):
+                raise ValueError("Each covariance must be symmetric.")
+            self.covariances = (
+                self.covariances + self.covariances.swapaxes(-1, -2)
+            ) / 2
+            try:
+                self._joint_cholesky = np.linalg.cholesky(self.covariances)
+            except np.linalg.LinAlgError as exc:
+                raise ValueError("Each covariance must be positive definite.") from exc
+
         self.copula_params = dict(copula_params or {})
         if self.copula_model == "student_t":
             df = self.copula_params.get("df")
@@ -107,9 +174,11 @@ class ConditionalIndependenceCopulaSampler:
         if class_probabilities is None:
             class_probabilities = p
 
-        self.rho = self._normalize_rho(rho)
+        self.rho = self._normalize_rho(0 if rho is None else rho)
         self.class_probabilities = self._normalize_probabilities(class_probabilities)
-        self.center_latent = bool(center_latent)
+        self.center_latent = (
+            not self._explicit_gaussian if center_latent is None else bool(center_latent)
+        )
         self.rng = rng if rng is not None else np.random.default_rng()
         # Extra fields can arrive from a shared experiment configuration.  The
         # underlying CopulaGenerator accepts and ignores irrelevant keywords.
@@ -119,8 +188,10 @@ class ConditionalIndependenceCopulaSampler:
         self.X = None
         self.Z = None
         self.Y = None
-        self.is_null = bool(
-            self.copula_model != "student_t" and np.all(self.rho == 0)
+        self.is_null = (
+            bool(np.all(self.covariances[:, :self.k, self.k:] == 0))
+            if self.covariances is not None
+            else bool(self.copula_model != "student_t" and np.all(self.rho == 0))
         )
 
     @staticmethod
@@ -184,7 +255,15 @@ class ConditionalIndependenceCopulaSampler:
             **self.copula_kwargs,
         )
 
-    def _sample_stratum(self, size, rho):
+    def _sample_stratum(self, size, rho, category):
+        if self._joint_cholesky is not None:
+            joint = (
+                self.rng.standard_normal((size, self.k + self.ky))
+                @ self._joint_cholesky[category].T
+                + self.means[category]
+            )
+            return joint[:, :self.k], joint[:, self.k:]
+
         # Clayton is singular at theta=0 in the base implementation. Gaussian
         # rho=0 produces the same independent uniforms required at the boundary;
         # using it for Gumbel as well gives an exact, numerically stable limit.
@@ -205,7 +284,11 @@ class ConditionalIndependenceCopulaSampler:
             rng=self.rng,
             **self.copula_kwargs,
         )
-        return generator._sample_latent_copula()
+        Z, Y = generator._sample_latent_copula()
+        if self._explicit_gaussian:
+            Z = Z + self.means[category, :self.k]
+            Y = Y + self.means[category, self.k:]
+        return Z, Y
 
     def sample_latent(self):
         """Return ``Z``, ``Y``, and categorical labels ``X``."""
@@ -223,7 +306,7 @@ class ConditionalIndependenceCopulaSampler:
             size = int(mask.sum())
             if size == 0:
                 continue
-            Z[mask], Y[mask] = self._sample_stratum(size, correlation)
+            Z[mask], Y[mask] = self._sample_stratum(size, correlation, stratum)
 
         X = labels.reshape(self.n, 1)
         self.Z = Z

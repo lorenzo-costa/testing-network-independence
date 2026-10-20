@@ -89,6 +89,67 @@ def test_gaussian_uses_the_matching_stratum_correlation():
     assert correlations[1] > 0.72
 
 
+def test_gaussian_category_means_preserve_rho_and_create_marginal_dependence():
+    sampler = ConditionalIndependenceCopulaSampler(
+        n=12000,
+        k=1,
+        C=2,
+        rho=[0, 0],
+        means=[[-2, -2], [2, 2]],
+        class_probabilities=[0.5, 0.5],
+        rng=np.random.default_rng(21),
+    )
+    Z, Y, X = sampler.sample_latent()
+
+    assert sampler.center_latent is False
+    assert sampler.is_null is True
+    assert np.corrcoef(Z[:, 0], Y[:, 0])[0, 1] > 0.75
+    for category, expected_mean in enumerate(sampler.means):
+        joint = np.column_stack((Z[X[:, 0] == category], Y[X[:, 0] == category]))
+        np.testing.assert_allclose(joint.mean(axis=0), expected_mean, atol=0.08)
+        assert abs(np.corrcoef(joint, rowvar=False)[0, 1]) < 0.06
+
+
+def test_gaussian_category_covariances_control_full_joint_law():
+    means = [[-1, 2, 3], [2, -1, -3]]
+    covariances = [
+        [[1.5, 0.3, 0], [0.3, 2, 0], [0, 0, 0.8]],
+        [[2, 0.1, 0.6], [0.1, 1, -0.2], [0.6, -0.2, 1.5]],
+    ]
+    sampler = ConditionalIndependenceCopulaSampler(
+        n=16000,
+        k=2,
+        C=2,
+        means=means,
+        covariances=covariances,
+        rng=np.random.default_rng(22),
+    )
+    Z, Y, X = sampler.sample_latent()
+
+    assert sampler.center_latent is False
+    assert sampler.is_null is False
+    for category in range(2):
+        joint = np.column_stack((Z[X[:, 0] == category], Y[X[:, 0] == category]))
+        np.testing.assert_allclose(joint.mean(axis=0), means[category], atol=0.08)
+        np.testing.assert_allclose(np.cov(joint, rowvar=False), covariances[category], atol=0.1)
+
+
+@pytest.mark.parametrize(
+    "extra, message",
+    [
+        ({"copula_model": "student_t", "means": [[0, 0]], "copula_params": {"df": 5}}, "gaussian copula"),
+        ({"marginals": MARGINALS, "means": [[0, 0]]}, "gaussian marginals"),
+        ({"means": [[0, 0]], "center_latent": True}, "center_latent must be False"),
+        ({"means": [[0]]}, "means must have shape"),
+        ({"covariances": [np.zeros((2, 2))]}, "positive definite"),
+        ({"covariances": [np.eye(2)], "rho": 0.2}, "either covariances or rho"),
+    ],
+)
+def test_explicit_gaussian_parameters_validate_configuration(extra, message):
+    with pytest.raises(ValueError, match=message):
+        ConditionalIndependenceCopulaSampler(n=10, k=1, C=1, **extra)
+
+
 def test_centering_is_applied_separately_within_each_stratum():
     sampler = ConditionalIndependenceCopulaSampler(
         n=300,
@@ -273,3 +334,22 @@ def test_config_resolver_forwards_conditional_sampler_arguments():
         [0.25, 0.75],
     )
     assert dgp.latent_sampler.center_latent is False
+
+
+def test_config_resolver_forwards_gaussian_category_parameters():
+    means = [[-2, -2], [2, 2]]
+    covariances = [np.eye(2).tolist(), np.eye(2).tolist()]
+    dgp_factory, _ = _resolve_copula_setup(
+        {
+            "dgp": "GaussianNetwork",
+            "solver": "ASE",
+            "conditional_copula": "gaussian",
+            "C": 2,
+            "means": means,
+            "covariances": covariances,
+        }
+    )
+    dgp = dgp_factory(n=30, k=1, rng=np.random.default_rng(62))
+    np.testing.assert_array_equal(dgp.latent_sampler.means, means)
+    np.testing.assert_array_equal(dgp.latent_sampler.covariances, covariances)
+    assert dgp.latent_sampler.is_null is True
