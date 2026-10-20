@@ -1,0 +1,92 @@
+# Bernoulli RDPG with two strata and category-specific Z and Y marginals.
+# Each setup fixes Z | X=0 ~ Uniform(0, 0.4) and
+# Z | X=1 ~ Uniform(0.6, 1). The eight setups contain four Y pairs and
+# their reversals. "gaussian <mean>" denotes a unit-variance normal.
+
+simulation:
+  nsim: 1
+  seed: 1
+  n: [100, 300, 500]
+  k: [1]
+  ky: [1]
+  rho: [0.1, 0.3]
+  alpha: [0.05]
+  edge_var: [3]  # Required by the shared design loader; ignored by BernoulliNetwork.
+  marginals: [null]  # Class-specific marginals are set in each setup below.
+
+methods:
+  npermutations: [500]
+  use_true_latent: [false, true]
+  list:
+    - name: MultivariateACTest
+      kwargs:
+        M: 1
+        test_type: model_X
+        conditional_generator: from_dgp
+    - name: MultivariateACTest
+      kwargs:
+        M: 0.5
+        test_type: model_X
+        conditional_generator: from_dgp
+    - name: MultivariateACTest
+      kwargs:
+        adaptive_m: true
+        test_type: model_X
+        conditional_generator: from_dgp
+
+setup_template: &rdpg_setup
+  dgp: BernoulliNetwork
+  solver: ASE
+  rdpg: true
+  conditional_copula: gaussian
+  C: 2
+  class_probabilities: [0.5, 0.5]
+  center_latent: false
+
+setups:
+  # Pareto(1.5) versus N(0, 1), then reverse the Y assignments.
+  - <<: *rdpg_setup
+    marginals_by_class:
+      - {z: "uniform 0 0.4", y: "pareto 1.5"}
+      - {z: "uniform 0.6 1", y: "gaussian 0"}
+  - <<: *rdpg_setup
+    marginals_by_class:
+      - {z: "uniform 0 0.4", y: "gaussian 0"}
+      - {z: "uniform 0.6 1", y: "pareto 1.5"}
+
+  # Cauchy versus N(0, 1), then reverse the Y assignments.
+  - <<: *rdpg_setup
+    marginals_by_class:
+      - {z: "uniform 0 0.4", y: cauchy}
+      - {z: "uniform 0.6 1", y: "gaussian 0"}
+  - <<: *rdpg_setup
+    marginals_by_class:
+      - {z: "uniform 0 0.4", y: "gaussian 0"}
+      - {z: "uniform 0.6 1", y: cauchy}
+
+  # N(-2, 1) versus N(2, 1), then reverse the Y assignments.
+  - <<: *rdpg_setup
+    marginals_by_class:
+      - {z: "uniform 0 0.4", y: "gaussian -2"}
+      - {z: "uniform 0.6 1", y: "gaussian 2"}
+  - <<: *rdpg_setup
+    marginals_by_class:
+      - {z: "uniform 0 0.4", y: "gaussian 2"}
+      - {z: "uniform 0.6 1", y: "gaussian -2"}
+
+  # N(0, 1) versus chi-squared(df=3), then reverse the Y assignments.
+  - <<: *rdpg_setup
+    marginals_by_class:
+      - {z: "uniform 0 0.4", y: "gaussian 0"}
+      - {z: "uniform 0.6 1", y: "chi2 3"}
+  - <<: *rdpg_setup
+    marginals_by_class:
+      - {z: "uniform 0 0.4", y: "chi2 3"}
+      - {z: "uniform 0.6 1", y: "gaussian 0"}
+
+metrics:
+  compute_all: true
+
+output:
+  results_dir: results
+  file_prefix: conditional_copula_rdpg_stratum_marginals

@@ -165,8 +165,6 @@ class BasePermutationTest(BaseEstimationMethod):
                 raise ValueError("stratify_permutations is incompatible with model_X.")
             if n_jobs != 1:
                 raise ValueError("Model-X currently requires n_jobs=1.")
-        # elif conditional_generator is not None:
-        #     raise ValueError("conditional_generator requires test_type='model_X'.")
         if permutation_type not in {"covariate", "latent", "observed"}:
             raise ValueError(
                 "Invalid permutation_type. Must be 'covariate', 'latent', or 'observed'."
