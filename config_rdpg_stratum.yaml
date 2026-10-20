@@ -33,6 +33,8 @@ methods:
         adaptive_m: true
         test_type: model_X
         conditional_generator: from_dgp
+    - name: DiffusionCorrelation
+      kwargs: {}
 
 setup_template: &rdpg_setup
   dgp: BernoulliNetwork
