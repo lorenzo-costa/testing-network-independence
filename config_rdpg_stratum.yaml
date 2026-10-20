@@ -4,12 +4,12 @@
 # their reversals. "gaussian <mean>" denotes a unit-variance normal.
 
 simulation:
-  nsim: 1
+  nsim: 100
   seed: 1
   n: [100, 300]
   k: [1]
   ky: [1]
-  rho: [0.1, 0.3]
+  rho: [0, 0.3]
   alpha: [0.05]
   edge_var: [3]  # Required by the shared design loader; ignored by BernoulliNetwork.
   marginals: [null]  # Class-specific marginals are set in each setup below.
