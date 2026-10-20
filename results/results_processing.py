@@ -21,6 +21,11 @@ _NOT_FOUND = object()
 
 
 METHOD_LABELS = {
+    "DistanceCorrelationTest": "DC",
+    "DiffusionCorrelation": "DC",
+    "DistanceCorrelation_covariate": "DC",
+    "DistanceCorrelation_latent": "DC",
+    "DistanceCorrelation_observed": "DC",
     "RVTest": "RV",
     "ObservedCVM": "CVM",
     "MultivariateACTest_0.5": "AC_sqrt",

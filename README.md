@@ -43,6 +43,7 @@ A simulation framework for testing statistical independence between two networks
 
 | Method | Description |
 |--------|-------------|
+| `DistanceCorrelationTest` | Permutation test of latent-position dependence using distance correlation or MGC |
 | `RVtest` | Permutation test using the (adjusted) RV coefficient on estimated latent positions; supports both permutation and asymptotic (Imhof) p-value approximations |
 | `ObservedCVM` | CvM statistic computed directly on shared-neighbour counts — **no embedding required** |
 | `LLKRatioTest` | Likelihood-ratio test |
@@ -213,11 +214,15 @@ All methods inherit from `BaseMethod` and expose `fit(data)`, `get_estimated()`,
 
 | Class | Key parameters | Notes |
 |-------|---------------|-------|
+| `DistanceCorrelationTest` | `test_method` (`'dcorr'` / `'mgc'`), `permutation_type`, `npermutations`, `solver` | Uses latent positions and observed covariates; MGC is the default statistic |
 | `RVtest` | `test_type` (`'permutation'` / `'asymptotic'`), `permutation_type` (`'latent'` / `'observed'`), `npermutations`, `solver` | The asymptotic branch uses the Imhof method (`imhof.py`) to compute the p-value |
 | `ObservedCVM` | `test_function` | CvM statistic on adjacency matrices; no embedding step needed |
 | `LLKRatioTest` | — | Likelihood-ratio test |
 | `QAP` | — | Quadratic Assignment Procedure |
 | `FitIndependent` | `solver`, `k` | Not a test; fits the solver independently to each network and stores embeddings |
+
+YAML configs can select this method with `name: DistanceCorrelationTest`; the
+historical `name: DiffusionCorrelation` alias is also supported.
 
 Permutation-based methods accept `n_jobs`, `batch_size`, and `verbose`.
 The default `n_jobs=1` evaluates permutations serially, positive values use

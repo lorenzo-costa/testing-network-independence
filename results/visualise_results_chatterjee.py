@@ -156,6 +156,7 @@ COLUMNS_TO_MATCH = (
 )
 
 COLORS = {
+    "DC": "#0072B2",
     "AC_1": "#D55E00",
     "AC_sqrt": "#009E73",
     "AC_adaptive": "#CC79A7",
@@ -164,6 +165,7 @@ COLORS = {
 }
 
 MARKERS = {
+    "DC": "x",
     "AC_1": "D",
     "AC_sqrt": "^",
     "AC_adaptive": "s",
@@ -172,6 +174,7 @@ MARKERS = {
 }
 
 LINESTYLES = {
+    "DC": "-",
     "AC_1": "-",
     "AC_sqrt": "-",
     "AC_adaptive": "-",
@@ -180,6 +183,7 @@ LINESTYLES = {
 }
 
 METHOD_LABELS = {
+    "DC": "DC",
     "AC_1": r"AC ($k=1$)",
     "AC_sqrt": r"AC ($k=\sqrt{n}$)",
     "AC_adaptive": "AC (adaptive)",
@@ -188,6 +192,7 @@ METHOD_LABELS = {
 }
 
 METHODS = (
+    "DC",
     "AC_1",
     "AC_sqrt",
     "AC_adaptive",
