@@ -1085,7 +1085,7 @@ def aggregate_rdpg_copula_results(data: pd.DataFrame) -> pd.DataFrame:
 
 
 def plot_rdpg_copula_figures(data: pd.DataFrame, output_dir: Path) -> None:
-    """Plot power across all five RDPG sample sizes and copula settings."""
+    """Plot RDPG power by network size and across Y marginals at n=500."""
     aggregated = aggregate_rdpg_copula_results(data)
     assert_unique(
         aggregated,
@@ -1132,6 +1132,51 @@ def plot_rdpg_copula_figures(data: pd.DataFrame, output_dir: Path) -> None:
     fig.supylabel("Power")
     add_shared_legend(fig, lines=True, methods=RDPG_METHODS)
     save_figure(fig, output_dir, "27_rdpg_copulas_by_n_ky3_v2")
+
+    point_n = 500
+    point_data = aggregated[aggregated["n"] == point_n].copy()
+    if point_data.empty:
+        raise ValueError(f"No RDPG copula results for n={point_n}.")
+    assert_unique(
+        point_data,
+        ["method", "copula", "marginal_y"],
+        "RDPG copula point ranges",
+    )
+    fig, axes = plt.subplots(
+        1,
+        len(RDPG_COPULAS),
+        figsize=(8.0, 3.5),
+        sharex=True,
+        sharey=True,
+        squeeze=False,
+        layout="constrained",
+    )
+    for column, copula in enumerate(RDPG_COPULAS):
+        ax = axes[0, column]
+        panel = point_data[point_data["copula"] == copula]
+        plot_scatter_panel(
+            ax,
+            panel,
+            category="marginal_y",
+            categories=RDPG_MARGINALS_Y,
+            methods=RDPG_METHODS,
+            category_labeler=display_marginal_label,
+        )
+        style_probability_axis(ax)
+
+    add_facet_labels(
+        axes,
+        column_values=RDPG_COPULAS,
+        column_prefix="",
+    )
+    fig.suptitle(
+        f"Power across Y marginals — RDPG Bernoulli network, "
+        f"$n={point_n}$, $k=k_y=3$"
+    )
+    fig.supxlabel("Y marginal distribution")
+    fig.supylabel("Power")
+    add_shared_legend(fig, lines=False, methods=RDPG_METHODS)
+    save_figure(fig, output_dir, f"30_rdpg_copulas_n{point_n}_ky3")
 
 
 def aggregate_sharded_functional_results(
@@ -1449,7 +1494,7 @@ def main() -> None:
         parser.error("--rdpg-only and --functionals-only cannot be used together")
     if args.rdpg_only:
         plot_rdpg_copula_figures(prepare_rdpg_copula_results(results_dir), output_dir)
-        print(f"Saved RDPG copula figure as PNG to {output_dir}")
+        print(f"Saved RDPG copula figures as PNG to {output_dir}")
         return
     if args.functionals_only:
         gaussian, uniform = prepare_sharded_functional_results(results_dir, k=args.functional_k, latent=args.functional_latent)
@@ -1541,7 +1586,7 @@ def main() -> None:
         functional_gaussian, functional_uniform, output_dir, k=args.functional_k, latent=args.functional_latent
     )
 
-    print(f"Saved 29 figures as PNG to {output_dir}")
+    print(f"Saved 30 figures as PNG to {output_dir}")
 
 
 if __name__ == "__main__":

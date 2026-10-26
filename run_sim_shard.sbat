@@ -57,4 +57,97 @@ python -m src.run_sim_script_shard \
     --num-shards "$NUM_SHARDS" \
     --n-jobs "$SLURM_CPUS_PER_TASK"
 
+# Every completed task attempts the merge while holding a shared-filesystem lock.
+# The last task to finish will find every shard; earlier tasks simply release the
+# lock and exit.  Writing to a temporary file keeps a failed merge from leaving
+# behind a partial final result.
+python - "$CONFIG_FILE" "$ARRAY_JOB_ID" "$NUM_SHARDS" "$SHARD_INDEX" <<'PY'
+import csv
+import os
+from pathlib import Path
+import sys
+import time
+
+from src.load_config import load_config
+
+
+config_file, array_job_id, num_shards, shard_index = sys.argv[1:]
+num_shards = int(num_shards)
+
+output = load_config(config_file)["output"]
+results_dir = Path(output["results_dir"])
+prefix = output.get("file_prefix", "simulation_results")
+final_path = results_dir / f"{prefix}_{array_job_id}.csv"
+shard_paths = [
+    results_dir
+    / f"{prefix}_{array_job_id}_shard-{index:03d}-of-{num_shards:03d}.csv"
+    for index in range(num_shards)
+]
+lock_dir = results_dir / f".{prefix}_{array_job_id}.merge.lock"
+temporary_path = results_dir / f".{final_path.name}.tmp-{shard_index}"
+
+# A task may finish while another task is checking for shards.  Wait briefly
+# for that task to release the atomic directory lock, then check again.
+deadline = time.monotonic() + 300
+while True:
+    try:
+        lock_dir.mkdir()
+        break
+    except FileExistsError:
+        if time.monotonic() >= deadline:
+            raise TimeoutError(f"Timed out waiting for merge lock {lock_dir}")
+        time.sleep(0.25)
+
+try:
+    missing = [path for path in shard_paths if not path.is_file()]
+    if missing:
+        if final_path.is_file() and len(missing) == len(shard_paths):
+            print(f"Merged result already exists at {final_path}.")
+        else:
+            print(
+                f"Merge deferred: {len(missing)} of {num_shards} shards "
+                "have not finished."
+            )
+    else:
+        if final_path.exists():
+            raise FileExistsError(
+                f"Refusing to overwrite existing merged result {final_path}"
+            )
+
+        header = None
+        rows_written = 0
+        with temporary_path.open("x", newline="", encoding="utf-8") as destination:
+            writer = csv.writer(destination)
+            for shard_path in shard_paths:
+                with shard_path.open(newline="", encoding="utf-8") as source:
+                    reader = csv.reader(source)
+                    shard_header = next(reader, None)
+                    if shard_header is None:
+                        # A valid shard can be empty when there are fewer work
+                        # groups than array tasks.
+                        continue
+                    if header is None:
+                        header = shard_header
+                        writer.writerow(header)
+                    elif shard_header != header:
+                        raise ValueError(
+                            f"CSV header in {shard_path} does not match "
+                            f"the header in {shard_paths[0]}"
+                        )
+                    for row in reader:
+                        writer.writerow(row)
+                        rows_written += 1
+
+        if header is None:
+            raise ValueError("Cannot merge shards because every shard CSV is empty")
+
+        os.replace(temporary_path, final_path)
+        for shard_path in shard_paths:
+            shard_path.unlink()
+        print(f"Merged {rows_written} rows into {final_path} and deleted all shards.")
+finally:
+    temporary_path.unlink(missing_ok=True)
+    lock_dir.rmdir()
+PY
+
 echo "End time: $(date)"
