@@ -251,8 +251,8 @@ def _run_method(counter, monkeypatch, data, **kwargs):
 def _assert_identical_methods(old, new):
     for name in ("test_stat_estimate", "pvalue", "reject_null"):
         assert getattr(old, name) == getattr(new, name)
-    for name in ("permutation_indices", "permutation_distribution",
-                 "observed_statistics", "permuted_statistics"):
+    for name in ("permutation_indices", "null_distribution",
+                 "observed_statistics", "null_statistics"):
         np.testing.assert_array_equal(getattr(old, name), getattr(new, name))
     if old.adaptive_m:
         for name in ("adaptive_m_values", "adaptive_s_statistics",

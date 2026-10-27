@@ -152,6 +152,39 @@ def row(label, *, strength=0.25, solver=counting_solver, k=2,
     return result
 
 
+def test_rdpg_stratum_config_uses_matching_dgp_sampler_for_three_model_x_tests():
+    config_path = Path(__file__).resolve().parents[1] / "config_rdpg_stratum.yaml"
+    design = build_factorial_design(load_config(config_path))
+    assert len(design) == 8 * 3 * 2 * 3 * 2
+
+    setup = design[0]["setup"]
+    rows = [
+        {**row, "n": 18, "npermutations": 2}
+        for row in design
+        if row["setup"] == setup
+        and row["n"] == 100
+        and row["rho"] == 0.1
+        and row["use_true_latent"]
+    ]
+    assert len(rows) == 3
+
+    results = run_simulation(
+        nsim=1,
+        factorial_design=rows,
+        metrics=[],
+        rng=np.random.default_rng(23),
+    )
+    assert len(results) == 3
+    for result in results:
+        args = result["args"]
+        assert "ModelXTest" in args["method_name"]
+        generator = args["method"].keywords["conditional_generator"]
+        assert generator.rho.tolist() == [0.1, 0.1]
+        assert generator.marginals_by_class == tuple(
+            setup[0].keywords["marginals_by_class"]
+        )
+
+
 def run(design, nsim=1, seed=19, **kwargs):
     return run_simulation(nsim, design, [CaptureMetric()],
                           rng=np.random.default_rng(seed), **kwargs)
@@ -353,8 +386,7 @@ def test_direct_data_branch_rejected_cleanly():
 
 
 @pytest.mark.parametrize("config_name", [
-    "config_gaussian.yaml", "config_functionals.yaml", "config_sbm.yaml",
-    "config_multiness.yaml",
+    "config_gaussian.yaml", "config_functionals.yaml",
 ])
 def test_existing_yaml_designs_label_generation_inputs(config_name):
     design = build_factorial_design(load_config(config_name))
@@ -363,7 +395,7 @@ def test_existing_yaml_designs_label_generation_inputs(config_name):
         keys = set(item["_generation_keys"])
         assert {"setup", "n", "k"} <= keys
         assert not keys & {"method", "alpha", "npermutations", "df",
-                           "approximation", "use_true_latent"}
+                           "test_type", "use_true_latent"}
     assert all(len(item["_generation_keys"]) ==
                len(set(item["_generation_keys"])) for item in design)
 

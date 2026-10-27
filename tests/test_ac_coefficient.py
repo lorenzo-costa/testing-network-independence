@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from src.test_functions._ac_helpers import _validate_m
-from src.test_functions.ac_coefficient import ac_coefficient
+from src.test_functions.ac_coefficient import ac_coefficient, asymptotic_unconditional_ac
 
 
 def test_integer_m_is_used_directly():
@@ -88,3 +88,45 @@ def test_multivariate_permutation_is_used_to_construct_y_tilde(monkeypatch):
     np.testing.assert_array_equal(captured["y"], y)
     np.testing.assert_array_equal(captured["y_tilde"], expected_y_tilde)
     assert not np.array_equal(captured["y_tilde"], y)
+
+
+@pytest.mark.parametrize("neighbors", [
+    np.array([[1], [0], [1], [2], [3], [4]]),
+    np.array([[1, 2], [0, 2], [1, 3], [2, 4], [3, 5], [4, 3]]),
+])
+def test_asymptotic_variance_matches_direct_kernel_and_graph_counts(monkeypatch, neighbors):
+    import importlib
+
+    module = importlib.import_module("src.test_functions.ac_coefficient")
+    y = np.array([[0, 1], [1, 0], [1, 2], [2, 1], [2, 2], [3, 0]], dtype=float)
+    z = np.arange(6, dtype=float)[:, None]
+    permutations = np.array([[0, 1, 2, 3, 4, 5], [1, 2, 3, 4, 5, 0]])
+    K = neighbors.shape[1]
+    monkeypatch.setattr(module, "_make_permutations", lambda *args, **kwargs: permutations)
+    monkeypatch.setattr(module, "_neighbor_maps", lambda *args, **kwargs: (neighbors, None))
+
+    coefficient, variance = asymptotic_unconditional_ac(y, z, M=K)
+    y_tilde = np.take_along_axis(y, permutations.T, axis=0)
+    n = len(y)
+
+    def h(i, j):
+        return np.mean(np.all(y_tilde <= np.minimum(y[i], y[j]), axis=1))
+
+    adjacent = np.array([h(i, i + 1) for i in range(n - 1)])
+    skip_one = np.array([h(i, i + 2) for i in range(n - 2)])
+    theta = adjacent.mean()
+    gamma_2 = max(np.mean(adjacent[:-1] * skip_one) - theta**2, 0)
+    gamma_1 = max(
+        np.mean(adjacent**2) - 2 * np.mean(adjacent[:-1] * skip_one) + theta**2,
+        0,
+    )
+    reciprocal = sum(i in neighbors[j] for i, row in enumerate(neighbors) for j in row)
+    indegrees = np.bincount(neighbors.ravel(), minlength=n)
+    b_n = 1 / K + reciprocal / (n * K**2)
+    q_n = np.mean((indegrees / K - 1) ** 2)
+    g_n = np.array([np.mean(np.all(y >= row, axis=1)) for row in y_tilde])
+    s_hat = np.mean(g_n * (1 - g_n))
+    expected_variance = (gamma_1 * b_n + gamma_2 * q_n) / s_hat**2
+
+    assert coefficient == pytest.approx(ac_coefficient(y, z, M=K, permutation=True))
+    assert variance == pytest.approx(expected_variance)

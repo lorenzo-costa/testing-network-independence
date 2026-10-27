@@ -108,18 +108,13 @@ methods:
       kwargs:
         adaptive_m: true
         use_permutation_coeff: false
-    - name: DiffusionCorrelation
-      kwargs: {}
     - name: RVtest
       kwargs:
-        approximation: asymptotic
+        test_type: asymptotic
     - name: RVtest
       kwargs:
-        approximation: permutation
+        test_type: permutation
         permutation_type: latent
-    - name: CanonicalCorrelation
-      kwargs: {}
-
 setups:
   - dgp: BernoulliNetwork
     # Match the estimator to the link selected by rdpg: auto.

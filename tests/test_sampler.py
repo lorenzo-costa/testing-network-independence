@@ -8,13 +8,11 @@ from src.latent_samplers.conditional_independence_copula_sampler import (
     ConditionalIndependenceCopulaSampler,
 )
 from src.latent_samplers.functional_sampler import FunctionalGenerator
-from src.latent_samplers.orthogonal_subspace import OrthogonalSubspaceSampler
 from src.latent_samplers.post_nonlinear_noise_sampler import (
     PostNonLinearNoiseSampler,
 )
 from src.latent_samplers.rdpg_sampler import RDPGGenerator
 from src.latent_samplers.sampler import LatentSampler
-from src.latent_samplers.sbm_cov_sampler import SBMCovariateGenerator
 
 
 def test_module_imports_latent_sampler():
@@ -42,17 +40,7 @@ def test_module_imports_latent_sampler():
         ),
         ({"copula_model": "gaussian"}, {"marginals": "gaussian"}, CopulaGenerator),
         ({"rdpg_distr": "dirichlet"}, {}, RDPGGenerator),
-        (
-            {"dim_common": 1},
-            {"shared_latent_type": "gaussian"},
-            OrthogonalSubspaceSampler,
-        ),
         ({"functional_form": "linear"}, {"ky": 1}, FunctionalGenerator),
-        (
-            {"sbm_covariate_sampling": "random"},
-            {"y_distribution": "gaussian"},
-            SBMCovariateGenerator,
-        ),
     ],
 )
 def test_dispatches_to_selected_sampler(selector, extra_kwargs, expected_type):

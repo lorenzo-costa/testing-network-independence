@@ -43,12 +43,11 @@ A simulation framework for testing statistical independence between two networks
 
 | Method | Description |
 |--------|-------------|
+| `DistanceCorrelationTest` | Permutation test of latent-position dependence using distance correlation or MGC |
 | `RVtest` | Permutation test using the (adjusted) RV coefficient on estimated latent positions; supports both permutation and asymptotic (Imhof) p-value approximations |
 | `ObservedCVM` | CvM statistic computed directly on shared-neighbour counts — **no embedding required** |
 | `LLKRatioTest` | Likelihood-ratio test |
 | `QAP` | Quadratic Assignment Procedure |
-| `DiffusionCorrelation` | Diffusion-map based correlation test |
-| `CanonicalCorrelationTest` | Permutation test based on canonical correlations between estimated latent positions |
 
 ---
 
@@ -119,7 +118,7 @@ rng = np.random.default_rng(42)
 factorial_design = [
     {
         "setup": (partial(GaussianNetwork, copula_model="gaussian"), ASE),
-        "method": partial(RVtest, approximation="permutation", permutation_type="latent"),
+        "method": partial(RVtest, test_type="permutation", permutation_type="latent"),
         "n": 200,
         "k": 3,
         "rho": 0.2,
@@ -182,7 +181,7 @@ The script automatically detects the experiment type from the YAML structure (se
 
 ### Data Generating Processes (`dgp.py`)
 
-`src/dgp.py` provides `GaussianNetwork` and `BernoulliNetwork`, both inheriting from `CopulaDGP` and `BaseSBM`. Key constructor arguments:
+`src/dgp.py` provides `GaussianNetwork` and `BernoulliNetwork`, both using `LatentSampler`. Key constructor arguments:
 
 | Argument | Type | Description |
 |----------|------|-------------|
@@ -193,11 +192,6 @@ The script automatically detects the experiment type from the YAML structure (se
 | `copula_model` | `str` | Dependency structure (see table above) |
 | `edge_var` | `float` | Edge noise variance (Gaussian network only) |
 | `column_covariance` | `ndarray` | Optional `k×k` covariance for the copula Gaussian factor |
-| `latent_sim` | `str` | Name of a `hyppo` simulation function (e.g. `'quadratic'`, `'spiral'`) used instead of the copula path |
-| `sim_kwargs` | `dict` | Extra keyword arguments forwarded to the `latent_sim` function |
-| `sbm` | `bool` | Use a stochastic block model to draw latent positions |
-| `dim_common` / `dim_individual` | `int` | For multi-network experiments: shared and private latent dimensions |
-| `shared_latent_type` | `str` | How shared dimensions are drawn: `'gaussian'` or `'one_hot'` |
 | `rdpg` | `str` | Normalisation strategy for `BernoulliNetwork` (`'max'`, `'spectral'`, `'minmax'`) |
 
 `generate()` returns a dict with keys `A`, `B` (adjacency matrices) and `Z`, `X` (true latent positions).
@@ -220,13 +214,15 @@ All methods inherit from `BaseMethod` and expose `fit(data)`, `get_estimated()`,
 
 | Class | Key parameters | Notes |
 |-------|---------------|-------|
-| `RVtest` | `approximation` (`'permutation'` / `'asymptotic'`), `permutation_type` (`'latent'` / `'observed'`), `npermutations`, `solver` | The asymptotic branch uses the Imhof method (`imhof.py`) to compute the p-value |
+| `DistanceCorrelationTest` | `test_method` (`'dcorr'` / `'mgc'`), `permutation_type`, `npermutations`, `solver` | Uses latent positions and observed covariates; MGC is the default statistic |
+| `RVtest` | `test_type` (`'permutation'` / `'asymptotic'`), `permutation_type` (`'latent'` / `'observed'`), `npermutations`, `solver` | The asymptotic branch uses the Imhof method (`imhof.py`) to compute the p-value |
 | `ObservedCVM` | `test_function` | CvM statistic on adjacency matrices; no embedding step needed |
 | `LLKRatioTest` | — | Likelihood-ratio test |
 | `QAP` | — | Quadratic Assignment Procedure |
-| `DiffusionCorrelation` | — | Diffusion-map based correlation |
-| `CanonicalCorrelationTest` | `permutation_type`, `solver` | Permutation test via canonical correlations of estimated latent positions |
 | `FitIndependent` | `solver`, `k` | Not a test; fits the solver independently to each network and stores embeddings |
+
+YAML configs can select this method with `name: DistanceCorrelationTest`; the
+historical `name: DiffusionCorrelation` alias is also supported.
 
 Permutation-based methods accept `n_jobs`, `batch_size`, and `verbose`.
 The default `n_jobs=1` evaluates permutations serially, positive values use
@@ -239,6 +235,94 @@ permutation-level parallelism is enabled. Parallel workers return completed
 permutations as soon as they finish; results are restored to their original
 permutation order before p-values are calculated. Permutation p-values use the
 finite-sample correction `(1 + exceedances) / (npermutations + 1)`.
+
+`MultivariateACTest` also accepts `test_type="model_X"` and a
+`conditional_generator` with `sample(X)`. Each call must return a response with
+the observed `Y` shape. The test sets `conditional_generator.rng` to its RNG,
+holds the fitted latent positions and `X` fixed, and uses serial draws
+(`n_jobs=1`). The Monte Carlo results are available as `null_distribution`.
+
+For an unconditional multivariate response, `MultivariateACTest` also accepts
+`test_type="asymptotic"` with `use_permutation_coeff=True` and a fixed integer
+`M` (default 1). This uses the realized nearest-neighbor graph and empirical
+kernel moments to studentize the coefficient under network-response
+independence. `X` must be absent unless `_ignore_X=True`; `adaptive_m` is
+unsupported. The one-sided normal p-value is in
+`pvalue`, and `asymptotic_variance` and `asymptotic_z_statistic` expose the
+calibration. The result is an asymptotic approximation for fixed response and
+embedding dimensions and fixed `M`.
+
+For a known categorical conditional law, set `conditional_gaussian=True` on
+`GaussianNetwork` or `BernoulliNetwork`. Provide `means` with shape
+`(C, k + ky)`, positive definite `covariances` with shape
+`(C, k + ky, k + ky)`, and `class_probabilities` with length `C`.
+Category `c` has `[Z, Y] | X=c ~ N(means[c], covariances[c])`; the first `k`
+coordinates are `Z`. The cross covariance block controls conditional
+dependence, with zero giving a conditional null. Rows are independent given
+`X`, so the joint conditional density is the product of the row densities.
+The selected `dgp.latent_sampler` exposes `sample(X)` for Model-X draws,
+`conditional_distribution(c)` as a frozen SciPy Gaussian for `Y | X=c`, and
+`conditional_logpdf(Y, X)` as a vector of row log densities. For example:
+
+```python
+import numpy as np
+from src.dgp import GaussianNetwork
+
+dgp = GaussianNetwork(
+    n=100, k=1, ky=1, conditional_gaussian=True,
+    means=[[0.0, -1.0], [1.0, 2.0]],
+    covariances=[[[1.0, 0.0], [0.0, 1.0]],
+                 [[1.0, 0.3], [0.3, 2.0]]],
+    class_probabilities=[0.4, 0.6],
+    rng=np.random.default_rng(1),
+)
+data = dgp.generate()
+conditional_generator = dgp.latent_sampler
+log_p_y_given_x = conditional_generator.conditional_logpdf(data["Y"], data["X"]).sum()
+```
+
+The `conditional_copula="gaussian"` sampler also accepts category-specific
+`means` and optional full `covariances` for `[Z, Y]`, with the same shapes as
+above. This extension requires Gaussian `z` and `y` marginals. With means
+alone, `rho[c]` still controls dependence in category `c`. With full
+`covariances`, omit `rho`: the covariance cross block controls dependence, and
+a zero cross block in every category is a conditional null. Explicit Gaussian
+parameters default to `center_latent=False` so the specified population means
+and covariances are retained; `center_latent=True` is rejected in this mode.
+For example, `means=[[-2, -2], [2, 2]]`, `rho=[0, 0]`, and `k=ky=1`
+make `Z` and `Y` independent given `X` but dependent marginally. Unlike
+`conditional_gaussian=True`, this copula sampler has no conditional density
+methods. It does expose `sample(X)` for Model-X draws: pass integer category
+labels with shape `(n,)` or `(n, 1)` to draw a response array of shape
+`(n, ky)`. With no argument, `sample()` still returns a fresh `(Z, Y, X)`.
+If `center_latent=True`, the returned responses are centered within the
+supplied strata, matching the data generator's joint `Y | X` law; responses
+within a stratum then share a sample mean and are not independent rows.
+
+To vary both marginals by category, pass `marginals_by_class` instead of
+`marginals`. Its length must equal `C`, and each entry has `"z"` and `"y"`
+distribution strings. It works with Gaussian, Student-t, Clayton, and Gumbel
+copulas, and defaults to `center_latent=False` so the specified distributions
+are preserved. For a one-dimensional Bernoulli RDPG conditional null:
+
+```python
+from src.dgp import BernoulliNetwork
+
+dgp = BernoulliNetwork(
+    n=100, k=1, ky=1, rdpg=True,
+    conditional_copula="gaussian", C=2, rho=[0, 0],
+    marginals_by_class=[
+        {"z": "uniform 0 0.4", "y": "gaussian"},
+        {"z": "uniform 0.6 1", "y": "pareto 2.5"},
+    ],
+)
+data = dgp.generate()
+model_x_generator = dgp.latent_sampler  # exposes sample(data["X"])
+```
+
+The Gaussian-only `means` and `covariances` options cannot be combined with
+`marginals_by_class`. A Student-t copula still has conditional dependence at
+`rho=0` because its coordinates share a random scale.
 
 Multivariate AC orthant counts use the exact recursive sorted-block algorithm
 from [Huang, Li and Wang, Section 5](https://arxiv.org/abs/2512.07443v2).
@@ -277,10 +361,7 @@ The experiment type is **auto-detected** from the YAML structure — no explicit
 | Type | Detection rule | Description |
 |------|---------------|-------------|
 | `standard` | Default | Main copula study with H0/H1 sweep |
-| `lee2019` | `setups` contains `gaussian_latent_sims` key | Latent functional-relationship study |
 | `diff_marginals` | First `marginals` entry is a dict | Asymmetric per-network marginal distributions |
-| `sbm` | Top-level `sbm:` key present | Stochastic block model misspecification study |
-| `multiness` | `simulation` block contains `dim_common` | Multi-network common/individual latent dimensions |
 
 Registries in `load_config.py` map YAML string names to classes — extend `DGP_REGISTRY`, `SOLVER_REGISTRY`, and `METHOD_REGISTRY` to add new components without touching the runner script.
 
@@ -310,6 +391,5 @@ matplotlib
 seaborn
 tqdm
 pyyaml
-hyppo          
 numba          
 ```

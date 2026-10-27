@@ -19,7 +19,7 @@ from ._ac_helpers import (
 
 # Main function
 def ac_coefficient(Y, Z, X=None, *, M=1, permutation=False,
-                   right_neighbor=False, rng=None, block_size=2048):
+                   rng=None, block_size=2048):
     """Compute Azadkia-Chatterhee coefficient. 
     
     Depedign on the shape of X and Y different implementations are available:
@@ -44,8 +44,6 @@ def ac_coefficient(Y, Z, X=None, *, M=1, permutation=False,
         an exponent, giving ``round(n**M)`` neighbors. Defaults to 1.
     permutation : bool, optional
         Whether to use the permutation-based estimator for multivariate Y. Default is False.
-    right_neighbor : bool, optional
-        Whether to use the right-neighbor version of the coefficient. Default is False.
     rng : np.random.Generator, optional
         Random number generator. If None, a new generator is created.
     block_size : int, optional
@@ -69,17 +67,9 @@ def ac_coefficient(Y, Z, X=None, *, M=1, permutation=False,
         if permutation is True:
             raise ValueError("permutation is only used when Y is multivariate.")
 
-        m_idx, n_idx = _neighbor_maps(
-            z, x=X, n=n, M=M, rng=rng, right_neighbor=right_neighbor
-        )
-
-        if right_neighbor is True:
-            return _right_neighbor_coefficient(y[:, 0], m_idx, rng=rng)
+        m_idx, n_idx = _neighbor_maps(z, x=X, n=n, M=M, rng=rng)
 
         return _scalar_coefficient(y[:, 0], m_idx, n_idx)
-
-    if right_neighbor is True:
-        raise ValueError("right_neighbor is only used when Y is univariate.")
 
     if permutation is True:
         perm = _make_permutations(n, d_y, rng=rng)
@@ -117,26 +107,6 @@ def _scalar_coefficient(
         denominator = np.sum(ranks - n_score)
 
     return 0.0 if denominator == 0 else float(numerator / denominator)
-
-def _right_neighbor_coefficient(
-    y: np.ndarray,
-    M_idx: np.ndarray,
-    *,
-    rng=None,
-) -> float:
-    n = len(y)
-    M = M_idx.shape[1]
-    ranks = rankdata(y, method="max").astype(np.int64)
-
-    rank_sum = np.minimum(
-        ranks[:, None],
-        ranks[M_idx],
-    ).sum(dtype=np.int64)
-
-    normalizer = (n + 1) * (n * M + M * (M + 1) / 4)
-
-    return float(-2.0 + 6.0 * rank_sum / normalizer)
-
 
 def _multivariate_coefficient(
     y: np.ndarray,
@@ -178,3 +148,63 @@ def _multivariate_coefficient(
         denominator = np.sum(r_self - r_n)
 
     return 0.0 if denominator == 0 else float(numerator / denominator)
+
+
+def asymptotic_unconditional_ac(
+    Y, Z, *, M=1, rng=None, block_size=2048
+) -> tuple[float, float]:
+    """Return the shuffled unconditional coefficient and its null variance.
+
+    The variance is for ``sqrt(n) * coefficient`` and uses the realized
+    directed nearest-neighbor graph. It is valid for fixed M under network--
+    response independence. The fallback variance of one follows the
+    studentization convention when its empirical components vanish.
+    """
+    y = _as_2d(Y, name="Y")
+    n, d_y = y.shape
+    if d_y < 2:
+        raise ValueError("Asymptotic AC calibration requires multivariate Y.")
+    if n < max(d_y, 4):
+        raise ValueError("Asymptotic AC calibration requires n >= max(d_Y, 4).")
+    z = _as_2d(Z, name="Z", n=n)
+    K = _validate_m(M, n)
+
+    permutations = _make_permutations(n, d_y, rng=rng)
+    y_tilde = np.take_along_axis(y, permutations.T, axis=0)
+    neighbors, _ = _neighbor_maps(z, x=None, n=n, M=K, rng=rng)
+    coefficient = _multivariate_coefficient(
+        y, y_tilde, neighbors, None, block_size=block_size
+    )
+
+    # Empirical reference kernel h_hat(Y_i, Y_j) = F_tilde_n(Y_i wedge Y_j).
+    adjacent = _orthant_counts(
+        y_tilde, np.minimum(y[:-1], y[1:]),
+        relation="le", block_size=block_size,
+    ) / n
+    skip_one = _orthant_counts(
+        y_tilde, np.minimum(y[:-2], y[2:]),
+        relation="le", block_size=block_size,
+    ) / n
+    theta_hat = adjacent.mean()
+    a_hat = np.mean(adjacent**2)
+    c_hat = np.mean(adjacent[:-1] * skip_one)
+    gamma_2_hat = max(c_hat - theta_hat**2, 0.0)
+    gamma_1_hat = max(a_hat - 2 * c_hat + theta_hat**2, 0.0)
+
+    rows = np.repeat(np.arange(n), K)
+    columns = neighbors.ravel()
+    edges = rows * n + columns
+    reverse_edges = columns * n + rows
+    reciprocal_edges = np.count_nonzero(np.isin(reverse_edges, edges, assume_unique=True))
+    indegrees = np.bincount(columns, minlength=n)
+    b_n = 1 / K + reciprocal_edges / (n * K**2)
+    q_n = np.mean((indegrees / K - 1) ** 2)
+
+    g_n = _orthant_counts(y, y_tilde, relation="ge", block_size=block_size) / n
+    s_hat = np.mean(g_n * (1 - g_n))
+    variance_numerator = gamma_1_hat * b_n + gamma_2_hat * q_n
+    variance = (
+        float(variance_numerator / s_hat**2)
+        if variance_numerator > 0 and s_hat > 0 else 1.0
+    )
+    return coefficient, variance

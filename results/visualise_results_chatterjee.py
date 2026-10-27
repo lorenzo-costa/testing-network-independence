@@ -43,7 +43,6 @@ OLD_RESULT_FILES = (
     "simulation_results_20260723_1332.csv",  # Gaussian network
     "simulation_results_20260723_1407.csv",  # Bernoulli network
     "simulation_results_20260723_1155.csv",  # functional alternatives
-    "simulation_results_20260723_1322.csv",  # latent simulations
     "simulation_results_20260723_1554.csv",  # null simulations
 )
 
@@ -51,7 +50,6 @@ NEW_RESULT_FILES = (
     "simulation_results_20260726_0347.csv",  # Gaussian network
     "simulation_results_20260726_0353.csv",  # Bernoulli network
     "simulation_results_20260726_0339.csv",  # functional alternatives
-    "simulation_results_20260726_0342.csv",  # latent simulations
     "simulation_results_20260726_0400.csv",  # null simulations
 )
 
@@ -143,15 +141,12 @@ COLUMNS_TO_MATCH = (
     "make_sparse",
     "use_true_x",
     "use_true_z",
-    "latent_sim",
     "copula",
     "marginal_y",
     "marginal_z",
     "degree",
     "NN_number",
     "functional_form",
-    "sbm_covariate_sampling",
-    "assortativity",
     "x_distribution",
     "adaptive_m",
     "column_covariance",
@@ -167,7 +162,6 @@ COLORS = {
     "AC_adaptive": "#CC79A7",
     "RVTest_permutation": "#E69F00",
     "RVTest_asymptotic": "#222222",
-    "CCA": "#56B4E9",
 }
 
 MARKERS = {
@@ -177,7 +171,6 @@ MARKERS = {
     "AC_adaptive": "s",
     "RVTest_permutation": "v",
     "RVTest_asymptotic": "o",
-    "CCA": "P",
 }
 
 LINESTYLES = {
@@ -187,7 +180,6 @@ LINESTYLES = {
     "AC_adaptive": "-",
     "RVTest_permutation": "-",
     "RVTest_asymptotic": "-",
-    "CCA": "-",
 }
 
 METHOD_LABELS = {
@@ -197,7 +189,6 @@ METHOD_LABELS = {
     "AC_adaptive": "AC (adaptive)",
     "RVTest_permutation": "RV (permutation)",
     "RVTest_asymptotic": "RV (asymptotic)",
-    "CCA": "CCA",
 }
 
 METHODS = (
@@ -208,7 +199,7 @@ METHODS = (
     "RVTest_permutation",
     "RVTest_asymptotic",
 )
-RDPG_METHODS = (*METHODS, "CCA")
+RDPG_METHODS = METHODS
 
 COPULAS = ("gaussian", "student_t", "clayton", "mixture")
 MARGINALS_Z = ("gaussian", "chi df=5")
@@ -232,25 +223,6 @@ ESTIMATED_FUNCTIONAL_FORMS = (
 )
 RHO_SWEEP_MARGINALS_Y = ("gaussian", "chi df=5")
 
-LATENT_SIMULATIONS = (
-    "linear",
-    "exponential",
-    "cubic",
-    "step",
-    "circle",
-    "ellipse",
-    "spiral",
-    "quadratic",
-    "fourth_root",
-    "log",
-    "w_shaped",
-    "two_parabolas",
-    "bernoulli",
-    "square",
-    "diamond",
-    "sin_sixteen_pi",
-)
-
 FUNCTIONAL_FORMS = (
     "linear",
     "interaction",
@@ -264,10 +236,6 @@ FUNCTIONAL_FORMS = (
 
 CATEGORY_LABELS = {
     "student_t": "Student t",
-    "fourth_root": "Fourth\nroot",
-    "w_shaped": "W-shaped",
-    "two_parabolas": "Two\nparabolas",
-    "sin_sixteen_pi": r"$\sin(16\pi)$",
     "abs_max": "Absolute\nmaximum",
     "tanh_product": "Tanh\nproduct",
 }
@@ -583,12 +551,9 @@ def aggregate_alternative_results(data: pd.DataFrame) -> pd.DataFrame:
         "marginal_y",
         "marginal_z",
         "method",
-        "latent_sim",
         "make_sparse",
         "functional_form",
         "copula",
-        "sbm_covariate_sampling",
-        "assortativity",
         "x_distribution",
     ]
     return aggregate_results(
@@ -1120,7 +1085,7 @@ def aggregate_rdpg_copula_results(data: pd.DataFrame) -> pd.DataFrame:
 
 
 def plot_rdpg_copula_figures(data: pd.DataFrame, output_dir: Path) -> None:
-    """Plot power across all five RDPG sample sizes and copula settings."""
+    """Plot RDPG power by network size and across Y marginals at n=500."""
     aggregated = aggregate_rdpg_copula_results(data)
     assert_unique(
         aggregated,
@@ -1167,6 +1132,51 @@ def plot_rdpg_copula_figures(data: pd.DataFrame, output_dir: Path) -> None:
     fig.supylabel("Power")
     add_shared_legend(fig, lines=True, methods=RDPG_METHODS)
     save_figure(fig, output_dir, "27_rdpg_copulas_by_n_ky3_v2")
+
+    point_n = 500
+    point_data = aggregated[aggregated["n"] == point_n].copy()
+    if point_data.empty:
+        raise ValueError(f"No RDPG copula results for n={point_n}.")
+    assert_unique(
+        point_data,
+        ["method", "copula", "marginal_y"],
+        "RDPG copula point ranges",
+    )
+    fig, axes = plt.subplots(
+        1,
+        len(RDPG_COPULAS),
+        figsize=(8.0, 3.5),
+        sharex=True,
+        sharey=True,
+        squeeze=False,
+        layout="constrained",
+    )
+    for column, copula in enumerate(RDPG_COPULAS):
+        ax = axes[0, column]
+        panel = point_data[point_data["copula"] == copula]
+        plot_scatter_panel(
+            ax,
+            panel,
+            category="marginal_y",
+            categories=RDPG_MARGINALS_Y,
+            methods=RDPG_METHODS,
+            category_labeler=display_marginal_label,
+        )
+        style_probability_axis(ax)
+
+    add_facet_labels(
+        axes,
+        column_values=RDPG_COPULAS,
+        column_prefix="",
+    )
+    fig.suptitle(
+        f"Power across Y marginals — RDPG Bernoulli network, "
+        f"$n={point_n}$, $k=k_y=3$"
+    )
+    fig.supxlabel("Y marginal distribution")
+    fig.supylabel("Power")
+    add_shared_legend(fig, lines=False, methods=RDPG_METHODS)
+    save_figure(fig, output_dir, f"30_rdpg_copulas_n{point_n}_ky3")
 
 
 def aggregate_sharded_functional_results(
@@ -1366,82 +1376,6 @@ def plot_rho_sweep_figures(
     )
 
 
-def plot_latent_network(
-    data: pd.DataFrame,
-    output_dir: Path,
-    *,
-    network_name: str,
-    filename: str,
-    ky: int,
-) -> None:
-    data = data[
-        data["latent_sim"].isin(LATENT_SIMULATIONS)
-        & data["method"].isin(METHODS)
-        & (data["n"] == 300)
-    ].copy()
-    assert_unique(
-        data,
-        ["method", "latent_sim"],
-        f"{network_name} latent simulations",
-    )
-
-    category_rows = (
-        LATENT_SIMULATIONS[:8],
-        LATENT_SIMULATIONS[8:],
-    )
-    fig, axes = plt.subplots(
-        2,
-        1,
-        figsize=(7.0, 4.5),
-        sharey=True,
-        squeeze=False,
-        layout="constrained",
-    )
-    for row, categories in enumerate(category_rows):
-        ax = axes[row, 0]
-        panel = data[data["latent_sim"].isin(categories)]
-        plot_scatter_panel(
-            ax,
-            panel,
-            category="latent_sim",
-            categories=categories,
-        )
-        style_probability_axis(ax)
-        ax.set_title(f"({chr(ord('a') + row)})", loc="left")
-
-    fig.suptitle(
-        f"Power across latent dependence structures — {network_name}, "
-        f"$n=300$, $k_y={ky}$"
-    )
-    fig.supxlabel("Latent dependence structure")
-    fig.supylabel("Power")
-    add_shared_legend(fig, lines=False)
-    save_figure(fig, output_dir, filename)
-
-
-def plot_latent_simulation_figures(
-    alternative_gaussian: pd.DataFrame,
-    alternative_bernoulli: pd.DataFrame,
-    output_dir: Path,
-    *,
-    ky: int,
-) -> None:
-    plot_latent_network(
-        alternative_bernoulli,
-        output_dir,
-        network_name="Bernoulli binary network",
-        filename=f"07_binary_latent_simulations_n300_ky{ky}",
-        ky=ky,
-    )
-    plot_latent_network(
-        alternative_gaussian,
-        output_dir,
-        network_name="Gaussian weighted network",
-        filename=f"08_gaussian_latent_simulations_n300_ky{ky}",
-        ky=ky,
-    )
-
-
 def plot_functional_curves(
     data: pd.DataFrame,
     output_dir: Path,
@@ -1560,7 +1494,7 @@ def main() -> None:
         parser.error("--rdpg-only and --functionals-only cannot be used together")
     if args.rdpg_only:
         plot_rdpg_copula_figures(prepare_rdpg_copula_results(results_dir), output_dir)
-        print(f"Saved RDPG copula figure as PNG to {output_dir}")
+        print(f"Saved RDPG copula figures as PNG to {output_dir}")
         return
     if args.functionals_only:
         gaussian, uniform = prepare_sharded_functional_results(results_dir, k=args.functional_k, latent=args.functional_latent)
@@ -1600,12 +1534,6 @@ def main() -> None:
         point_n=300,
         first_numbers=(3, 5),
         chi_squared_numbers=(17, 18),
-    )
-    plot_latent_simulation_figures(
-        alternative_gaussian,
-        alternative_bernoulli,
-        output_dir,
-        ky=1,
     )
     plot_functional_figures(
         alternative_bernoulli,
@@ -1658,7 +1586,7 @@ def main() -> None:
         functional_gaussian, functional_uniform, output_dir, k=args.functional_k, latent=args.functional_latent
     )
 
-    print(f"Saved 29 figures as PNG to {output_dir}")
+    print(f"Saved 30 figures as PNG to {output_dir}")
 
 
 if __name__ == "__main__":

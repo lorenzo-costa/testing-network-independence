@@ -6,4 +6,3 @@ seaborn
 tqdm
 h5py
 numba
-hyppo

@@ -142,6 +142,23 @@ def _run_group(rows, metrics, method_params, entropy, replicate, data_key,
         args["solver"] = solver
         args["rng"] = method_rng
         args["dgp_name"] = dgp_name
+        method_callable = args["method"]
+        if (
+            isinstance(method_callable, partial)
+            and (method_callable.keywords or {}).get("conditional_generator") == "from_dgp"
+        ):
+            if method_callable.keywords.get("test_type") != "model_X":
+                raise ValueError("conditional_generator: from_dgp requires test_type: model_X")
+            if not callable(getattr(getattr(dgp, "latent_sampler", None), "sample", None)):
+                raise ValueError("The DGP must expose a latent_sampler with sample(X) for Model-X")
+            args["method"] = partial(
+                method_callable.func,
+                *method_callable.args,
+                **{
+                    **method_callable.keywords,
+                    "conditional_generator": deepcopy(dgp.latent_sampler),
+                },
+            )
         if row.get("force_k") is not None:
             args["true_k"] = args["k"]
             args["k"] = row["force_k"]
