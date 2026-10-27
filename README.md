@@ -242,6 +242,16 @@ the observed `Y` shape. The test sets `conditional_generator.rng` to its RNG,
 holds the fitted latent positions and `X` fixed, and uses serial draws
 (`n_jobs=1`). The Monte Carlo results are available as `null_distribution`.
 
+For an unconditional multivariate response, `MultivariateACTest` also accepts
+`test_type="asymptotic"` with `use_permutation_coeff=True` and a fixed integer
+`M` (default 1). This uses the realized nearest-neighbor graph and empirical
+kernel moments to studentize the coefficient under network-response
+independence. `X` must be absent unless `_ignore_X=True`; `adaptive_m` and
+`use_right_neighbor` are unsupported. The one-sided normal p-value is in
+`pvalue`, and `asymptotic_variance` and `asymptotic_z_statistic` expose the
+calibration. The result is an asymptotic approximation for fixed response and
+embedding dimensions and fixed `M`.
+
 For a known categorical conditional law, set `conditional_gaussian=True` on
 `GaussianNetwork` or `BernoulliNetwork`. Provide `means` with shape
 `(C, k + ky)`, positive definite `covariances` with shape

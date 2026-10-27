@@ -12,4 +12,5 @@ __all__ = [
     "relative_nuclear_error",
     "rv_coefficient",
     "rv_coefficient_adjusted",
+    "_asymptotic_unconditional_ac",
 ]

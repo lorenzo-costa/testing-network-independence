@@ -120,7 +120,7 @@ def _cutoff_radii(
 
     return cutoffs, np.nextafter(cutoffs, np.inf)
 
-
+# faster than scipy from Huang's paper
 def _knn_indices(
     points: np.ndarray,
     M: int,

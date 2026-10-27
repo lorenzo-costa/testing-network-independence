@@ -3,6 +3,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from scipy.stats import norm
 
 from src.methods.ac_test import EstimateAC, MultivariateACTest
 from src.methods import ConditionalGenerator
@@ -138,6 +139,66 @@ def test_multivariate_ac_test_runs_permutations_by_itself():
     assert np.isfinite(result["test_stat"])
     assert 0.0 <= result["p-value"] <= 1.0
     assert isinstance(result["reject_null"], bool)
+
+
+def test_asymptotic_ac_uses_studentized_one_sided_normal_tail():
+    method = MultivariateACTest(
+        use_true_latent=True,
+        M=1,
+        test_type="asymptotic",
+        use_permutation_coeff=True,
+        rng=np.random.default_rng(12),
+    )
+    method.fit(latent_data())
+
+    assert method.get_name() == "MultivariateAC_AsymptoticTest_1"
+    assert np.isfinite(method.test_stat_estimate)
+    assert method.asymptotic_variance > 0
+    assert method.asymptotic_z_statistic == pytest.approx(
+        np.sqrt(14) * method.test_stat_estimate / np.sqrt(method.asymptotic_variance)
+    )
+    assert method.pvalue == pytest.approx(norm.sf(method.asymptotic_z_statistic))
+    assert method.reject_null is (method.pvalue < method.alpha)
+    assert not hasattr(method, "permutation_indices")
+
+
+@pytest.mark.parametrize("options", [
+    {},
+    {"use_permutation_coeff": True, "adaptive_m": True},
+    {"use_permutation_coeff": True, "use_right_neighbor": True},
+    {"use_permutation_coeff": True, "M": 0.5},
+])
+def test_asymptotic_ac_rejects_unsupported_options(options):
+    with pytest.raises(ValueError, match="Asymptotic AC requires"):
+        MultivariateACTest(use_true_latent=True, test_type="asymptotic", **options)
+
+
+def test_asymptotic_ac_rejects_conditional_or_scalar_y():
+    method = MultivariateACTest(
+        use_true_latent=True, test_type="asymptotic", use_permutation_coeff=True
+    )
+    conditional = latent_data()
+    conditional["X"] = np.zeros((14, 1))
+    with pytest.raises(ValueError, match="unconditional X=None"):
+        method.fit(conditional)
+
+    scalar = latent_data()
+    scalar["Y"] = scalar["Y"][:, :1]
+    with pytest.raises(ValueError, match="multivariate Y"):
+        method.fit(scalar)
+
+
+def test_asymptotic_ac_degenerate_response_uses_unit_variance_fallback():
+    data = latent_data()
+    data["Y"] = np.zeros_like(data["Y"])
+    method = MultivariateACTest(
+        use_true_latent=True, test_type="asymptotic", use_permutation_coeff=True
+    )
+    method.fit(data)
+
+    assert method.test_stat_estimate == 0
+    assert method.asymptotic_variance == 1
+    assert method.pvalue == 0.5
 
 
 def test_fixed_m_ac_test_forwards_multivariate_y_permutation_option(monkeypatch):

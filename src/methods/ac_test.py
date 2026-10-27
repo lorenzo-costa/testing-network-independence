@@ -1,7 +1,8 @@
 import numpy as np
+from scipy.stats import norm
 
 from ._base_class import BaseEstimationMethod, BasePermutationTest
-from ..test_functions.ac_coefficient import ac_coefficient
+from ..test_functions.ac_coefficient import ac_coefficient, asymptotic_unconditional_ac
 
 
 class _ACMixin:
@@ -68,7 +69,7 @@ class EstimateAC(_ACMixin, BaseEstimationMethod):
 
 
 class MultivariateACTest(_ACMixin, BasePermutationTest):
-    """Permutation or Model-X test using fixed-M or adaptive AC coefficients.
+    """Permutation, Model-X, or asymptotic test using AC coefficients.
 
     With ``adaptive_m=True``, ``M`` is ignored. The test uses the rounded,
     capped, and deduplicated grid containing 1 and the powers of n with
@@ -102,8 +103,21 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
     ):
         if "approximation" in kwargs:
             raise TypeError("'approximation' is no longer supported; use 'test_type'.")
+        if test_type not in {"permutation", "model_X", "asymptotic"}:
+            raise ValueError("test_type must be 'permutation', 'model_X', or 'asymptotic'.")
         if test_type == "model_X" and _ignore_X:
             raise ValueError("Model-X requires the AC statistic to use conditioning X.")
+        if test_type == "asymptotic":
+            if not use_permutation_coeff or use_right_neighbor or adaptive_m:
+                raise ValueError(
+                    "Asymptotic AC requires use_permutation_coeff=True, "
+                    "use_right_neighbor=False, and adaptive_m=False."
+                )
+            if M is not None and (
+                isinstance(M, (bool, np.bool_))
+                or not isinstance(M, (int, np.integer))
+            ):
+                raise ValueError("Asymptotic AC requires a fixed integer M.")
         self.M = M
         self.use_permutation_coeff = use_permutation_coeff
         self.use_right_neighbor = use_right_neighbor
@@ -128,12 +142,17 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
             n_jobs=n_jobs,
             batch_size=batch_size,
             verbose=verbose,
-            test_type=test_type,
+            # The shared resampling base has no asymptotic fitting path.
+            test_type="permutation" if test_type == "asymptotic" else test_type,
             conditional_generator=conditional_generator,
         )
+        self.test_type = test_type
 
     def fit(self, data, **kwargs):
         self._process_input(data)
+        if self.test_type == "asymptotic":
+            self._fit_asymptotic()
+            return
         if self.adaptive_m:
             if self.npermutations < 1:
                 raise ValueError(
@@ -148,6 +167,19 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
             self.adaptive_m_means = self.statistic_means
             self.adaptive_m_stds = self.statistic_standard_deviations
             self.adaptive_z_statistics = self.standardized_statistics
+
+    def _fit_asymptotic(self):
+        if self.X is not None and not self._ignore_X:
+            raise ValueError("Asymptotic AC requires unconditional X=None.")
+        coefficient, variance = asymptotic_unconditional_ac(
+            self.Y, self.Zhat, M=1 if self.M is None else self.M,
+            rng=self.rng, block_size=self.block_size,
+        )
+        self.test_stat_estimate = coefficient
+        self.asymptotic_variance = variance
+        self.asymptotic_z_statistic = np.sqrt(len(self.Y)) * coefficient / np.sqrt(variance)
+        self.pvalue = float(norm.sf(self.asymptotic_z_statistic))
+        self.reject_null = bool(self.pvalue < self.alpha)
 
     def _adaptive_m_grid(self, n):
         """Return the adaptive M grid, always including one nearest neighbor."""
@@ -172,6 +204,8 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
         return self._ac_statistic(Z, Y, rng=rng)
 
     def get_name(self):
+        if self.test_type == "asymptotic":
+            return f"MultivariateAC_AsymptoticTest_{1 if self.M is None else self.M}"
         if self.adaptive_m:
             statistic_description = "adaptive"
         else:
