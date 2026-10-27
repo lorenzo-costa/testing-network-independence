@@ -165,11 +165,42 @@ def test_asymptotic_ac_uses_studentized_one_sided_normal_tail():
 @pytest.mark.parametrize("options", [
     {},
     {"use_permutation_coeff": True, "adaptive_m": True},
-    {"use_permutation_coeff": True, "M": 0.5},
+    {"use_permutation_coeff": True, "M": 1.0},
+    {"use_permutation_coeff": True, "M": np.nan},
 ])
 def test_asymptotic_ac_rejects_unsupported_options(options):
     with pytest.raises(ValueError, match="Asymptotic AC requires"):
         MultivariateACTest(use_true_latent=True, test_type="asymptotic", **options)
+
+
+def test_asymptotic_ac_resolves_exponent_like_permutation_ac():
+    data = latent_data()
+    exponent_method = MultivariateACTest(
+        use_true_latent=True,
+        M=0.5,
+        test_type="asymptotic",
+        use_permutation_coeff=True,
+        rng=np.random.default_rng(12),
+    )
+    integer_method = MultivariateACTest(
+        use_true_latent=True,
+        M=round(len(data["Y"]) ** 0.5),
+        test_type="asymptotic",
+        use_permutation_coeff=True,
+        rng=np.random.default_rng(12),
+    )
+
+    exponent_method.fit(data)
+    integer_method.fit(data)
+
+    assert exponent_method.effective_M == 4
+    assert exponent_method.test_stat_estimate == pytest.approx(
+        integer_method.test_stat_estimate
+    )
+    assert exponent_method.asymptotic_variance == pytest.approx(
+        integer_method.asymptotic_variance
+    )
+    assert exponent_method.pvalue == pytest.approx(integer_method.pvalue)
 
 
 def test_asymptotic_ac_rejects_conditional_or_scalar_y():

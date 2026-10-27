@@ -7,7 +7,7 @@
 # Simulation Setup
 # -----------------------------------------------------------------------------
 simulation:
-  nsim: 100          # Number of Monte Carlo repetitions per parameter combination
+  nsim: 200          # Number of Monte Carlo repetitions per parameter combination
   seed: 1                 # Master RNG seed for reproducibility (passed to np.random.default_rng)
 
   n: [100, 200, 500, 1000]      # Sample sizes (number of nodes)
@@ -32,34 +32,33 @@ simulation:
 # -----------------------------------------------------------------------------
 methods:
   npermutations: [500]      # Number of permutations used in permutation-based tests
-  use_true_latent: [False, True]
+  use_true_latent: [False]
 
 
   # List of test methods to benchmark. 'kwargs' are passed to the method constructor.
   list:
     - name: MultivariateACTest
       kwargs:
+        test_type: permutation
+        adaptive_m: true
+        use_permutation_coeff: true
+
+    - name: DistanceCorrelationTest
+      kwargs:
+        test_method: mgc
+        permutation_type: covariate
+
+    - name: MultivariateACTest
+      kwargs:
+        test_type: asymptotic
         M: 1
         use_permutation_coeff: true
 
     - name: MultivariateACTest
       kwargs:
+        test_type: asymptotic
         M: 0.5
         use_permutation_coeff: true
-
-    - name: MultivariateACTest
-      kwargs:
-        adaptive_m: true
-        use_permutation_coeff: true
-      
-    - name: RVtest
-      kwargs:
-        test_type: asymptotic
-
-    - name: RVtest
-      kwargs:
-        test_type: permutation
-        permutation_type: latent
     
 # -----------------------------------------------------------------------------
 # DGP & Solver Setups (H1: rho > 0)

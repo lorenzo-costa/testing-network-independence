@@ -156,9 +156,12 @@ def asymptotic_unconditional_ac(
     """Return the shuffled unconditional coefficient and its null variance.
 
     The variance is for ``sqrt(n) * coefficient`` and uses the realized
-    directed nearest-neighbor graph. It is valid for fixed M under network--
-    response independence. The fallback variance of one follows the
-    studentization convention when its empirical components vanish.
+    directed nearest-neighbor graph. A float M below one is resolved to
+    ``round(n**M)`` neighbors, as in ``ac_coefficient``. The variance
+    calibration is derived for fixed neighbor counts under network--response
+    independence; validity for counts growing with n is not established.
+    The fallback variance of one follows the studentization convention when
+    its empirical components vanish.
     """
     y = _as_2d(Y, name="Y")
     n, d_y = y.shape

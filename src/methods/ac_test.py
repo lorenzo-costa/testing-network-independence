@@ -3,6 +3,7 @@ from scipy.stats import norm
 
 from ._base_class import BaseEstimationMethod, BasePermutationTest
 from ..test_functions.ac_coefficient import ac_coefficient, asymptotic_unconditional_ac
+from ..test_functions._ac_helpers import _validate_m
 
 
 class _ACMixin:
@@ -67,6 +68,9 @@ class EstimateAC(_ACMixin, BaseEstimationMethod):
 class MultivariateACTest(_ACMixin, BasePermutationTest):
     """Permutation, Model-X, or asymptotic test using AC coefficients.
 
+    A float ``M`` below one selects ``round(n**M)`` neighbors for either
+    test type. The asymptotic calibration is derived for fixed neighbor counts.
+
     With ``adaptive_m=True``, ``M`` is ignored. The test uses the rounded,
     capped, and deduplicated grid containing 1 and the powers of n with
     exponents 0.3, 0.5, 0.7, and 0.9. At each grid value it computes the
@@ -110,9 +114,16 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
                 )
             if M is not None and (
                 isinstance(M, (bool, np.bool_))
-                or not isinstance(M, (int, np.integer))
+                or not isinstance(M, (int, np.integer, float, np.floating))
+                or (
+                    isinstance(M, (float, np.floating))
+                    and (not np.isfinite(M) or M >= 1)
+                )
             ):
-                raise ValueError("Asymptotic AC requires a fixed integer M.")
+                raise ValueError(
+                    "Asymptotic AC requires an integer M or a finite float "
+                    "smaller than 1."
+                )
         self.M = M
         self.use_permutation_coeff = use_permutation_coeff
         self.adaptive_m = bool(adaptive_m)
@@ -165,8 +176,11 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
     def _fit_asymptotic(self):
         if self.X is not None and not self._ignore_X:
             raise ValueError("Asymptotic AC requires unconditional X=None.")
+        self.effective_M = _validate_m(
+            1 if self.M is None else self.M, len(self.Y)
+        )
         coefficient, variance = asymptotic_unconditional_ac(
-            self.Y, self.Zhat, M=1 if self.M is None else self.M,
+            self.Y, self.Zhat, M=self.effective_M,
             rng=self.rng, block_size=self.block_size,
         )
         self.test_stat_estimate = coefficient
