@@ -246,8 +246,8 @@ For an unconditional multivariate response, `MultivariateACTest` also accepts
 `test_type="asymptotic"` with `use_permutation_coeff=True` and a fixed integer
 `M` (default 1). This uses the realized nearest-neighbor graph and empirical
 kernel moments to studentize the coefficient under network-response
-independence. `X` must be absent unless `_ignore_X=True`; `adaptive_m` and
-`use_right_neighbor` are unsupported. The one-sided normal p-value is in
+independence. `X` must be absent unless `_ignore_X=True`; `adaptive_m` is
+unsupported. The one-sided normal p-value is in
 `pvalue`, and `asymptotic_variance` and `asymptotic_z_statistic` expose the
 calibration. The result is an asymptotic approximation for fixed response and
 embedding dimensions and fixed `M`.
