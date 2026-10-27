@@ -368,7 +368,6 @@ def test_adaptive_s_statistic_preserves_options(monkeypatch):
         use_true_latent=True,
         M=99,
         use_permutation_coeff=True,
-        use_right_neighbor=True,
         adaptive_m=True,
         rng=np.random.default_rng(30),
     )
@@ -384,7 +383,6 @@ def test_adaptive_s_statistic_preserves_options(monkeypatch):
         assert call["M"] == 2
         assert call["X"] is method.X
         assert call["permutation"] is True
-        assert call["right_neighbor"] is True
 
 
 def test_adaptive_test_uses_sample_standardization_and_corrected_pvalue(

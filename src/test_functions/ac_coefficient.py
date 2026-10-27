@@ -19,7 +19,7 @@ from ._ac_helpers import (
 
 # Main function
 def ac_coefficient(Y, Z, X=None, *, M=1, permutation=False,
-                   right_neighbor=False, rng=None, block_size=2048):
+                   rng=None, block_size=2048):
     """Compute Azadkia-Chatterhee coefficient. 
     
     Depedign on the shape of X and Y different implementations are available:
@@ -44,8 +44,6 @@ def ac_coefficient(Y, Z, X=None, *, M=1, permutation=False,
         an exponent, giving ``round(n**M)`` neighbors. Defaults to 1.
     permutation : bool, optional
         Whether to use the permutation-based estimator for multivariate Y. Default is False.
-    right_neighbor : bool, optional
-        Whether to use the right-neighbor version of the coefficient. Default is False.
     rng : np.random.Generator, optional
         Random number generator. If None, a new generator is created.
     block_size : int, optional
@@ -69,17 +67,9 @@ def ac_coefficient(Y, Z, X=None, *, M=1, permutation=False,
         if permutation is True:
             raise ValueError("permutation is only used when Y is multivariate.")
 
-        m_idx, n_idx = _neighbor_maps(
-            z, x=X, n=n, M=M, rng=rng, right_neighbor=right_neighbor
-        )
-
-        if right_neighbor is True:
-            return _right_neighbor_coefficient(y[:, 0], m_idx, rng=rng)
+        m_idx, n_idx = _neighbor_maps(z, x=X, n=n, M=M, rng=rng)
 
         return _scalar_coefficient(y[:, 0], m_idx, n_idx)
-
-    if right_neighbor is True:
-        raise ValueError("right_neighbor is only used when Y is univariate.")
 
     if permutation is True:
         perm = _make_permutations(n, d_y, rng=rng)
@@ -117,26 +107,6 @@ def _scalar_coefficient(
         denominator = np.sum(ranks - n_score)
 
     return 0.0 if denominator == 0 else float(numerator / denominator)
-
-def _right_neighbor_coefficient(
-    y: np.ndarray,
-    M_idx: np.ndarray,
-    *,
-    rng=None,
-) -> float:
-    n = len(y)
-    M = M_idx.shape[1]
-    ranks = rankdata(y, method="max").astype(np.int64)
-
-    rank_sum = np.minimum(
-        ranks[:, None],
-        ranks[M_idx],
-    ).sum(dtype=np.int64)
-
-    normalizer = (n + 1) * (n * M + M * (M + 1) / 4)
-
-    return float(-2.0 + 6.0 * rank_sum / normalizer)
-
 
 def _multivariate_coefficient(
     y: np.ndarray,

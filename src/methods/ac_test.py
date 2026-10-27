@@ -14,7 +14,6 @@ class _ACMixin:
             M=self.M,
             rng=rng,
             permutation=self.use_permutation_coeff,
-            right_neighbor=self.use_right_neighbor,
             block_size=self.block_size,
         )
 
@@ -28,7 +27,6 @@ class _ACMixin:
             M=M,
             rng=rng,
             permutation=self.use_permutation_coeff,
-            right_neighbor=self.use_right_neighbor,
             block_size=self.block_size,
         )
 
@@ -44,7 +42,6 @@ class EstimateAC(_ACMixin, BaseEstimationMethod):
         use_true_latent=False,
         M=None,
         use_permutation_coeff=False,
-        use_right_neighbor=False,
         block_size=2048,
         **kwargs,
     ):
@@ -53,7 +50,6 @@ class EstimateAC(_ACMixin, BaseEstimationMethod):
         )
         self.M = M
         self.use_permutation_coeff = use_permutation_coeff
-        self.use_right_neighbor = use_right_neighbor
         self.block_size = block_size
         self._ignore_X = False
 
@@ -88,7 +84,6 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
         use_true_latent=False,
         permutation_type="covariate",
         use_permutation_coeff=False,
-        use_right_neighbor=False,
         adaptive_m=False,
         adaptive_exponents=None,
         block_size=2048,
@@ -106,7 +101,6 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
             raise ValueError("Model-X requires the AC statistic to use conditioning X.")
         self.M = M
         self.use_permutation_coeff = use_permutation_coeff
-        self.use_right_neighbor = use_right_neighbor
         self.adaptive_m = bool(adaptive_m)
         self.adaptive_exponents = (adaptive_exponents
             if adaptive_exponents is not None

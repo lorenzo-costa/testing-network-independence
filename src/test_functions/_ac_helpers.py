@@ -54,14 +54,8 @@ def _neighbor_maps(
     n: int,
     M: int,
     rng=None,
-    right_neighbor=False,
 ) -> tuple[np.ndarray, np.ndarray | None]:
     """Return neighbors in Z/(X,Z), and in X when conditioning is used."""
-    if right_neighbor is True:
-        if x is not None:
-            raise ValueError("right_neighbor is only used when X is None.")
-        m_idx = _right_neighbor_indices(z, M, rng=rng)
-        return m_idx, None
     if x is None:
         m_idx = _knn_indices(z, M, rng=rng)
         return m_idx, None
@@ -207,50 +201,6 @@ def _knn_indices(
             neighbors[i] = np.concatenate((strictly_closer, chosen_ties))
 
     return neighbors
-
-def _right_neighbor_indices(
-    z: np.ndarray,
-    M: int,
-    rng=None,
-) -> np.ndarray:
-    """
-    Return the m-th right neighbor of each scalar z_i.
-
-    Ties in z are broken uniformly at random, reproducibly when rng is given.
-    """
-
-    if z.ndim != 2 or z.shape[1] != 1:
-        raise ValueError("Right neighbors require a scalar ordering variable.")
-
-    values = z[:, 0]
-    n = len(values)
-
-    generator = (
-        rng if isinstance(rng, np.random.Generator) else np.random.default_rng(rng)
-    )
-
-    # Primary sort key: values.
-    # Secondary sort key: random numbers, used only within ties.
-    tie_breaker = generator.random(n)
-    order = np.lexsort((tie_breaker, values))
-
-    position = np.empty(n, dtype=np.int64)
-    position[order] = np.arange(n)
-
-    targets = position[:, None] + np.arange(1, M + 1)
-
-    # Boundary convention: if the m-th right neighbor does not exist,
-    # map the observation to itself.
-    neighbors = np.broadcast_to(
-        np.arange(n)[:, None],
-        (n, M),
-    ).copy()
-
-    valid = targets < n
-    neighbors[valid] = order[targets[valid]]
-    
-    return neighbors
-
 
 # validation functions
 def _validate_m(M: int | float, n: int) -> int:
