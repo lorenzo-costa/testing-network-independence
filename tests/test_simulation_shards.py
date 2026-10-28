@@ -1,6 +1,9 @@
 import csv
 
+import pytest
+
 from src.helper_functions.simulation_output import CsvResultWriter
+from src.merge_simulation_shards import merge_shard_outputs
 from tests.test_simulation_grouping import row, normalized, run
 
 
@@ -34,3 +37,42 @@ def test_csv_result_writer_batches_rows(tmp_path):
 
     assert writer.rows_written == 2
     assert [row["value"] for row in rows] == ["1", "2"]
+
+
+def _write_shard(path, values):
+    with path.open("w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        writer.writerow(["value"])
+        writer.writerows([[value] for value in values])
+
+
+def test_merge_waits_for_closed_shards_even_when_all_files_exist(tmp_path):
+    first = tmp_path / "simulation_results_123_shard-000-of-002.csv"
+    second = tmp_path / "simulation_results_123_shard-001-of-002.csv"
+    _write_shard(first, [1, 2])
+    _write_shard(second, [3, 4])
+
+    assert merge_shard_outputs(tmp_path, "simulation_results", "123", [2, 2], 0) is None
+    assert first.exists() and second.exists()
+    assert not (tmp_path / "simulation_results_123.csv").exists()
+
+    final = merge_shard_outputs(tmp_path, "simulation_results", "123", [2, 2], 1)
+    with final.open(newline="", encoding="utf-8") as file:
+        assert [row["value"] for row in csv.DictReader(file)] == ["1", "2", "3", "4"]
+    assert not first.exists() and not second.exists()
+
+
+def test_merge_preserves_sources_if_a_completed_shard_changes(tmp_path):
+    first = tmp_path / "simulation_results_123_shard-000-of-002.csv"
+    second = tmp_path / "simulation_results_123_shard-001-of-002.csv"
+    _write_shard(first, [1, 2])
+    _write_shard(second, [3, 4])
+    merge_shard_outputs(tmp_path, "simulation_results", "123", [2, 2], 0)
+
+    with first.open("a", newline="", encoding="utf-8") as file:
+        csv.writer(file).writerow([5])
+
+    with pytest.raises(ValueError, match="Shard 0 has 3 rows; expected 2"):
+        merge_shard_outputs(tmp_path, "simulation_results", "123", [2, 2], 1)
+    assert first.exists() and second.exists()
+    assert not (tmp_path / "simulation_results_123.csv").exists()
