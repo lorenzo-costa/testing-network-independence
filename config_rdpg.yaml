@@ -48,6 +48,10 @@ methods:
         test_method: mgc
         permutation_type: covariate
 
+    - name: CanonicalCorrelationTest
+      kwargs:
+        permutation_type: covariate
+
     - name: MultivariateACTest
       kwargs:
         test_type: asymptotic

@@ -51,6 +51,7 @@ METHOD_REGISTRY = {
     "RVtest": RVTest,
     "MultivariateACTest": MultivariateACTest,
     "DistanceCorrelationTest": DistanceCorrelationTest,
+    "CanonicalCorrelationTest": CanonicalCorrelationTest,
     "DiffusionCorrelation": DistanceCorrelationTest,
     "MRQAP": MRQAP,
 }
