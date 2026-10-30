@@ -153,8 +153,11 @@ def _multivariate_coefficient(
 def asymptotic_unconditional_ac(
     Y, Z, *, M=1, rng=None, block_size=2048
 ) -> tuple[float, float]:
-    """Return the shuffled unconditional coefficient and its null variance.
+    """Return the unconditional coefficient and its null variance.
 
+    For scalar Y, the coefficient is the rank statistic; its empirical
+    reference distribution is unchanged by a coordinate shuffle. For
+    multivariate Y, the coefficient uses the shuffled reference sample.
     The variance is for ``sqrt(n) * coefficient`` and uses the realized
     directed nearest-neighbor graph. A float M below one is resolved to
     ``round(n**M)`` neighbors, as in ``ac_coefficient``. The variance
@@ -165,19 +168,24 @@ def asymptotic_unconditional_ac(
     """
     y = _as_2d(Y, name="Y")
     n, d_y = y.shape
-    if d_y < 2:
-        raise ValueError("Asymptotic AC calibration requires multivariate Y.")
     if n < max(d_y, 4):
         raise ValueError("Asymptotic AC calibration requires n >= max(d_Y, 4).")
     z = _as_2d(Z, name="Z", n=n)
     K = _validate_m(M, n)
 
-    permutations = _make_permutations(n, d_y, rng=rng)
-    y_tilde = np.take_along_axis(y, permutations.T, axis=0)
-    neighbors, _ = _neighbor_maps(z, x=None, n=n, M=K, rng=rng)
-    coefficient = _multivariate_coefficient(
-        y, y_tilde, neighbors, None, block_size=block_size
-    )
+    if d_y == 1:
+        # Shuffling a single coordinate leaves its empirical CDF unchanged.
+        # The shuffled-reference statistic is exactly the scalar rank statistic.
+        y_tilde = y
+        neighbors, _ = _neighbor_maps(z, x=None, n=n, M=K, rng=rng)
+        coefficient = _scalar_coefficient(y[:, 0], neighbors, None)
+    else:
+        permutations = _make_permutations(n, d_y, rng=rng)
+        y_tilde = np.take_along_axis(y, permutations.T, axis=0)
+        neighbors, _ = _neighbor_maps(z, x=None, n=n, M=K, rng=rng)
+        coefficient = _multivariate_coefficient(
+            y, y_tilde, neighbors, None, block_size=block_size
+        )
 
     # Empirical reference kernel h_hat(Y_i, Y_j) = F_tilde_n(Y_i wedge Y_j).
     adjacent = _orthant_counts(

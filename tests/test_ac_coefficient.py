@@ -25,6 +25,20 @@ def test_public_coefficient_resolves_float_m_as_an_exponent():
     assert exponent_result == pytest.approx(integer_result)
 
 
+@pytest.mark.parametrize("M", [1, 3])
+def test_scalar_asymptotic_statistic_matches_rank_coefficient_with_ties(M):
+    y = np.array([0, 1, 1, 3, 2, 3, 4, 2, 0, 4], dtype=float)
+    z = np.arange(len(y), dtype=float)[:, None]
+
+    coefficient, variance = asymptotic_unconditional_ac(
+        y, z, M=M, rng=np.random.default_rng(3)
+    )
+    expected = ac_coefficient(y, z, M=M, rng=np.random.default_rng(3))
+
+    assert coefficient == pytest.approx(expected)
+    assert np.isfinite(variance) and variance > 0
+
+
 @pytest.mark.parametrize("M", ["sqrt", "half", "third", "quarter", "log"])
 def test_string_m_aliases_are_rejected(M):
     with pytest.raises(ValueError, match="positive integer or a finite float"):

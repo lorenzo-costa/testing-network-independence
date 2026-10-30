@@ -70,6 +70,8 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
 
     A float ``M`` below one selects ``round(n**M)`` neighbors for either
     test type. The asymptotic calibration is derived for fixed neighbor counts.
+    Scalar Y uses the rank coefficient and does not need a shuffled reference;
+    multivariate Y requires ``use_permutation_coeff=True``.
 
     With ``adaptive_m=True``, ``M`` is ignored. The test uses the rounded,
     capped, and deduplicated grid containing 1 and the powers of n with
@@ -107,10 +109,9 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
         if test_type == "model_X" and _ignore_X:
             raise ValueError("Model-X requires the AC statistic to use conditioning X.")
         if test_type == "asymptotic":
-            if not use_permutation_coeff or adaptive_m:
+            if adaptive_m:
                 raise ValueError(
-                    "Asymptotic AC requires use_permutation_coeff=True, "
-                    "and adaptive_m=False."
+                    "Asymptotic AC requires adaptive_m=False."
                 )
             if M is not None and (
                 isinstance(M, (bool, np.bool_))
@@ -176,6 +177,11 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
     def _fit_asymptotic(self):
         if self.X is not None and not self._ignore_X:
             raise ValueError("Asymptotic AC requires unconditional X=None.")
+        if self.Y.shape[1] > 1 and not self.use_permutation_coeff:
+            raise ValueError(
+                "Asymptotic AC with multivariate Y requires "
+                "use_permutation_coeff=True."
+            )
         self.effective_M = _validate_m(
             1 if self.M is None else self.M, len(self.Y)
         )

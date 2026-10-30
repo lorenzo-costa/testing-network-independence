@@ -37,7 +37,7 @@ def main():
         partial(
             BernoulliNetwork,
             k=3,
-            ky=2,
+            ky=1,
             rdpg=True,
             copula_model="gaussian",
             marginals={"z": "uniform 0 0.5773502692", "y": "gaussian"},
@@ -52,7 +52,7 @@ def main():
                 "M": K,
                 "test_type": test_type,
                 "permutation_type": "covariate",
-                "use_permutation_coeff": True,
+                "use_permutation_coeff": False,
             }
             if test_type == "permutation":
                 method_kwargs["npermutations"] = args.npermutations

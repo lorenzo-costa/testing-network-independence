@@ -163,7 +163,6 @@ def test_asymptotic_ac_uses_studentized_one_sided_normal_tail():
 
 
 @pytest.mark.parametrize("options", [
-    {},
     {"use_permutation_coeff": True, "adaptive_m": True},
     {"use_permutation_coeff": True, "M": 1.0},
     {"use_permutation_coeff": True, "M": np.nan},
@@ -203,7 +202,7 @@ def test_asymptotic_ac_resolves_exponent_like_permutation_ac():
     assert exponent_method.pvalue == pytest.approx(integer_method.pvalue)
 
 
-def test_asymptotic_ac_rejects_conditional_or_scalar_y():
+def test_asymptotic_ac_rejects_conditional_or_unshuffled_multivariate_y():
     method = MultivariateACTest(
         use_true_latent=True, test_type="asymptotic", use_permutation_coeff=True
     )
@@ -212,10 +211,33 @@ def test_asymptotic_ac_rejects_conditional_or_scalar_y():
     with pytest.raises(ValueError, match="unconditional X=None"):
         method.fit(conditional)
 
+    unshuffled = MultivariateACTest(
+        use_true_latent=True, test_type="asymptotic",
+        use_permutation_coeff=False,
+    )
+    with pytest.raises(ValueError, match="multivariate Y requires"):
+        unshuffled.fit(latent_data())
+
+
+def test_asymptotic_ac_accepts_scalar_y_without_coordinate_permutation():
     scalar = latent_data()
     scalar["Y"] = scalar["Y"][:, :1]
-    with pytest.raises(ValueError, match="multivariate Y"):
+    methods = []
+    for use_permutation_coeff in (False, True):
+        method = MultivariateACTest(
+            use_true_latent=True,
+            test_type="asymptotic",
+            use_permutation_coeff=use_permutation_coeff,
+            rng=np.random.default_rng(12),
+        )
         method.fit(scalar)
+        methods.append(method)
+
+    assert methods[0].test_stat_estimate == pytest.approx(methods[1].test_stat_estimate)
+    assert methods[0].asymptotic_variance == pytest.approx(methods[1].asymptotic_variance)
+    assert methods[0].pvalue == pytest.approx(methods[1].pvalue)
+    assert 0.0 <= methods[0].pvalue <= 1.0
+    assert not hasattr(methods[0], "permutation_indices")
 
 
 def test_asymptotic_ac_degenerate_response_uses_unit_variance_fallback():
