@@ -12,14 +12,22 @@ from src.dgp import BernoulliNetwork
 from src.helper_functions.simulation_functions import run_simulation
 from src.methods.ac_test import MultivariateACTest
 from src.metrics import ReturnMetric
-from src.solvers.weighted_network import ASE
+from src.solvers.MaMa_uuuuu import pgd_fit_wrapper
 
 
-N_VALUES = (100, 200, 300)
-K_VALUES = (1, 10, 50)
-RHO_VALUES = (0.0, 0.1, 0.3, 0.5)
+N_VALUES = (100, 300)
+K_VALUES = (1, 0.5)
+SNR = (0.1, 0.3, 0.5, 0.7)
 ALPHA = 0.05
 TEST_TYPES = ("asymptotic", "permutation")
+
+
+sine_params = {
+    "weights": [0.5, 0.5, 0.5, 0.5],
+    "normalize_index": True,
+    "frequency": 5.0,
+    "global_scale": 10.0,
+}
 
 
 def main():
@@ -36,17 +44,18 @@ def main():
     setup = (
         partial(
             BernoulliNetwork,
-            k=3,
+            k=4,
             ky=1,
-            rdpg=True,
-            copula_model="gaussian",
-            marginals={"z": "uniform 0 0.5773502692", "y": "gaussian"},
+            rdpg='auto',
+            predictor_distribution='gaussian', 
             center_latent=False,
+            functional_form = 'sine',
+            function_params=sine_params
         ),
-        ASE,
+        pgd_fit_wrapper,
     )
     factorial_design = []
-    for n, rho, K in product(N_VALUES, RHO_VALUES, K_VALUES):
+    for n, snr, K in product(N_VALUES, SNR, K_VALUES):
         for test_type in TEST_TYPES:
             method_kwargs = {
                 "M": K,
@@ -60,10 +69,10 @@ def main():
                 "setup": setup,
                 "method": partial(MultivariateACTest, **method_kwargs),
                 "n": n,
-                "rho": rho,
+                "snr": snr,
                 "alpha": ALPHA,
                 "use_true_latent": True,
-                "_generation_keys": ("setup", "n", "rho"),
+                "_generation_keys": ("setup", "n", "snr"),
             })
 
     results = run_simulation(
@@ -76,9 +85,9 @@ def main():
     )
 
     pvalues = {
-        (n, rho, K, test_type): []
-        for n, rho, K, test_type in product(
-            N_VALUES, RHO_VALUES, K_VALUES, TEST_TYPES
+        (n, snr, K, test_type): []
+        for n, snr, K, test_type in product(
+            N_VALUES, SNR, K_VALUES, TEST_TYPES
         )
     }
     for result in results:
@@ -90,18 +99,18 @@ def main():
         )
 
     print(f"alpha={ALPHA}, nsim={args.nsim}, permutations={args.npermutations}")
-    print(" n    rho    K   asymptotic   permutation   difference")
-    for n, rho, K in product(N_VALUES, RHO_VALUES, K_VALUES):
+    print(" n    snr    K   asymptotic   permutation   difference")
+    for n, snr, K in product(N_VALUES, SNR, K_VALUES):
         rates = {}
         for test_type in TEST_TYPES:
-            values = pvalues[(n, rho, K, test_type)]
+            values = pvalues[(n, snr, K, test_type)]
             if len(values) != args.nsim:
                 raise RuntimeError(
-                    f"Expected {args.nsim} results for {(n, rho, K, test_type)}"
+                    f"Expected {args.nsim} results for {(n, snr, K, test_type)}"
                 )
             rates[test_type] = np.count_nonzero(np.asarray(values) < ALPHA) / args.nsim
         print(
-            f"{n:3d}  {rho:4.1f}  {K:3d}      {rates['asymptotic']:.3f}"
+            f"{n:3d}  {snr:4.1f}  {K:3d}      {rates['asymptotic']:.3f}"
             f"         {rates['permutation']:.3f}        "
             f"{rates['asymptotic'] - rates['permutation']:+.3f}"
         )
