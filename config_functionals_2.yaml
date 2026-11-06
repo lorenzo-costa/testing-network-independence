@@ -1,51 +1,40 @@
 # Functional alternatives with four predictors and a scalar response.
-# Eleven forms for both distributions, with standardized interaction.
+# Eleven forms for uniform RDPG predictors, with standardized interaction.
 simulation:
   nsim: 200
   seed: 1
-  n: [100, 300]
-  k: [4]
+  n: [100, 200, 300]
+  k: [3]
   ky: [1]
   snr: [0.1, 0.3, 0.5, 0.7]  # Var(f(Z)) / (Var(f(Z)) + Var(noise))
   alpha: [0.05]
   edge_var: [3]
-  predictor_distribution: [gaussian, uniform_rdpg]
+  predictor_distribution: [uniform_rdpg]
 
   functionals:
     - name: linear
       kwargs:
-        weights: [0.5, 0.5, 0.5, 0.5]
+        weights: [0.5, 0.5, 0.5]
         normalize_index: true
     - name: interaction
       # Standardize the interaction to theoretical mean 0 and variance 1.
       kwargs:
-        output_center: 0.0
-        output_sd: 2.449489742783178  # sqrt(6), for N_4(0, I)
-      kwargs_by_predictor_distribution:
-        uniform_rdpg:
-          output_center: 0.6366197723675814  # 2 / pi
-          output_sd: 0.29780151684571465
+        output_center: 0.6366197723675814  # 2 / pi
+        output_sd: 0.29780151684571465
     - name: radial
       kwargs: {}
     - name: threshold
       kwargs:
         weights: [0.5, 0.5, 0.5, 0.5]
         normalize_index: true
-        threshold: 0.0
-      kwargs_by_predictor_distribution:
-        uniform_rdpg:
-          threshold: 0.5
+        threshold: 0.5
     - name: sigmoid
       kwargs:
         weights: [0.5, 0.5, 0.5, 0.5]
         normalize_index: true
-        threshold: 0.0
-        slope: 5.0
+        threshold: 0.5
+        slope: 17.0
         global_scale: 10.0
-      kwargs_by_predictor_distribution:
-        uniform_rdpg:
-          threshold: 0.5
-          slope: 17.0
     - name: piecewise
       kwargs:
         weights: [0.5, 0.5, 0.5, 0.5]
@@ -56,41 +45,26 @@ simulation:
       kwargs:
         weights: [0.5, 0.5, 0.5, 0.5]
         normalize_index: true
-        frequency: 5.0
+        frequency: 30.0
         global_scale: 10.0
-      kwargs_by_predictor_distribution:
-        uniform_rdpg:
-          frequency: 30.0
     - name: max
       kwargs: {}
     - name: abs_max
       kwargs:
-        center: 0.0
-        input_scale: 1.0
-      kwargs_by_predictor_distribution:
-        uniform_rdpg:
-          center: 0.5
-          input_scale: 6.0
+        center: 0.5
+        input_scale: 6.0
     - name: tanh_product
       kwargs:
-        input_scale: 1.0
+        input_scale: 6.0
         global_scale: 10.0
-        center: 0.0
-      kwargs_by_predictor_distribution:
-        uniform_rdpg:
-          input_scale: 6.0
-          center: 0.5
+        center: 0.5
     - name: pareto
       kwargs:
         weights: [0.5, 0.5, 0.5, 0.5]
         normalize_index: true
-        alpha: 1.2
-        scale: 1.0
+        alpha: 0.2
+        scale: 0.05
         tail_clip: 1e-12
-      kwargs_by_predictor_distribution:
-        uniform_rdpg:
-          alpha: 0.2
-          scale: 0.05
 
 methods:
   npermutations: [500]
@@ -127,10 +101,7 @@ methods:
         use_permutation_coeff: false
 setups:
   - dgp: BernoulliNetwork
-    # Match the estimator to the link selected by rdpg: auto.
-    solver:
-      uniform_rdpg: ASE
-      gaussian: pgd_fit_wrapper
+    solver: ASE
     rdpg: auto
 
 metrics:
