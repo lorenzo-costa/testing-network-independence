@@ -1,0 +1,40 @@
+# Standard graph -> supplied solver -> existing permutation test pipeline.
+simulation:
+  nsim: 100
+  seed: 2
+  n: [50, 100]
+  k: [2]
+  ky: [1]
+  alpha: [0.05]
+  rho: [0]
+  edge_var: [0]
+  marginals: [bernoulli]
+methods:
+  npermutations: [200]
+  use_true_latent: [false]
+  list:
+    - name: DistanceCorrelationTest
+      kwargs:
+        test_method: dcorr
+        permutation_type: covariate
+setups:
+  - dgp: BernoulliNetwork
+    clique_mixture: true
+    rdpg: true
+    solver: ASE
+    pi: 0
+  - dgp: BernoulliNetwork
+    clique_mixture: true
+    rdpg: true
+    solver: ASE
+    pi: 0.5
+  - dgp: BernoulliNetwork
+    clique_mixture: true
+    rdpg: true
+    solver: ASE
+    pi: 1
+metrics:
+  compute_all: true
+output:
+  results_dir: results/clique_framework
+  file_prefix: clique_mixture

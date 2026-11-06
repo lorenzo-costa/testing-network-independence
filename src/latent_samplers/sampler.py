@@ -9,6 +9,7 @@ from .conditional_independence_copula_sampler import (
 from .post_nonlinear_noise_sampler import PostNonLinearNoiseSampler
 from .rdpg_sampler import RDPGGenerator
 from .functional_sampler import FunctionalGenerator
+from .clique_mixture_sampler import CliqueMixtureSampler
 import numpy as np
 
 
@@ -45,6 +46,7 @@ class LatentSampler:
         functional_form=None,
         rng=None,
         conditional_gaussian=None,
+        clique_mixture=None,
         **kwargs,
     ):
         if rng is None:
@@ -58,6 +60,7 @@ class LatentSampler:
         self.ky = int(ky)
 
         sampler_options = [
+            ("clique_mixture", clique_mixture),
             ("conditional_gaussian", conditional_gaussian),
             ("conditional_copula", conditional_copula),
             ("post_nonlinear_noise", post_nonlinear_noise),
@@ -91,6 +94,10 @@ class LatentSampler:
             )
 
         factories = {
+            "clique_mixture": lambda value: CliqueMixtureSampler(
+                n=n, k=k, ky=ky, rng=rng,
+                **self._clique_mixture_kwargs(value, kwargs),
+            ),
             "conditional_copula": lambda value: ConditionalIndependenceCopulaSampler(
                 n=n,
                 k=k,
@@ -136,7 +143,14 @@ class LatentSampler:
         self.rdpg_distr = rdpg_distr
 
         self.functional_form = functional_form
+        self.clique_mixture = clique_mixture
         self.X = None
+
+    @staticmethod
+    def _clique_mixture_kwargs(activation, kwargs):
+        if activation is not True:
+            raise ValueError('clique_mixture must be True when selected.')
+        return {'pi': kwargs.get('pi', .5)}
 
     @staticmethod
     def _conditional_copula_model(activation, copula_model):
@@ -190,7 +204,9 @@ class LatentSampler:
         """
         Z, Y, X = None, None, None
 
-        if self.conditional_gaussian is not None:
+        if self.clique_mixture is not None:
+            Z, Y, X = self.latent_sampler.sample_latent()
+        elif self.conditional_gaussian is not None:
             Z, Y, X = self.latent_sampler.sample_latent()
         elif self.conditional_copula is not None:
             Z, Y, X = self.latent_sampler._sample_latent_conditional_copula()

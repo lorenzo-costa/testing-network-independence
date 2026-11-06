@@ -82,6 +82,13 @@ def _resolve_copula_setup(entry: dict):
     Packs every other setup-specific field into copula_params.
     """
     dgp_cls = DGP_REGISTRY[entry["dgp"]]
+    if entry.get('clique_mixture') is not None:
+        if entry['clique_mixture'] is not True:
+            raise ValueError('clique_mixture must be True.')
+        if dgp_cls is not BernoulliNetwork or entry.get('rdpg') is not True:
+            raise ValueError('clique_mixture requires BernoulliNetwork with rdpg: true.')
+        return (partial(dgp_cls, clique_mixture=True, pi=entry['pi'], rdpg=True),
+                SOLVER_REGISTRY[entry['solver']])
     solver = SOLVER_REGISTRY[entry["solver"]]
 
     reserved = {

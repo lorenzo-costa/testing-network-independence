@@ -182,6 +182,9 @@ def _run_group(rows, metrics, method_params, entropy, replicate, data_key,
                for metric in metrics}
         out["args"] = args
         out["density"] = density
+        diagnostics = getattr(getattr(dgp, 'latent_sampler', None), 'diagnostics', None)
+        if diagnostics is not None:
+            out['diagnostics'] = deepcopy(diagnostics)
         if result_callback is None:
             results.append(out)
         else:
