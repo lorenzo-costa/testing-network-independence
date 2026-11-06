@@ -66,7 +66,7 @@ class ConditionalIndependenceCopulaSampler:
 
     _COPULA_MODELS = {"gaussian", "student_t", "clayton", "gumbel"}
 
-    def __init__(
+    def __init__( 
         self,
         n,
         k,

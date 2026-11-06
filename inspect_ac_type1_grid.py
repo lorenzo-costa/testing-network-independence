@@ -70,7 +70,7 @@ def parse_args():
     parser.add_argument(
         "--predictor-distribution",
         choices=("gaussian", "uniform_rdpg"),
-        default="gaussian",
+        default="uniform_rdpg",
     )
     latent_group = parser.add_mutually_exclusive_group()
     latent_group.add_argument(
