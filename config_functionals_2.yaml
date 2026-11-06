@@ -25,25 +25,25 @@ simulation:
       kwargs: {}
     - name: threshold
       kwargs:
-        weights: [0.5, 0.5, 0.5, 0.5]
+        weights: [0.5, 0.5, 0.5]
         normalize_index: true
         threshold: 0.5
     - name: sigmoid
       kwargs:
-        weights: [0.5, 0.5, 0.5, 0.5]
+        weights: [0.5, 0.5, 0.5]
         normalize_index: true
         threshold: 0.5
         slope: 17.0
         global_scale: 10.0
     - name: piecewise
       kwargs:
-        weights: [0.5, 0.5, 0.5, 0.5]
+        weights: [0.5, 0.5, 0.5]
         normalize_index: true
         switch_feature: 0
         threshold: 0.5
     - name: sine
       kwargs:
-        weights: [0.5, 0.5, 0.5, 0.5]
+        weights: [0.5, 0.5, 0.5]
         normalize_index: true
         frequency: 30.0
         global_scale: 10.0
@@ -60,7 +60,7 @@ simulation:
         center: 0.5
     - name: pareto
       kwargs:
-        weights: [0.5, 0.5, 0.5, 0.5]
+        weights: [0.5, 0.5, 0.5]
         normalize_index: true
         alpha: 0.2
         scale: 0.05
