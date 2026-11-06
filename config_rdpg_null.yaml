@@ -7,7 +7,7 @@
 # Simulation Setup
 # -----------------------------------------------------------------------------
 simulation:
-  nsim: 200         # Number of Monte Carlo repetitions per parameter combination
+  nsim: 300         # Number of Monte Carlo repetitions per parameter combination
   seed: 1                 # Master RNG seed for reproducibility (passed to np.random.default_rng)
 
   n: [100, 200, 500, 1000]      # Sample sizes (number of nodes)
@@ -22,8 +22,6 @@ simulation:
       y: gaussian
     - z: "uniform 0 0.5773502692"
       y: cauchy
-    - z: "uniform 0 0.5773502692"
-      y: "chi 5"
     - z: "uniform 0 0.5773502692"
       y: "pareto 1.5"
 

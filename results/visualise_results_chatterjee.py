@@ -160,6 +160,7 @@ COLORS = {
     "AC_1": "#D55E00",
     "AC_sqrt": "#009E73",
     "AC_adaptive": "#CC79A7",
+    "CanonicalCorrelationTest": "#222222",
     "RVTest_permutation": "#E69F00",
     "RVTest_asymptotic": "#222222",
 }
@@ -169,6 +170,7 @@ MARKERS = {
     "AC_1": "D",
     "AC_sqrt": "^",
     "AC_adaptive": "s",
+    "CanonicalCorrelationTest": "P",
     "RVTest_permutation": "v",
     "RVTest_asymptotic": "o",
 }
@@ -178,6 +180,7 @@ LINESTYLES = {
     "AC_1": "-",
     "AC_sqrt": "-",
     "AC_adaptive": "-",
+    "CanonicalCorrelationTest": "-",
     "RVTest_permutation": "-",
     "RVTest_asymptotic": "-",
 }
@@ -187,6 +190,7 @@ METHOD_LABELS = {
     "AC_1": r"AC ($k=1$)",
     "AC_sqrt": r"AC ($k=\sqrt{n}$)",
     "AC_adaptive": "AC (adaptive)",
+    "CanonicalCorrelationTest": "CCA",
     "RVTest_permutation": "RV (permutation)",
     "RVTest_asymptotic": "RV (asymptotic)",
 }
@@ -200,6 +204,10 @@ METHODS = (
     "RVTest_asymptotic",
 )
 RDPG_METHODS = METHODS
+RDPG_AGGREGATE_METHODS = (*RDPG_METHODS, "CanonicalCorrelationTest")
+RDPG_BY_N_METHODS = (
+    "DC", "AC_1", "AC_sqrt", "AC_adaptive", "CanonicalCorrelationTest",
+)
 
 COPULAS = ("gaussian", "student_t", "clayton", "mixture")
 MARGINALS_Z = ("gaussian", "chi df=5")
@@ -208,6 +216,7 @@ MARGINALS_Y = ("gaussian", "chi df=5", "cauchy")
 RDPG_COPULAS = ("gaussian", "clayton", "mixture")
 RDPG_MARGINALS_Z = ("uniform 0 0.5773502692",)
 RDPG_MARGINALS_Y = ("gaussian", "chi df=5", "cauchy", "pareto 1.5")
+RDPG_BY_N_MARGINALS_Y = ("gaussian", "cauchy", "pareto 1.5")
 SHARDED_FUNCTIONAL_FORMS = (
     "linear",
     "piecewise",
@@ -1074,7 +1083,7 @@ def aggregate_rdpg_copula_results(data: pd.DataFrame) -> pd.DataFrame:
         & data["copula"].isin(RDPG_COPULAS)
         & data["marginal_z"].isin(RDPG_MARGINALS_Z)
         & data["marginal_y"].isin(RDPG_MARGINALS_Y)
-        & data["method"].isin(RDPG_METHODS)
+        & data["method"].isin(RDPG_AGGREGATE_METHODS)
     ].copy()
     return aggregate_results(
         filtered,
@@ -1093,15 +1102,15 @@ def plot_rdpg_copula_figures(data: pd.DataFrame, output_dir: Path) -> None:
         "RDPG copula power curves",
     )
     fig, axes = plt.subplots(
-        len(RDPG_MARGINALS_Y),
+        len(RDPG_BY_N_MARGINALS_Y),
         len(RDPG_COPULAS),
-        figsize=(8.0, 7.0),
+        figsize=(8.0, 6.5),
         sharex=True,
         sharey=True,
         squeeze=False,
         layout="constrained",
     )
-    for row, marginal_y in enumerate(RDPG_MARGINALS_Y):
+    for row, marginal_y in enumerate(RDPG_BY_N_MARGINALS_Y):
         for column, copula in enumerate(RDPG_COPULAS):
             ax = axes[row, column]
             panel = aggregated[
@@ -1113,7 +1122,7 @@ def plot_rdpg_copula_figures(data: pd.DataFrame, output_dir: Path) -> None:
                 panel,
                 y_mean="Rejection_mean",
                 y_sem="Rejection_sem",
-                methods=RDPG_METHODS,
+                methods=RDPG_BY_N_METHODS,
             )
             style_probability_axis(ax)
 
@@ -1121,16 +1130,14 @@ def plot_rdpg_copula_figures(data: pd.DataFrame, output_dir: Path) -> None:
         axes,
         column_values=RDPG_COPULAS,
         column_prefix="",
-        row_values=RDPG_MARGINALS_Y,
+        row_values=RDPG_BY_N_MARGINALS_Y,
         row_prefix="Y marginal: ",
         row_labeler=display_marginal_label,
     )
-    fig.suptitle(
-        "Power by network size — RDPG Bernoulli network, $k=k_y=3$"
-    )
-    fig.supxlabel(r"Network size, $n$")
+    fig.suptitle("Power by network size")
+    fig.supxlabel("Number of nodes")
     fig.supylabel("Power")
-    add_shared_legend(fig, lines=True, methods=RDPG_METHODS)
+    add_shared_legend(fig, lines=True, methods=RDPG_BY_N_METHODS)
     save_figure(fig, output_dir, "27_rdpg_copulas_by_n_ky3_v2")
 
     point_n = 500
