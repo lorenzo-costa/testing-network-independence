@@ -1,15 +1,17 @@
 # Bernoulli RDPG with two strata and category-specific Z and Y marginals.
-# Each setup fixes Z | X=0 ~ Uniform(0, 0.4) and
-# Z | X=1 ~ Uniform(0.6, 1). The eight setups contain four Y pairs and
-# their reversals. "gaussian <mean>" denotes a unit-variance normal.
+# Each Z coordinate follows the original stratum interval scaled by 1/sqrt(3):
+# Z | X=0 ~ Uniform(0, 0.4/sqrt(3)) and
+# Z | X=1 ~ Uniform(0.6/sqrt(3), 1/sqrt(3)). Thus Z_i dot Z_j <= 1.
+# The eight setups contain four Y pairs and their reversals.
+# "gaussian <mean>" denotes a unit-variance normal for each Y coordinate.
 
 simulation:
   nsim: 100
   seed: 1
-  n: [100, 300]
+  n: [100]
   k: [3]
   ky: [3]
-  rho: [0.3]
+  rho: [0, 0.3]
   alpha: [0.05]
   edge_var: [3]  # Required by the shared design loader; ignored by BernoulliNetwork.
   marginals: [null]  # Class-specific marginals are set in each setup below.
@@ -47,42 +49,42 @@ setups:
   # Pareto(1.5) versus N(0, 1), then reverse the Y assignments.
   - <<: *rdpg_setup
     marginals_by_class:
-      - {z: "uniform 0 0.4", y: "pareto 1.5"}
-      - {z: "uniform 0.6 1", y: "gaussian 0"}
+      - {z: "uniform 0 0.2309401076758503", y: "pareto 1.5"}
+      - {z: "uniform 0.3464101615137754 0.5773502691896257", y: "gaussian 0"}
   - <<: *rdpg_setup
     marginals_by_class:
-      - {z: "uniform 0 0.4", y: "gaussian 0"}
-      - {z: "uniform 0.6 1", y: "pareto 1.5"}
+      - {z: "uniform 0 0.2309401076758503", y: "gaussian 0"}
+      - {z: "uniform 0.3464101615137754 0.5773502691896257", y: "pareto 1.5"}
 
   # Cauchy versus N(0, 1), then reverse the Y assignments.
   - <<: *rdpg_setup
     marginals_by_class:
-      - {z: "uniform 0 0.4", y: cauchy}
-      - {z: "uniform 0.6 1", y: "gaussian 0"}
+      - {z: "uniform 0 0.2309401076758503", y: cauchy}
+      - {z: "uniform 0.3464101615137754 0.5773502691896257", y: "gaussian 0"}
   - <<: *rdpg_setup
     marginals_by_class:
-      - {z: "uniform 0 0.4", y: "gaussian 0"}
-      - {z: "uniform 0.6 1", y: cauchy}
+      - {z: "uniform 0 0.2309401076758503", y: "gaussian 0"}
+      - {z: "uniform 0.3464101615137754 0.5773502691896257", y: cauchy}
 
   # N(-2, 1) versus N(2, 1), then reverse the Y assignments.
   - <<: *rdpg_setup
     marginals_by_class:
-      - {z: "uniform 0 0.4", y: "gaussian -2"}
-      - {z: "uniform 0.6 1", y: "gaussian 2"}
+      - {z: "uniform 0 0.2309401076758503", y: "gaussian -2"}
+      - {z: "uniform 0.3464101615137754 0.5773502691896257", y: "gaussian 2"}
   - <<: *rdpg_setup
     marginals_by_class:
-      - {z: "uniform 0 0.4", y: "gaussian 2"}
-      - {z: "uniform 0.6 1", y: "gaussian -2"}
+      - {z: "uniform 0 0.2309401076758503", y: "gaussian 2"}
+      - {z: "uniform 0.3464101615137754 0.5773502691896257", y: "gaussian -2"}
 
   # N(0, 1) versus chi-squared(df=3), then reverse the Y assignments.
   - <<: *rdpg_setup
     marginals_by_class:
-      - {z: "uniform 0 0.4", y: "gaussian 0"}
-      - {z: "uniform 0.6 1", y: "chi2 3"}
+      - {z: "uniform 0 0.2309401076758503", y: "gaussian 0"}
+      - {z: "uniform 0.3464101615137754 0.5773502691896257", y: "chi2 3"}
   - <<: *rdpg_setup
     marginals_by_class:
-      - {z: "uniform 0 0.4", y: "chi2 3"}
-      - {z: "uniform 0.6 1", y: "gaussian 0"}
+      - {z: "uniform 0 0.2309401076758503", y: "chi2 3"}
+      - {z: "uniform 0.3464101615137754 0.5773502691896257", y: "gaussian 0"}
 
 metrics:
   compute_all: true
