@@ -8,16 +8,16 @@
 simulation:
   nsim: 200
   seed: 1
-  n: [200, 500]
+  n: [100, 200, 500, 1000]
   k: [3]
   ky: [3]
-  rho: [0.3, 0.5]
+  rho: [0.3, 0.5, 0.75]
   alpha: [0.05]
   edge_var: [3]  # Required by the shared design loader; ignored by BernoulliNetwork.
   marginals: [null]  # Class-specific marginals are set in each setup below.
 
 methods:
-  npermutations: [200]
+  npermutations: [500]
   use_true_latent: [false]
   list:
     - name: MultivariateACTest
@@ -54,8 +54,8 @@ setups:
   # # Pareto(1.5) versus N(0, 1), then reverse the Y assignments.
   - <<: *rdpg_setup
     marginals_by_class:
-      - {z: "uniform 0 0.2309401076758503", y: "pareto 1.5"}
-      - {z: "uniform 0.3464101615137754 0.5773502691896257", y: "gaussian 0"}
+      - {z: "uniform 0 0.5773502691896257", y: "pareto 1.5"}
+      - {z: "uniform 0.1 0.5773502691896257", y: "gaussian 0"}
   # - <<: *rdpg_setup
   #   marginals_by_class:
   #     - {z: "uniform 0 0.2309401076758503", y: "gaussian 0"}
@@ -64,8 +64,8 @@ setups:
   # Cauchy versus N(0, 1), then reverse the Y assignments.
   - <<: *rdpg_setup
     marginals_by_class:
-      - {z: "uniform 0 0.2309401076758503", y: cauchy}
-      - {z: "uniform 0.3464101615137754 0.5773502691896257", y: "gaussian 0"}
+      - {z: "uniform 0 0.5773502691896257", y: cauchy}
+      - {z: "uniform 0.1 0.5773502691896257", y: "gaussian 0"}
   # - <<: *rdpg_setup
   #   marginals_by_class:
   #     - {z: "uniform 0 0.2309401076758503", y: "gaussian 0"}
@@ -74,8 +74,8 @@ setups:
   # N(-2, 1) versus N(2, 1), then reverse the Y assignments.
   - <<: *rdpg_setup
     marginals_by_class:
-      - {z: "uniform 0 0.2309401076758503", y: "gaussian -2"}
-      - {z: "uniform 0.3464101615137754 0.5773502691896257", y: "gaussian 2"}
+      - {z: "uniform 0 0.5773502691896257", y: "gaussian -2"}
+      - {z: "uniform 0.1 0.5773502691896257", y: "gaussian 2"}
   # - <<: *rdpg_setup
   #   marginals_by_class:
   #     - {z: "uniform 0 0.2309401076758503", y: "gaussian 2"}
@@ -84,8 +84,8 @@ setups:
   # # N(0, 1) versus chi-squared(df=3), then reverse the Y assignments.
   - <<: *rdpg_setup
     marginals_by_class:
-      - {z: "uniform 0 0.2309401076758503", y: "gaussian 0"}
-      - {z: "uniform 0.3464101615137754 0.5773502691896257", y: "chi2 3"}
+      - {z: "uniform 0 0.5773502691896257", y: "gaussian 0"}
+      - {z: "uniform 0.1 0.5773502691896257", y: "chi2 3"}
   # - <<: *rdpg_setup
   #   marginals_by_class:
   #     - {z: "uniform 0 0.2309401076758503", y: "chi2 3"}
