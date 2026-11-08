@@ -47,7 +47,7 @@ def test_rv_permutation_test_runs_by_itself():
     method = RVTest(
         solver=dummy_solver,
         use_true_latent=True,
-        approximation="permutation",
+        test_type="permutation",
         npermutations=4,
         rng=np.random.default_rng(10),
         n_jobs=2,
@@ -58,9 +58,7 @@ def test_rv_permutation_test_runs_by_itself():
     result = method.get_estimated()
 
     assert method.get_name() == "RV_PermutationTest_covariate"
-    assert method.n_jobs == 2
-    assert method.batch_size == 2
-    assert len(method.permutation_distribution) == 4
+    assert len(method.null_distribution) == 4
     assert np.isfinite(result["test_stat"])
     assert 0.0 <= result["p-value"] <= 1.0
     assert isinstance(result["reject_null"], bool)
@@ -76,7 +74,7 @@ def test_asymptotic_rv_null_calibration_with_identity_covariance():
 
     method = RVTest(
         use_true_latent=True,
-        approximation="asymptotic",
+        test_type="asymptotic",
         alpha=alpha,
     )
     critical_value = chi2.ppf(1.0 - alpha, df=k) / np.sqrt(k)
@@ -96,13 +94,37 @@ def test_asymptotic_rv_null_calibration_with_identity_covariance():
     )
 
 
-def test_rv_test_rejects_unknown_approximation():
+def test_asymptotic_rv_fit_remains_available():
+    method = RVTest(use_true_latent=True, test_type="asymptotic")
+    method.fit(latent_data())
+    assert np.isfinite(method.test_stat_estimate)
+    assert 0 <= method.pvalue <= 1
+    assert isinstance(method.reject_null, bool)
+
+
+def test_rv_test_rejects_unknown_test_type():
     method = RVTest(
         solver=dummy_solver,
         use_true_latent=True,
-        approximation="invalid",
+        test_type="invalid",
         npermutations=1,
     )
 
     with pytest.raises(ValueError, match="Invalid approximation method"):
         method.fit(latent_data())
+
+
+def test_rv_rejects_old_approximation_keyword():
+    with pytest.raises(TypeError, match="use 'test_type'"):
+        RVTest(use_true_latent=True, approximation="asymptotic")
+
+
+def test_rv_test_forwards_parallel_options():
+    method = RVTest(
+        use_true_latent=True,
+        n_jobs=2,
+        batch_size=3,
+        verbose=True,
+    )
+
+    assert (method.n_jobs, method.batch_size, method.verbose) == (2, 3, True)

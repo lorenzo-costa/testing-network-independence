@@ -22,9 +22,12 @@ _NOT_FOUND = object()
 
 METHOD_LABELS = {
     "DistanceCorrelationTest": "DC",
+    "DiffusionCorrelation": "DC",
+    "DistanceCorrelation_covariate": "DC",
+    "DistanceCorrelation_latent": "DC",
+    "DistanceCorrelation_observed": "DC",
     "RVTest": "RV",
     "ObservedCVM": "CVM",
-    "CanonicalCorrelationTest": "CCA",
     "MultivariateACTest_0.5": "AC_sqrt",
     "MultivariateACTest_third": "AC_third",
     "MultivariateACTest_sqrt_avg": "AC_sqrt_avg",
@@ -35,13 +38,6 @@ METHOD_LABELS = {
     "MultivariateACTest_quarter_max": "AC_quarter_max",
     "MultivariateACTest_1.0": "AC_1",
     "MultivariateACTest_True": "AC_adaptive",
-}
-
-LATENT_SIM_LABELS = {
-    "multiplicative_noise": "mult_noise",
-    "uncorrelated_bernoulli": "bernoulli",
-    "joint_normal": "normal",
-    "logarithmic": "log",
 }
 
 MARGINAL_LABELS = {
@@ -288,7 +284,6 @@ def parse_config_string(value: Any) -> dict[str, Any]:
 
         method_arguments = {
             "NN_number": "M",
-            "aggregate": "aggregate_coeff",
             "approximation": "approximation",
             "permutation_type": "permutation_type",
             "adaptive_m": "adaptive_m",
@@ -309,7 +304,6 @@ def parse_config_string(value: Any) -> dict[str, Any]:
         "n_strata": "C",
         "stratum_covariance": "stratum_covariance",
         "copula_model": "copula_model",
-        "latent_sim": "latent_sim",
     }
     for output_name, argument_name in optional_arguments.items():
         extracted = extract_argument(value, argument_name)
@@ -471,8 +465,6 @@ def _add_config_columns(results: pd.DataFrame) -> pd.DataFrame:
         "make_sparse": ("make_sparse", None),
         "use_true_x": ("use_true_latent_x", None),
         "use_true_z": ("use_true_latent_z", None),
-        "latent_sim": ("latent_sim", _clean_string),
-        "aggregate": ("aggregate", None),
         "copula": ("copula_model", None),
         "dgp": ("dgp_name", None),
         "marginal_y": ("marginal_y", _clean_string),
@@ -481,11 +473,7 @@ def _add_config_columns(results: pd.DataFrame) -> pd.DataFrame:
         "degree": ("degree", None),
         "NN_number": ("NN_number", None),
         "functional_form": ("functional_form", _clean_string),
-        "sbm_covariate_sampling": (
-            "sbm_covariate_sampling",
-            _clean_string,
-        ),
-        "assortativity": ("assortativity", None),
+        "predictor_distribution": ("predictor_distribution", _clean_string),
         "x_distribution": ("x_distribution", _clean_string),
         "approximation": ("approximation", _clean_string),
         "adaptive_m": ("adaptive_m", None),
@@ -615,7 +603,6 @@ def _augment_and_rename_methods(results: pd.DataFrame) -> pd.DataFrame:
     for variant_column in ("NN_number", "approximation", "adaptive_m"):
         result = _append_method_variant(result, variant_column)
     result["method"] = result["method"].replace(METHOD_LABELS)
-    result["latent_sim"] = result["latent_sim"].replace(LATENT_SIM_LABELS)
     return result
 
 

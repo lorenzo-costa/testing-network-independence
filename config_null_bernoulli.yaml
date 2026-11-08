@@ -40,16 +40,13 @@ methods:
   use_true_latent: [False]
 
   list:
-    - name: DiffusionCorrelation
-      kwargs: {}
+    - name: RVtest
+      kwargs:
+        test_type: asymptotic
 
     - name: RVtest
       kwargs:
-        approximation: asymptotic
-
-    - name: RVtest
-      kwargs:
-        approximation: permutation
+        test_type: permutation
         permutation_type: latent
 
     - name: MultivariateACTest

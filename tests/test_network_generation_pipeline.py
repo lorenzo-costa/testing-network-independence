@@ -7,12 +7,10 @@ from src.latent_samplers.conditional_independence_copula_sampler import (
     ConditionalIndependenceCopulaSampler,
 )
 from src.latent_samplers.functional_sampler import FunctionalGenerator
-from src.latent_samplers.orthogonal_subspace import OrthogonalSubspaceSampler
 from src.latent_samplers.post_nonlinear_noise_sampler import (
     PostNonLinearNoiseSampler,
 )
 from src.latent_samplers.rdpg_sampler import RDPGGenerator
-from src.latent_samplers.sbm_cov_sampler import SBMCovariateGenerator
 
 
 LATENT_POSITION_CONFIGS = [
@@ -54,28 +52,11 @@ LATENT_POSITION_CONFIGS = [
         id="dirichlet-rdpg",
     ),
     pytest.param(
-        {"dim_common": 1, "shared_latent_type": "gaussian"},
-        OrthogonalSubspaceSampler,
-        2,
-        1,
-        id="orthogonal-gaussian",
-    ),
-    pytest.param(
         {"functional_form": "linear", "ky": 1},
         FunctionalGenerator,
         2,
         1,
         id="functional-linear",
-    ),
-    pytest.param(
-        {
-            "sbm_covariate_sampling": "step",
-            "y_distribution": "gaussian",
-        },
-        SBMCovariateGenerator,
-        2,
-        1,
-        id="sbm-continuous-covariate",
     ),
 ]
 

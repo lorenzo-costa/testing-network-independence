@@ -39,7 +39,7 @@ class QAP(BaseMethod):
         self.alpha = alpha
         self.npermutations = npermutations
         self.null_hypothesis = null_hypothesis
-        self.permutation_distribution = []
+        self.null_distribution = []
 
         # for consistency with other methods
         self.X = None
@@ -68,20 +68,20 @@ class QAP(BaseMethod):
         n = A.shape[0]
 
         self.test_stat_estimate = self._compute_test_stat(A, B)
-        self.permutation_distribution = []
+        self.null_distribution = []
 
         for i in range(self.npermutations):
             permutation = self.rng.permutation(n)
             B_perm = B[permutation, :][:, permutation]
             test_stat_perm = self._compute_test_stat(A, B_perm)
-            self.permutation_distribution.append(test_stat_perm)
+            self.null_distribution.append(test_stat_perm)
 
         # compute pvalue
-        permutation_distribution = np.asarray(self.permutation_distribution)
+        null_distribution = np.asarray(self.null_distribution)
         self.pvalue = (
             1
             + np.count_nonzero(
-                np.abs(permutation_distribution) >= np.abs(self.test_stat_estimate)
+                np.abs(null_distribution) >= np.abs(self.test_stat_estimate)
             )
         ) / (self.npermutations + 1)
 
@@ -216,17 +216,17 @@ class MRQAP(BaseMethod):
             self.rng.permutation(self.n_nodes) for _ in range(self.npermutations)
         ]
         if self.permutation_strategy == "y_permutation":
-            permutation_distribution = self._permute_y(q_full, r_full)
+            null_distribution = self._permute_y(q_full, r_full)
         else:
-            permutation_distribution = self._double_semipartialling(
+            null_distribution = self._double_semipartialling(
                 control_design, tested, outcome
             )
 
-        self.permutation_distribution = np.asarray(
-            permutation_distribution, dtype=float
+        self.null_distribution = np.asarray(
+            null_distribution, dtype=float
         )
         extreme = np.count_nonzero(
-            np.abs(self.permutation_distribution) >= np.abs(self.test_stat_estimate)
+            np.abs(self.null_distribution) >= np.abs(self.test_stat_estimate)
         )
         self.pvalue = (extreme + 1) / (self.npermutations + 1)
         self.reject_null = bool(self.pvalue < self.alpha)

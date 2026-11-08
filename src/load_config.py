@@ -3,17 +3,14 @@ load_config.py
 --------------
 Universal config loader for all simulation experiments.
 
-Supports six experiment types, auto-detected from YAML structure:
+Supports experiment types auto-detected from YAML structure:
   - "standard"       -> main study + observed CVM sweep (same structure, different values)
-  - "lee2019"        -> latent functional-relationship study (Lee et al. 2019)
   - "diff_marginals" -> asymmetric per-network marginal distributions
-  - "sbm"            -> covariate-aware stochastic block model study
-  - "multiness"      -> multi-network study with common/individual latent dimensions
 
 Public API
 ----------
     cfg          = load_config("config.yaml")      # auto-detects type
-    h1, h0       = build_factorial_design(cfg)     # h0 is None for lee2019
+    design       = build_factorial_design(cfg)
     df           = flatten_args_columns(df)        # common post-processing
 """
 
@@ -52,15 +49,11 @@ SOLVER_REGISTRY = {
 
 METHOD_REGISTRY = {
     "RVtest": RVTest,
-    "DiffusionCorrelation": DistanceCorrelationTest,
     "MultivariateACTest": MultivariateACTest,
-    "CanonicalCorrelation": CanonicalCorrelationTest,
+    "DistanceCorrelationTest": DistanceCorrelationTest,
+    "DiffusionCorrelation": DistanceCorrelationTest,
     "MRQAP": MRQAP,
 }
-
-# Latent-sim shapes that do NOT accept sim_kwargs={'noise': True}
-_NO_NOISE_SIMS = {"multimodal_independence"}
-
 
 # =============================================================================
 # Internal resolvers
@@ -73,6 +66,8 @@ def _resolve_method(entry: dict):
     """
     name = entry["name"]
     kwargs = entry.get("kwargs") or {}
+    if "approximation" in kwargs:
+        raise ValueError("'approximation' is no longer supported; use 'test_type'.")
     cls = METHOD_REGISTRY[name]
 
     return partial(cls, **kwargs) if kwargs else cls
@@ -98,10 +93,19 @@ def _resolve_copula_setup(entry: dict):
         "rdpg",
         "rdpg_distr",
     }
+    copula_keys = {
+        "center_latent",
+        "column_covariance",
+        "column_covariance_y",
+        "cross_covariance",
+    }
     conditional_keys = {
         "C",
         "rho",
         "marginals",
+        "marginals_by_class",
+        "means",
+        "covariances",
         "class_probabilities",
         "p",
         "center_latent",
@@ -127,6 +131,8 @@ def _resolve_copula_setup(entry: dict):
         reserved.update(conditional_keys)
     if entry.get("post_nonlinear_noise") is not None:
         reserved.update(post_nonlinear_keys)
+    if entry.get("copula_model") is not None:
+        reserved.update(copula_keys)
 
     copula_params = {k: v for k, v in entry.items() if k not in reserved}
 
@@ -144,50 +150,14 @@ def _resolve_copula_setup(entry: dict):
         dgp_kwargs.update(
             {key: entry[key] for key in conditional_keys if key in entry}
         )
+    if entry.get("copula_model") is not None:
+        dgp_kwargs.update({key: entry[key] for key in copula_keys if key in entry})
     if entry.get("post_nonlinear_noise") is not None:
         dgp_kwargs.update(
             {key: entry[key] for key in post_nonlinear_keys if key in entry}
         )
 
     return (partial(dgp_cls, **dgp_kwargs), solver)
-
-
-def _resolve_lee2019_setups(setups_cfg: dict) -> list:
-    """
-    Expand gaussian_latent_sims / bernoulli_latent_sims name-lists into
-    (partial(DGP, latent_sim=...), partial(ASE, k=...)) tuples.
-    multimodal_independence is special-cased: it receives no sim_kwargs.
-    """
-    ase_k = setups_cfg.get("ase_k", None)
-    if ase_k is None:
-        solver = ASE
-    else:
-        solver = partial(ASE, k=ase_k)
-    rdpg = setups_cfg.get("bernoulli_rdpg", "minmax")
-    result = []
-
-    for sim_name in setups_cfg["gaussian_latent_sims"]:
-        if sim_name in _NO_NOISE_SIMS:
-            dgp = partial(GaussianNetwork, latent_sim=sim_name)
-        else:
-            dgp = partial(
-                GaussianNetwork, latent_sim=sim_name, sim_kwargs={"noise": True}
-            )
-        result.append((dgp, solver))
-
-    for sim_name in setups_cfg["bernoulli_latent_sims"]:
-        if sim_name in _NO_NOISE_SIMS:
-            dgp = partial(BernoulliNetwork, rdpg=rdpg, latent_sim=sim_name)
-        else:
-            dgp = partial(
-                BernoulliNetwork,
-                rdpg=rdpg,
-                latent_sim=sim_name,
-                sim_kwargs={"noise": True},
-            )
-        result.append((dgp, solver))
-
-    return result
 
 
 def _as_sweep(value, name: str) -> list:
@@ -201,92 +171,15 @@ def _as_sweep(value, name: str) -> list:
     return [value]
 
 
-def _resolve_sbm_setups(setups_cfg: list) -> list:
-    """Resolve SBM DGP/solver pairs.
-
-    An SBM config may omit ``sbm: true`` in each setup because the top-level
-    ``sbm`` block already identifies the experiment.  The flag is injected
-    unconditionally here, while any other setup-specific DGP keyword arguments
-    are preserved.
-    """
-    if not isinstance(setups_cfg, list) or not setups_cfg:
-        raise TypeError("SBM setups must be a non-empty list of mappings")
-
-    resolved = []
-    for entry in setups_cfg:
-        if not isinstance(entry, dict):
-            raise TypeError("Each SBM setup must be a mapping")
-        try:
-            dgp_cls = DGP_REGISTRY[entry["dgp"]]
-            solver = SOLVER_REGISTRY[entry["solver"]]
-        except KeyError as exc:
-            raise ValueError(
-                "Each SBM setup must name a registered 'dgp' and 'solver'"
-            ) from exc
-
-        dgp_kwargs = {
-            key: value for key, value in entry.items() if key not in {"dgp", "solver"}
-        }
-        dgp_kwargs["sbm"] = True
-        resolved.append((partial(dgp_cls, **dgp_kwargs), solver))
-
-    return resolved
-
-
-def _resolve_sbm_block(sbm_cfg: dict) -> dict:
-    """Normalise optional SBM-specific sweeps.
-
-    ``assortativity`` defaults to ``0.5`` when it is not specified.  The
-    covariate-aware fields (``sbm_covariate_sampling`` and ``y_distribution``) are optional
-    as a pair so this loader accepts both the supplied covariate-aware setup and
-    earlier block/assignment-style SBM configurations.
-    """
-    if not isinstance(sbm_cfg, dict):
-        raise TypeError("sbm must be a mapping")
-
-    has_sampling = "sbm_covariate_sampling" in sbm_cfg
-    has_y_distribution = "y_distribution" in sbm_cfg
-    if has_sampling != has_y_distribution:
-        raise ValueError(
-            "sbm.sbm_covariate_sampling and sbm.y_distribution must be supplied together"
-        )
-
-    resolved = {
-        "assortativity": _as_sweep(
-            sbm_cfg.get("assortativity", 0.5), "sbm.assortativity"
-        )
-    }
-
-    for name in (
-        "sbm_covariate_sampling",
-        "y_distribution",
-        "sparsity_bias",
-        "prob_switch",
-        "assignment_mode",
-        "block_probs_type",
-        "block_probs",
-        "y_upper_bound",
-        "y_probabilities",
-        "softmax_intercept",
-        "softmax_slope",
-        "directed",
-        "self_loops",
-    ):
-        if name in sbm_cfg:
-            resolved[name] = _as_sweep(sbm_cfg[name], f"sbm.{name}")
-
-    return resolved
-
-
 def _resolve_methods_block(methods_cfg: dict) -> dict:
     """Parse the YAML methods block into a normalised dict for product sweeps."""
+    if "approximation" in methods_cfg:
+        raise ValueError("'approximation' is no longer supported; use 'test_type'.")
     return {
         "list": [_resolve_method(m) for m in methods_cfg["list"]],
         "npermutations": methods_cfg.get("npermutations", [200]),
         "df": methods_cfg.get("df", [3]),
-        "approximation": methods_cfg.get(
-            "approximation"
-        ),  # None when absent (e.g. multiness)
+        "test_type": methods_cfg.get("test_type"),
         "use_true_latent": methods_cfg.get("use_true_latent"),  # None when absent
     }
 
@@ -294,14 +187,25 @@ def _resolve_methods_block(methods_cfg: dict) -> dict:
 def _resolve_noise_options(simulation_cfg: dict) -> dict:
     """Validate optional functional-noise controls from the simulation block.
 
-    ``noise_scale`` is an integer and ``noise_type`` is a string.  Both may
-    also be supplied as lists to sweep several values; scalar values are
-    normalised to one-element lists for the factorial design.
+    ``noise_scale`` and ``snr`` are numeric and ``noise_type`` is a string.
+    Each may also be supplied as a list to sweep several values; scalars are
+    normalised to one-element lists for the factorial design.  ``snr`` is the
+    signal fraction and maps to the functional sampler's ``rho`` parameter.
     """
     def _as_list(value):
         return value if isinstance(value, list) else [value]
 
     resolved = {}
+    if "snr" in simulation_cfg:
+        if "rho" in simulation_cfg:
+            raise ValueError("Specify only one of simulation.snr and simulation.rho")
+        snrs = _as_list(simulation_cfg["snr"])
+        if any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in snrs):
+            raise TypeError("simulation.snr must be a number or a list of numbers")
+        if not snrs or any(not 0 < value <= 1 for value in snrs):
+            raise ValueError("simulation.snr must contain values satisfying 0 < snr <= 1")
+        resolved["rho"] = snrs
+
     if "noise_scale" in simulation_cfg:
         scales = _as_list(simulation_cfg["noise_scale"])
         if any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in scales):
@@ -324,7 +228,9 @@ def _resolve_functionals_block(functionals_cfg):
     Each entry is retained as a plain, serialisable descriptor so downstream
     simulation code can dispatch the functional by name while receiving its
     keyword arguments unchanged.  A bare string is also accepted as shorthand
-    for ``{"name": <string>, "kwargs": {}}``.
+    for ``{"name": <string>, "kwargs": {}}``. Optional
+    ``kwargs_by_predictor_distribution`` overrides individual kwargs for
+    matching predictor distributions when the design rows are built.
     """
     if functionals_cfg is None:
         return None
@@ -342,8 +248,47 @@ def _resolve_functionals_block(functionals_cfg):
         kwargs = entry.get("kwargs") or {}
         if not isinstance(kwargs, dict):
             raise TypeError("functional kwargs must be a mapping")
+        descriptor = {"functional_form": entry["name"], "function_params": kwargs}
+        if "kwargs_by_predictor_distribution" in entry:
+            overrides = entry["kwargs_by_predictor_distribution"]
+            if not isinstance(overrides, dict) or any(
+                not isinstance(distribution, str)
+                or not isinstance(params, dict)
+                for distribution, params in overrides.items()
+            ):
+                raise TypeError(
+                    "functional kwargs_by_predictor_distribution must map "
+                    "predictor names to parameter mappings"
+                )
+            descriptor["kwargs_by_predictor_distribution"] = overrides
+        resolved.append(descriptor)
+    return resolved
+
+
+def _resolve_predictor_noise_sweeps(predictor_noise_cfg):
+    """Validate paired functional predictor-distribution and noise sweeps."""
+    if not isinstance(predictor_noise_cfg, list) or not predictor_noise_cfg:
+        raise TypeError("simulation.predictor_noise_sweeps must be a non-empty list")
+
+    resolved = []
+    for entry in predictor_noise_cfg:
+        if not isinstance(entry, dict):
+            raise TypeError("Each predictor_noise_sweeps entry must be a mapping")
+        distribution = entry.get("predictor_distribution")
+        noise_scale = entry.get("noise_scale")
+        if not isinstance(distribution, str) or not distribution:
+            raise TypeError(
+                "predictor_distribution in predictor_noise_sweeps must be a string"
+            )
+        if isinstance(noise_scale, bool) or not isinstance(noise_scale, (int, float)):
+            raise TypeError(
+                "noise_scale in predictor_noise_sweeps must be a number"
+            )
         resolved.append(
-            {"functional_form": entry["name"], "function_params": kwargs}
+            {
+                "predictor_distribution": distribution,
+                "noise_scale": noise_scale,
+            }
         )
     return resolved
 
@@ -358,19 +303,12 @@ def _detect_experiment_type(raw: dict) -> str:
     Infer experiment type from YAML structure (no explicit tag required).
 
     Detection priority (most specific first):
-      1. "sbm"                  -- top-level ``sbm`` block is present
-      2. "lee2019"              -- setups contain ``gaussian_latent_sims``
-      3. "conditioning_mixed"   -- setups select both conditioning samplers
-      4. "post_nonlinear_noise" -- a setup selects that sampler
-      5. "conditional_copula"   -- a setup selects that sampler
-      6. Remaining legacy experiment types
+      1. "conditioning_mixed"   -- setups select both conditioning samplers
+      2. "post_nonlinear_noise" -- a setup selects that sampler
+      3. "conditional_copula"   -- a setup selects that sampler
+      4. Remaining experiment types
     """
-    if "sbm" in raw:
-        return "sbm"
-
     setups_raw = raw.get("setups", {})
-    if isinstance(setups_raw, dict) and "gaussian_latent_sims" in setups_raw:
-        return "lee2019"
 
     if isinstance(setups_raw, list):
         has_post_nonlinear = any(
@@ -385,9 +323,6 @@ def _detect_experiment_type(raw: dict) -> str:
             return "post_nonlinear_noise"
         if has_conditional_copula:
             return "conditional_copula"
-
-    if "dim_common" in raw.get("simulation", {}):
-        return "multiness"
 
     marginals = raw.get("simulation", {}).get("marginals", [])
     if marginals and isinstance(marginals[0], dict):
@@ -414,26 +349,24 @@ def load_config(path: str = "config.yaml") -> dict:
     Returned keys
     -------------
     experiment_type : str
-        One of "standard", "lee2019", "diff_marginals", "sbm", "multiness",
-        "functionals", or "asymptotic".
+        One of "standard", "diff_marginals", "functionals", or "asymptotic".
     simulation : dict
         Raw simulation block: nsim, n, k, rho, alpha, edge_var, marginals, seed.
-        multiness also carries: dim_common, dim_individual, shared_latent_type.
     rng : np.random.Generator
         Seeded RNG ready for use.
     methods : dict
         list            -- resolved callables
         npermutations   -- list of ints
-        df              -- list of ints (None for  multiness)
-        approximation   -- list of strings or None when absent (multiness )
+        df              -- list of ints
+        test_type       -- list of strings or None when absent
         use_true_latent -- list of bools or None when not applicable
     setups : list
-        (partial(DGP, ...), Solver) tuples for the H1 run.
+        (partial(DGP, ...), Solver) tuples for the H1 run. Functional
+        setups may instead map predictor distributions to these tuples;
+        build_factorial_design selects the matching tuple for each row.
     null_setups : dict | None
         {"rho": [...], "setups": [...]} for H0 runs, or None.
     extra_params : dict
-        lee2019   -> {"sparsity": {"make_sparse": [...], "sparsity_bias": [...]}}
-        multiness -> {}   (extra dims live directly in cfg["simulation"])
         others    -> {}
     metrics : list
     output : dict
@@ -450,32 +383,42 @@ def load_config(path: str = "config.yaml") -> dict:
         sim_raw = dict(sim_raw)
         sim_raw["functionals"] = _resolve_functionals_block(sim_raw["functionals"])
         sim_raw.update(_resolve_noise_options(sim_raw))
+        if "predictor_noise_sweeps" in sim_raw:
+            if "noise_scale" in sim_raw or "predictor_distribution" in sim_raw:
+                raise ValueError(
+                    "predictor_noise_sweeps cannot be combined with noise_scale or "
+                    "predictor_distribution."
+                )
+            sim_raw["predictor_noise_sweeps"] = _resolve_predictor_noise_sweeps(
+                sim_raw["predictor_noise_sweeps"]
+            )
 
     methods = _resolve_methods_block(raw["methods"])
     metrics = [ComputeAll()] if raw.get("metrics", {}).get("compute_all") else []
     rng = np.random.default_rng(sim_raw["seed"])
 
     # -- Resolve setups -------------------------------------------------------
-    if exp_type == "lee2019":
-        setups = _resolve_lee2019_setups(raw["setups"])
-    elif exp_type == "sbm":
-        setups = _resolve_sbm_setups(raw["setups"])
+    if exp_type == "functionals":
+        setups = []
+        for entry in raw["setups"]:
+            if isinstance(entry["solver"], dict):
+                if not entry["solver"]:
+                    raise ValueError("Functional solver mapping must not be empty")
+                resolved = {
+                    distribution: _resolve_copula_setup(dict(entry, solver=name))
+                    for distribution, name in entry["solver"].items()
+                }
+                setups.append(resolved)
+            else:
+                setups.append(_resolve_copula_setup(entry))
     else:
-        # standard, diff_marginals, multiness, functionals, asymptotic
+        # standard, diff_marginals, asymptotic
         # all use copula-style setup entries
         setups = [_resolve_copula_setup(e) for e in raw["setups"]]
 
     # -- Experiment-specific extra params -------------------------------------
     extra_params = {}
-    if exp_type == "lee2019":
-        sp = raw.get("sparsity", {"make_sparse": [False], "sparsity_bias": [1]})
-        extra_params["sparsity"] = {
-            "make_sparse": sp["make_sparse"],
-            "sparsity_bias": sp["sparsity_bias"],
-        }
-    elif exp_type == "sbm":
-        extra_params["sbm"] = _resolve_sbm_block(raw["sbm"])
-    elif exp_type == "asymptotic":
+    if exp_type == "asymptotic":
         extra_params["asymptotic"] = {
             "column_covariance": sim_raw.get("column_covariance"),
         }
@@ -499,15 +442,25 @@ def load_config(path: str = "config.yaml") -> dict:
 # =============================================================================
 
 
-def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | None]:
+def _build_single_design(exp: str, cfg: dict) -> list[dict]:
     """
-    Build the H1/H0 parameter rows for a single experiment type.
+    Build method rows and label their data-generation arguments.
     All types draw from the same cfg; extra_params branches are simply
     ignored when the corresponding type is not active.
     """
     sim = cfg["simulation"]
     mth = cfg["methods"]
     sets = cfg["setups"]
+
+    def _label_generation_args(rows, method_names):
+        # The grid builder knows which columns came from method controls. Keep
+        # that distinction explicit instead of guessing from DGP signatures,
+        # many of which accept arbitrary **kwargs.
+        for row in rows:
+            row["_generation_keys"] = tuple(
+                name for name in row if name not in method_names
+            )
+        return rows
 
     def _standard_rows(setups_list, rho_list, include_marginals=None):
         if include_marginals is None:
@@ -576,7 +529,14 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
         if sim.get("functionals") is not None:
             names.append("_functional")
             vals.append(sim["functionals"])
-        if "noise_scale" in sim:
+            for option in ("predictor_df", "center_latent"):
+                if option in sim:
+                    names.append(option)
+                    vals.append(_as_sweep(sim[option], f"simulation.{option}"))
+        if "predictor_noise_sweeps" in sim:
+            names.append("_predictor_noise")
+            vals.append(sim["predictor_noise_sweeps"])
+        elif "noise_scale" in sim:
             names.append("noise_scale")
             vals.append(sim["noise_scale"])
         if "noise_type" in sim:
@@ -585,10 +545,21 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
         if "column_covariance" in sim:
             names.append("column_covariance")
             vals.append(sim["column_covariance"])
+        if (
+            "predictor_noise_sweeps" not in sim
+            and "predictor_distribution" in sim
+        ):
+            names.append("predictor_distribution")
+            vals.append(
+                _as_sweep(
+                    sim["predictor_distribution"],
+                    "simulation.predictor_distribution",
+                )
+            )
 
-        if mth["approximation"] is not None:
-            names.append("approximation")
-            vals.append(mth["approximation"])
+        if mth["test_type"] is not None:
+            names.append("test_type")
+            vals.append(mth["test_type"])
         if mth["use_true_latent"] is not None:
             names.append("use_true_latent")
             vals.append(mth["use_true_latent"])
@@ -597,151 +568,31 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
             vals.append(sim["function_type"])
         rows = [dict(zip(names, v)) for v in iproduct(*vals)]
         for row in rows:
+            predictor_noise = row.pop("_predictor_noise", None)
+            if predictor_noise is not None:
+                row.update(predictor_noise)
+            if exp == "functionals" and isinstance(row["setup"], dict):
+                distribution = row.get("predictor_distribution", "gaussian")
+                if distribution not in row["setup"]:
+                    raise ValueError(
+                        f"No functional solver configured for predictor_distribution "
+                        f"{distribution!r}"
+                    )
+                row["setup"] = row["setup"][distribution]
             functional = row.pop("_functional", None)
             if functional is not None:
                 row["functional_form"] = functional["functional_form"]
-                row["function_params"] = functional["function_params"]
-        return rows
-
-    # -- Multiness ------------------------------------------------------------
-    if exp == "multiness":
-        names = [
-            "setup",
-            "method",
-            "n",
-            "k",
-            "ky",
-            "alpha",
-            "rho",
-            "edge_var",
-            "npermutations",
-            "df",
-            "dim_common",
-            "dim_individual",
-            "shared_latent_type",
-        ]
-        vals = [
-            sets,
-            mth["list"],
-            sim["n"],
-            sim["k"],
-            sim.get("ky", [1]),
-            sim["alpha"],
-            sim["rho"],
-            sim["edge_var"],
-            mth["npermutations"],
-            mth["df"],
-            sim["dim_common"],
-            sim["dim_individual"],
-            sim["shared_latent_type"],
-        ]
+                row["function_params"] = dict(functional["function_params"])
+                overrides = functional.get("kwargs_by_predictor_distribution", {})
+                row["function_params"].update(
+                    overrides.get(row.get("predictor_distribution", "gaussian"), {})
+                )
+        method_names = {"method", "alpha", "npermutations", "df"}
+        if mth["test_type"] is not None:
+            method_names.add("test_type")
         if mth["use_true_latent"] is not None:
-            names.append("use_true_latent")
-            vals.append(mth["use_true_latent"])
-
-        h1 = [dict(zip(names, v)) for v in iproduct(*vals)]
-        return h1
-
-    # -- Lee 2019 -------------------------------------------------------------
-    if exp == "lee2019":
-        sp = cfg["extra_params"]["sparsity"]
-        names = [
-            "setup",
-            "method",
-            "n",
-            "k",
-            "ky",
-            "alpha",
-            "edge_var",
-            "npermutations",
-            "df",
-            "make_sparse",
-            "sparsity_bias",
-        ]
-        vals = [
-            sets,
-            mth["list"],
-            sim["n"],
-            sim["k"],
-            sim.get("ky", [1]),
-            sim["alpha"],
-            sim["edge_var"],
-            mth["npermutations"],
-            mth["df"],
-            sp["make_sparse"],
-            sp["sparsity_bias"],
-        ]
-        if mth["use_true_latent"] is not None:
-            names.append("use_true_latent")
-            vals.append(mth["use_true_latent"])
-
-        return [dict(zip(names, v)) for v in iproduct(*vals)]
-
-    # -- Covariate-aware SBM ---------------------------------------------------
-    if exp == "sbm":
-        sbm = cfg["extra_params"]["sbm"]
-        names = [
-            "setup",
-            "method",
-            "n",
-            "k",
-            "ky",
-            "alpha",
-            "rho",
-            "edge_var",
-            "npermutations",
-            "df",
-            "assortativity",
-        ]
-        vals = [
-            sets,
-            mth["list"],
-            sim["n"],
-            sim["k"],
-            sim.get("ky", [1]),
-            sim["alpha"],
-            sim.get("rho", [None]),
-            sim.get("edge_var", [None]),
-            mth["npermutations"],
-            mth["df"],
-            sbm["assortativity"],
-        ]
-
-        # Covariate-aware and legacy SBM controls are included only when the
-        # YAML supplies them, so neither family needs dummy parameters.
-        for name in (
-            "sbm_covariate_sampling",
-            "y_distribution",
-            "sparsity_bias",
-            "prob_switch",
-            "assignment_mode",
-            "block_probs_type",
-            "block_probs",
-            "y_upper_bound",
-            "y_probabilities",
-            "softmax_intercept",
-            "softmax_slope",
-            "directed",
-            "self_loops",
-        ):
-            if name in sbm:
-                names.append(name)
-                vals.append(sbm[name])
-
-        # A marginal sweep is not required for SBM configs, but preserve it
-        # when a hybrid config explicitly supplies one.
-        if "marginals" in sim:
-            names.append("marginals")
-            vals.append(sim["marginals"])
-
-        if mth["approximation"] is not None:
-            names.append("approximation")
-            vals.append(mth["approximation"])
-        if mth["use_true_latent"] is not None:
-            names.append("use_true_latent")
-            vals.append(mth["use_true_latent"])
-
-        return [dict(zip(names, v)) for v in iproduct(*vals)]
+            method_names.add("use_true_latent")
+        return _label_generation_args(rows, method_names)
 
     # -- Mixed conditional-null study -----------------------------------------
     if exp == "conditioning_mixed":
@@ -771,17 +622,15 @@ def _build_single_design(exp: str, cfg: dict) -> tuple[list[dict], list[dict] | 
     return h1
 
 
-def build_factorial_design(cfg: dict) -> tuple[list[dict], list[dict] | None]:
+def build_factorial_design(cfg: dict) -> list[dict]:
     """
-    Build the combined parameter grid for one or more experiment types.
+    Build method rows for one or more experiment types.
 
     cfg["experiment_type"] may now be a string (single type, backward-compatible)
     or a list of strings (multiple types whose rows are concatenated).
 
-    Returns
-    -------
-    (factorial_h1, factorial_h0)
-        factorial_h0 is None when no type in the list produces H0 rows.
+    Each row includes internal ``_generation_keys`` metadata so the runner
+    groups by DGP inputs while retaining every original method row.
     """
     exp_types = cfg["experiment_type"]
     if isinstance(exp_types, str):
@@ -798,11 +647,11 @@ def build_factorial_design(cfg: dict) -> tuple[list[dict], list[dict] | None]:
 
 def build_factorial_design_multi(
     cfgs: list[dict],
-) -> tuple[list[dict], list[dict] | None]:
+) -> list[dict]:
     """
     Build a combined factorial design from a list of independently loaded configs.
     Each cfg is resolved for its own single experiment type.
-    Rows from all types are concatenated; H0 rows are concatenated where present.
+    Rows from all types are concatenated with their generation-key metadata.
     """
     all_h1 = []
     for cfg in cfgs:
@@ -835,7 +684,7 @@ def flatten_args_columns(df, extra_cols: dict = None):
     df["n"] = df["args"].apply(lambda x: x["n"])
     df["k"] = df["args"].apply(lambda x: x["k"])
     df["edge_var"] = df["args"].apply(lambda x: x.get("edge_var", "NA"))
-    df["approximation"] = df["args"].apply(lambda x: x.get("approximation", "NA"))
+    df["test_type"] = df["args"].apply(lambda x: x.get("test_type", "NA"))
     df["dgp"] = df["args"].apply(lambda x: x.get("dgp_name", "NA"))
     df["solver"] = df["args"].apply(lambda x: x.get("solver", "NA"))
     df["rho"] = df["args"].apply(lambda x: x.get("rho", "NA"))

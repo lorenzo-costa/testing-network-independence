@@ -1,6 +1,6 @@
 import numpy as np
 from ._base_class import BasePermutationTest, BaseEstimationMethod
-from ..test_functions.rv_cca_coefficients import rv_coefficient, rv_coefficient_adjusted
+from ..test_functions.rv_coefficients import rv_coefficient, rv_coefficient_adjusted
 from ..helper_functions.imhof import imhof
 
 import sys
@@ -63,11 +63,13 @@ class RVTest(BasePermutationTest):
         Number of permutation worker processes. ``-1`` uses all available CPUs.
     batch_size : int
         Target number of work batches per permutation worker.
+    verbose : bool
+        Whether to display permutation progress.
     """
 
     def __init__(
         self,
-        approximation="permutation",
+        test_type="permutation",
         k=None,
         npermutations=100,
         alpha=0.05,
@@ -78,8 +80,11 @@ class RVTest(BasePermutationTest):
         permutation_type="covariate",
         n_jobs=1,
         batch_size=32,
+        verbose=False,
         **kwargs,
     ):
+        if "approximation" in kwargs:
+            raise TypeError("'approximation' is no longer supported; use 'test_type'.")
         super().__init__(
             k=k,
             npermutations=npermutations,
@@ -92,18 +97,19 @@ class RVTest(BasePermutationTest):
             one_sided=True,
             n_jobs=n_jobs,
             batch_size=batch_size,
+            verbose=verbose,
         )
 
-        self.approximation = approximation
+        self.test_type = test_type
 
     def fit(self, data, **kwargs):
         """Compute the test statistic and p-value."""
 
         self._process_input(data)
 
-        if self.approximation == "permutation":
+        if self.test_type == "permutation":
             self._fit_permutation()
-        elif self.approximation == "asymptotic":
+        elif self.test_type == "asymptotic":
             self._fit_asymptotic()
         else:
             raise ValueError(
@@ -138,7 +144,7 @@ class RVTest(BasePermutationTest):
         self.pvalue = imhof(n * rv, weights)["Qq"]
 
     def get_name(self):
-        if self.approximation == "permutation":
+        if self.test_type == "permutation":
             return "RV_PermutationTest_" + self.permutation_type
         else:
             return "RV_AsymptoticTest"

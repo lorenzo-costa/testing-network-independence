@@ -15,7 +15,9 @@ class CopulaGenerator:
     rho : float
         Correlation parameter for the copula.
     marginals : dict or str
-        Marginal distributions for the latent variables. Can be a string (e.g. 'gaussian') or a dict with 'y' and 'z' keys.
+        Marginal distributions for the latent variables. Can be a string (e.g. 'gaussian',
+        'pareto 2.5') or a dict with 'y' and 'z' keys. Pareto uses the
+        ``pareto <shape> [scale]`` syntax and is one-sided.
     copula_model : str
         Type of copula to use for generating dependence structure.
         Options: 'gaussian', 'student_t', 'clayton', 'rotated_clayton', 'gumbel', 'frank', 'mixture_uniform'.
@@ -394,6 +396,7 @@ class CopulaGenerator:
                 "gamma": (stats.gamma, ["a", "scale"]),  # Special handling for scale
                 "lognormal": (stats.lognorm, ["s"]),
                 "cauchy": (stats.cauchy, ["loc", "scale"]),
+                "pareto": (stats.pareto, ["b", "scale"]),
                 "dirichlet": (stats.dirichlet, ["alpha"]),
             }
 
@@ -403,6 +406,17 @@ class CopulaGenerator:
             func, arg_keys = registry[name]
 
             # Handle simple positional distributions vs keyword ones
+            if name == "pareto":
+                if len(args) not in {1, 2}:
+                    raise ValueError(
+                        "pareto requires a positive shape and optional scale: "
+                        "'pareto <shape> [scale]'"
+                    )
+                shape = args[0]
+                scale = args[1] if len(args) == 2 else 1.0
+                if shape <= 0 or scale <= 0:
+                    raise ValueError("pareto shape and scale must both be positive")
+                return func(b=shape, scale=scale)
             if not args:
                 return func
             if name == "uniform" and len(args) == 2:

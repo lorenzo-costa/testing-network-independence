@@ -13,7 +13,7 @@
 # - using both true and estimated latent positions for testing methods
 # - marginals: Gaussian, uniform, cauchy, t, chi-squared
 # - copula models: gaussian, clayton, gumbel, student_t, mixture_uniform
-# - testing methods: RV and distance correlation
+# - testing methods: RV
 # - DGPs: GaussianNetwork, BernoulliNetwork
 # - Solvers: ASE for Gaussian, pgd_fit_wrapper for Bernoulli
 
@@ -55,15 +55,12 @@ methods:
   list:
     - name: RVtest
       kwargs:
-        approximation: permutation
+        test_type: permutation
 
     - name: RVtest
       kwargs:
-        approximation: asymptotic
+        test_type: asymptotic
 
-
-    - name: DiffusionCorrelation
-      kwargs: {}
 
 
 

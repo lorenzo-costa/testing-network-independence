@@ -1,20 +1,21 @@
-r"""Functional data-generating processes for vector predictors and scalar responses.
+r"""Functional data-generating processes for scalar or component-wise responses.
 
 This module follows the output convention used by ``copula_sampler.py``:
 
 * ``Z`` is the predictor matrix, so row ``i`` is the vector-valued predictor
   :math:`Z_i \in R^k`.
-* ``Y`` is the response matrix.  Here it has one column, and ``Y[:, 0]`` is the
-  scalar response customarily denoted by :math:`Y`.
+* ``Y`` is the response matrix, with one column for a scalar response or
+  ``k`` columns for a component-wise response.
 
 The default models are deterministic: ``Y[:, 0] = f(Z)``.  Hence, with
-``noise_scale=0`` they are useful alternatives for testing a dependence
+``noise_scale=0`` and ``rho=None`` they are useful alternatives for testing a dependence
 statistic that should attain its functional-dependence maximum when
 :math:`Y=f(Y)`.
 """
 
 from __future__ import annotations
 
+from copy import copy
 from typing import Callable, Dict, Optional, Sequence, Union
 
 import numpy as np
@@ -26,7 +27,7 @@ Functional = Union[str, Callable[[np.ndarray], ArrayLike]]
 
 
 class FunctionalGenerator:
-    """Sample vector predictors ``Z`` and a scalar functional response ``Y``.
+    """Sample vector predictors ``Z`` and a functional response ``Y``.
 
     Parameters
     ----------
@@ -34,30 +35,51 @@ class FunctionalGenerator:
         Number of sampled observations.
     k : int
         Dimension of the vector predictor ``Z``.
+    ky : int, default=1
+        Response dimension: either 1 for a scalar response or ``k`` to apply
+        the functional separately to each predictor column.  In component-wise
+        mode, parameters follow the one-dimensional contract and index
+        normalization uses unit variance for every column.  ``interaction``
+        and ``hierarchical`` cannot be used in this mode when ``k > 1``.
     functional : str or callable, default="linear"
         Functional relationship used to construct the response.  Supported
         strings are ``linear``, ``nonlinear_additive``, ``interaction``,
         ``radial``, ``threshold``, ``sigmoid``, ``piecewise``, ``oscillatory``,
         ``max``, ``abs_max``, ``tanh_product``, ``sparse_nonlinear``,
         ``hierarchical``, ``manifold``, and ``pareto_index``.  A callable must
-        accept an ``(n, k)`` array and return a length-``n`` vector.
+        accept an ``(n, k)`` array and return shape ``(n,)`` or ``(n, 1)``.
+        In component-wise mode it is called once per column with shape ``(n, 1)``.
     function_params : dict, optional
         Parameters specific to the selected functional.  Useful keys include
         ``weights``, ``frequency``, ``threshold``, ``active_features``,
-        ``alpha`` and ``scale`` (for ``pareto_index``), and ``switch_feature``
-        (for ``piecewise``).
+        ``alpha`` and ``scale`` (for ``pareto_index``), ``switch_feature``
+        (for ``piecewise``), ``output_center`` and ``output_sd`` (for
+        ``interaction``), and ``center`` and ``input_scale`` (for ``abs_max``).
     column_covariance : ndarray, optional
         ``k y k`` covariance matrix used for Gaussian predictors.  The
         identity is used by default.
-    predictor_distribution : {"gaussian", "student_t"}, default="gaussian"
+    predictor_distribution : {"gaussian", "student_t", "uniform_rdpg"}, default="gaussian"
         Distribution used for the predictor vector.  For ``student_t``,
         ``predictor_df`` controls the degrees of freedom and
-        ``column_covariance`` is the scale matrix.
+        ``column_covariance`` is the scale matrix. ``uniform_rdpg`` samples
+        uniformly from the positive orthant of the unit Euclidean ball.  It is
+        intended for ``BernoulliNetwork(rdpg=True)``: each sampled row has norm
+        at most one and nonnegative entries, so every pairwise inner product is
+        in ``[0, 1]``.
     predictor_df : float, default=5.0
         Degrees of freedom when ``predictor_distribution="student_t"``.
     noise_scale : float, default=0.0
         Standard deviation of response noise.  Set this to zero to preserve
-        the exact deterministic relationship ``Y=f(Z)``.
+        the exact deterministic relationship ``Y=f(Z)`` when ``rho=None``.
+    rho : float, optional
+        Target signal fraction for additive noise, with ``0 < rho <= 1``.
+        Overrides ``noise_scale`` using the current sample's signal variance:
+        ``noise_var = np.var(f(Z)) * (1 - rho) / rho``.  Gaussian noise is
+        drawn with this target variance; its realized sample variance may
+        differ.  ``rho=1`` or a constant signal produces no noise.  For a
+        constant signal the variance ratio is undefined.  Ignored for
+        multiplicative noise.  Component-wise responses use independent noise
+        vectors and calibrate the noise variance separately for each column.
     noise_type : {"additive", "multiplicative"}, default="additive"
         Additive noise uses ``Y = f(Z) + sigma*epsilon``.  Multiplicative
         noise uses ``Y = f(Z) * exp(sigma*epsilon)`` and is especially useful
@@ -72,9 +94,8 @@ class FunctionalGenerator:
     Notes
     -----
     ``sample_latent()`` returns ``(Z, Y)`` with shapes ``(n, k)`` and
-    ``(n, 1)``.  The name ``Y`` is retained for compatibility with the existing
-    sampler interface; mathematically, ``Y[:, 0]`` is the scalar response
-    :math:`Y`.
+    ``(n, ky)``.  With ``ky=1`` the functional can combine predictor columns;
+    with ``ky=k > 1`` each response depends only on its corresponding column.
     """
 
     AVAILABLE_FUNCTIONALS = (
@@ -121,6 +142,7 @@ class FunctionalGenerator:
         predictor_distribution = "gaussian",
         predictor_df = 5.0,
         noise_scale = 0.0,
+        rho = None,
         noise_type = "additive",
         center_latent = False,
         rng  = None,
@@ -134,29 +156,40 @@ class FunctionalGenerator:
             raise ValueError("noise_scale must be non-negative.")
         if noise_type not in {"additive", "multiplicative"}:
             raise ValueError("noise_type must be 'additive' or 'multiplicative'.")
-        if predictor_distribution not in {"gaussian", "student_t"}:
+        if noise_type == "additive" and rho is not None and not 0 < rho <= 1:
+            raise ValueError("rho must satisfy 0 < rho <= 1 for additive noise.")
+        if predictor_distribution not in {"gaussian", "student_t", "uniform_rdpg"}:
             raise ValueError(
-                "predictor_distribution must be 'gaussian' or 'student_t'."
+                "predictor_distribution must be 'gaussian', 'student_t', or "
+                "'uniform_rdpg'."
             )
         if predictor_distribution == "student_t" and predictor_df <= 0:
             raise ValueError("predictor_df must be positive for Student-t predictors.")
 
         self.n = int(n)
         self.kz = int(k)
-        if ky != 1:
+        if ky != 1 and ky != self.kz:
             raise ValueError(
-                f"FunctionalGenerator only supports scalar responses (ky=1), received ky={ky}."
+                "FunctionalGenerator supports either a scalar response (ky=1) "
+                f"or a component-wise response (ky=k); received k={k}, ky={ky}."
             )
-        self.ky = 1       # response is scalar
+        self.ky = int(ky)
         self.functional_form = functional_form
         self.function_params = dict(function_params or {})
         self.predictor_distribution = predictor_distribution
         self.predictor_df = float(predictor_df)
         self.noise_scale = float(noise_scale)
+        self.rho = rho
         self.noise_type = noise_type
         self.center_latent = bool(center_latent)
         self.rng = rng if rng is not None else np.random.default_rng()
         self.extra_params = dict(kwargs)
+
+        if self.predictor_distribution == "uniform_rdpg" and self.center_latent:
+            raise ValueError(
+                "center_latent must be False for uniform_rdpg because centering "
+                "does not preserve valid RDPG inner products."
+            )
 
         if column_covariance is None:
             column_covariance = np.eye(self.kz)
@@ -164,6 +197,11 @@ class FunctionalGenerator:
         self._validate_covariance()
 
         self._functional_name = self._normalize_functional_name(functional_form)
+        if self.ky > 1 and self._functional_name in {"interaction", "hierarchical"}:
+            raise ValueError(
+                f"The '{self._functional_name}' functional cannot be applied "
+                "component-wise to scalar inputs."
+            )
         self.is_null = False
 
     def _normalize_functional_name(self, functional):
@@ -192,6 +230,15 @@ class FunctionalGenerator:
 
     def _sample_predictors(self) -> np.ndarray:
         """Draw a fresh ``(n, k)`` predictor matrix."""
+        if self.predictor_distribution == "uniform_rdpg":
+             # directions are sampled from a reflected gaussian and then normalsied
+            # to get points we sample radius and multiply by direction  The radius and 
+            # direction are sampled independently, which avoids rejection sampling in high k.
+            direction = np.abs(self.rng.standard_normal((self.n, self.kz)))
+            direction /= np.linalg.norm(direction, axis=1, keepdims=True)
+            radius = self.rng.random(self.n) ** (1.0 / self.kz)
+            return direction * radius[:, None]
+
         gaussian = self.rng.multivariate_normal(
             mean=np.zeros(self.kz),
             cov=self.column_covariance,
@@ -276,6 +323,20 @@ class FunctionalGenerator:
             )
         return y
 
+    def _evaluate_componentwise(self, Z: np.ndarray) -> np.ndarray:
+        """Reuse scalar functionals without changing the predictor generator.
+
+        This temporary evaluation context uses the one-dimensional parameter
+        contract and unit covariance.  No predictors are sampled through it,
+        and the original generator's dimension and covariance stay unchanged.
+        """
+        scalar = copy(self)
+        scalar.kz = scalar.ky = 1
+        scalar.column_covariance = np.eye(1)
+        return np.column_stack([
+            scalar._evaluate_function(Z[:, [j]]) for j in range(self.kz)
+        ])
+
     def _functional_linear(self, Z: np.ndarray) -> np.ndarray:
         return self._index(Z)
 
@@ -290,7 +351,14 @@ class FunctionalGenerator:
         if self.kz < 2:
             raise ValueError("interaction requires kz >= 2.")
         pair_sum = 0.5 * (np.sum(Z, axis=1) ** 2 - np.sum(Z**2, axis=1))
-        return pair_sum / np.sqrt(self.kz * (self.kz - 1) / 2.0)
+        output_center = float(self.function_params.get("output_center", 0.0))
+        default_sd = np.sqrt(self.kz * (self.kz - 1) / 2.0)
+        output_sd = float(self.function_params.get("output_sd", default_sd))
+        if not np.isfinite(output_center):
+            raise ValueError("output_center must be finite for interaction.")
+        if not np.isfinite(output_sd) or output_sd <= 0:
+            raise ValueError("output_sd must be positive and finite for interaction.")
+        return (pair_sum - output_center) / output_sd
 
     def _functional_radial(self, Z: np.ndarray) -> np.ndarray:
         return np.sum(Z**2, axis=1)
@@ -307,7 +375,7 @@ class FunctionalGenerator:
 
     def _functional_piecewise(self, Z: np.ndarray) -> np.ndarray:
         switch_feature = int(self.function_params.get("switch_feature", 0))
-        if not 0 <= switch_feature < self.k:
+        if not 0 <= switch_feature < self.kz:
             raise ValueError("switch_feature must be an integer in [0, k).")
         threshold = float(self.function_params.get("threshold", 0.0))
         base_index = self._index(Z)
@@ -322,12 +390,27 @@ class FunctionalGenerator:
         return np.max(Z, axis=1)
 
     def _functional_abs_max(self, Z: np.ndarray) -> np.ndarray:
-        return np.max(np.abs(Z), axis=1)
+        center = np.asarray(self.function_params.get("center", 0.0), dtype=float)
+        if center.ndim > 1 or (center.ndim == 1 and center.shape != (self.kz,)):
+            raise ValueError(
+                "center for abs_max must be a scalar or have shape "
+                f"({self.kz},), got {center.shape}."
+            )
+        input_scale = float(self.function_params.get("input_scale", 1.0))
+        if not np.isfinite(input_scale) or input_scale <= 0:
+            raise ValueError("input_scale must be positive and finite for abs_max.")
+        return np.max(np.abs(input_scale * (Z - center)), axis=1)
 
     def _functional_tanh_product(self, Z: np.ndarray) -> np.ndarray:
         scale = float(self.function_params.get("input_scale", 1.0))
         global_scale = float(self.function_params.get("global_scale", 1.0))
-        return np.prod(np.tanh(scale * Z), axis=1) * global_scale
+        center = np.asarray(self.function_params.get("center", 0.0), dtype=float)
+        if center.ndim > 1 or (center.ndim == 1 and center.shape != (self.kz,)):
+            raise ValueError(
+                "center for tanh_product must be a scalar or have shape "
+                f"({self.kz},), got {center.shape}."
+            )
+        return np.prod(np.tanh(scale * (Z - center)), axis=1) * global_scale
 
     def _functional_sparse_nonlinear(self, Z: np.ndarray) -> np.ndarray:
         active = self._active_columns()
@@ -388,12 +471,16 @@ class FunctionalGenerator:
         return scale * (1.0 - u) ** (-1.0 / alpha)
 
     def _add_noise(self, y: np.ndarray) -> np.ndarray:
-        if self.noise_scale == 0.0:
+        noise_scale = self.noise_scale
+        if self.noise_type == "additive" and self.rho is not None:
+            noise_var = np.var(y) * (1 - self.rho) / self.rho
+            noise_scale = np.sqrt(noise_var)
+        if noise_scale == 0.0:
             return y
         epsilon = self.rng.standard_normal(self.n)
         if self.noise_type == "additive":
-            return y + self.noise_scale * epsilon
-        return y * np.exp(self.noise_scale * epsilon)
+            return y + noise_scale * epsilon
+        return y * np.exp(noise_scale * epsilon)
 
     def sample_latent(self) -> tuple[np.ndarray, np.ndarray]:
         """Sample predictors and their response.
@@ -402,16 +489,22 @@ class FunctionalGenerator:
         -------
         Z : ndarray, shape (n, k)
             Vector-valued predictor samples.
-        Y : ndarray, shape (n, 1)
-            Response samples.  ``Y[:, 0]`` is the mathematical scalar response
-            :math:`Y` and is intentionally named ``Y`` for compatibility with
-            the surrounding codebase.
+        Y : ndarray, shape (n, ky)
+            Scalar or component-wise response samples.
         """
         Z = self._sample_predictors()
-        y = self._add_noise(self._evaluate_function(Z))
-        if not np.isfinite(y).all():
+        if self.ky == 1:
+            y = self._add_noise(self._evaluate_function(Z))
+            Y = y.reshape(self.n, 1)
+        else:
+            if not np.isfinite(Z).all():
+                raise FloatingPointError("Predictor generation produced non-finite values.")
+            signal = self._evaluate_componentwise(Z)
+            Y = np.column_stack([
+                self._add_noise(signal[:, j]) for j in range(self.ky)
+            ])
+        if not np.isfinite(Y).all():
             raise FloatingPointError("Noise generation produced non-finite values.")
-        Y = y.reshape(self.n, 1)
         return Z, Y
 
     # Compatibility aliases for pipelines that use private sampler hooks.
@@ -424,7 +517,14 @@ class FunctionalGenerator:
     def get_name(self) -> str:
         """Return a concise, filesystem-friendly description of this DGP."""
         name = self._functional_name if self._functional_name is not None else "custom"
+        noise = (
+            f"rho{self.rho:g}"
+            if self.noise_type == "additive" and self.rho is not None
+            else f"noise{self.noise_scale:g}"
+        )
+        response_dimension = f"ky{self.ky}_" if self.ky != 1 else ""
         return (
             f"functional_{name}_n{self.n}_k{self.kz}_"
-            f"predictors_{self.predictor_distribution}_noise{self.noise_scale:g}"
+            f"{response_dimension}"
+            f"predictors_{self.predictor_distribution}_{noise}"
         )

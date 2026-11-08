@@ -3,8 +3,6 @@ import pytest
 
 from src.dgp import BernoulliNetwork, GaussianNetwork
 from src.methods import (
-    CanonicalCorrelationTest,
-    DistanceCorrelationTest,
     MultivariateACTest,
     RVTest,
 )
@@ -16,8 +14,6 @@ from src.solvers.weighted_network import ASE
     "method_type, kwargs",
     [
         (RVTest, {}),
-        (CanonicalCorrelationTest, {}),
-        (DistanceCorrelationTest, {}),
         (MultivariateACTest, {"M": 1}),
     ],
 )

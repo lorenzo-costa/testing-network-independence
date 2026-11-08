@@ -40,7 +40,7 @@ methods:
     - name: RVtest
       kwargs:
         permutation_type: observed
-        approximation: permutation
+        test_type: permutation
 
 
 

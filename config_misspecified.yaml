@@ -45,11 +45,8 @@ methods:
     - name: RVtest
       kwargs:
         permutation_type: latent
-        approximaton: permutation
+        test_type: permutation
 
-
-    - name: DiffusionCorrelation
-      kwargs: {}
 
 
 

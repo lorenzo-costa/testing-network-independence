@@ -43,12 +43,11 @@ A simulation framework for testing statistical independence between two networks
 
 | Method | Description |
 |--------|-------------|
+| `DistanceCorrelationTest` | Permutation test of latent-position dependence using distance correlation or MGC |
 | `RVtest` | Permutation test using the (adjusted) RV coefficient on estimated latent positions; supports both permutation and asymptotic (Imhof) p-value approximations |
 | `ObservedCVM` | CvM statistic computed directly on shared-neighbour counts — **no embedding required** |
 | `LLKRatioTest` | Likelihood-ratio test |
 | `QAP` | Quadratic Assignment Procedure |
-| `DiffusionCorrelation` | Diffusion-map based correlation test |
-| `CanonicalCorrelationTest` | Permutation test based on canonical correlations between estimated latent positions |
 
 ---
 
@@ -119,7 +118,7 @@ rng = np.random.default_rng(42)
 factorial_design = [
     {
         "setup": (partial(GaussianNetwork, copula_model="gaussian"), ASE),
-        "method": partial(RVtest, approximation="permutation", permutation_type="latent"),
+        "method": partial(RVtest, test_type="permutation", permutation_type="latent"),
         "n": 200,
         "k": 3,
         "rho": 0.2,
@@ -128,6 +127,7 @@ factorial_design = [
         "edge_var": 1,
         "npermutations": 100,
         "df": 3,
+        "_generation_keys": ("setup", "n", "k", "rho", "marginals", "edge_var"),
     }
 ]
 
@@ -144,6 +144,25 @@ print(results[0])
 ---
 
 ## Running Simulations
+
+Each Monte Carlo replicate generates one dataset for every unique DGP and set
+of generation arguments. All method rows in that group receive copies of the
+same `A`, `Z`, `Y`, and `X`; methods using estimated latent positions also
+receive a copy of a cached `estimated_Z`. The cache key uses the constructed
+method's solver (including any solver options) and effective dimension. Oracle methods
+use the generated `Z` and do not trigger an embedding. Copies prevent a method
+or solver from changing inputs used by another method.
+
+YAML designs label generation columns automatically. Hand-built designs with
+multiple rows must list generation inputs in `_generation_keys` (including
+`setup`) or supply `_generation_args` on every row. The runner raises an error
+when that information is missing because it cannot infer which custom fields
+affect a DGP. This metadata is internal
+and does not appear in result arguments. Data, embedding, and method RNGs come
+from separate deterministic child streams based on the root RNG, replicate,
+and configuration, so reordering methods does not change generated data.
+Simulation shards distribute whole replicate/data groups; all shards together
+still contain one result for every original design row and replicate.
 
 The recommended workflow is YAML-driven. All experiment parameters — DGPs, solvers, methods, grid values, and output paths — are specified in `config.yaml`, and a single script runs both H0 and H1 simulations.
 
@@ -162,7 +181,7 @@ The script automatically detects the experiment type from the YAML structure (se
 
 ### Data Generating Processes (`dgp.py`)
 
-`src/dgp.py` provides `GaussianNetwork` and `BernoulliNetwork`, both inheriting from `CopulaDGP` and `BaseSBM`. Key constructor arguments:
+`src/dgp.py` provides `GaussianNetwork` and `BernoulliNetwork`, both using `LatentSampler`. Key constructor arguments:
 
 | Argument | Type | Description |
 |----------|------|-------------|
@@ -173,11 +192,6 @@ The script automatically detects the experiment type from the YAML structure (se
 | `copula_model` | `str` | Dependency structure (see table above) |
 | `edge_var` | `float` | Edge noise variance (Gaussian network only) |
 | `column_covariance` | `ndarray` | Optional `k×k` covariance for the copula Gaussian factor |
-| `latent_sim` | `str` | Name of a `hyppo` simulation function (e.g. `'quadratic'`, `'spiral'`) used instead of the copula path |
-| `sim_kwargs` | `dict` | Extra keyword arguments forwarded to the `latent_sim` function |
-| `sbm` | `bool` | Use a stochastic block model to draw latent positions |
-| `dim_common` / `dim_individual` | `int` | For multi-network experiments: shared and private latent dimensions |
-| `shared_latent_type` | `str` | How shared dimensions are drawn: `'gaussian'` or `'one_hot'` |
 | `rdpg` | `str` | Normalisation strategy for `BernoulliNetwork` (`'max'`, `'spectral'`, `'minmax'`) |
 
 `generate()` returns a dict with keys `A`, `B` (adjacency matrices) and `Z`, `X` (true latent positions).
@@ -200,12 +214,11 @@ All methods inherit from `BaseMethod` and expose `fit(data)`, `get_estimated()`,
 
 | Class | Key parameters | Notes |
 |-------|---------------|-------|
-| `RVtest` | `approximation` (`'permutation'` / `'asymptotic'`), `permutation_type` (`'latent'` / `'observed'`), `npermutations`, `solver` | The asymptotic branch uses the Imhof method (`imhof.py`) to compute the p-value |
+| `DistanceCorrelationTest` | `test_method` (`'dcorr'` / `'mgc'`), `permutation_type`, `npermutations`, `solver` | Uses latent positions and observed covariates; MGC is the default statistic |
+| `RVtest` | `test_type` (`'permutation'` / `'asymptotic'`), `permutation_type` (`'latent'` / `'observed'`), `npermutations`, `solver` | The asymptotic branch uses the Imhof method (`imhof.py`) to compute the p-value |
 | `ObservedCVM` | `test_function` | CvM statistic on adjacency matrices; no embedding step needed |
 | `LLKRatioTest` | — | Likelihood-ratio test |
 | `QAP` | — | Quadratic Assignment Procedure |
-| `DiffusionCorrelation` | — | Diffusion-map based correlation |
-| `CanonicalCorrelationTest` | `permutation_type`, `solver` | Permutation test via canonical correlations of estimated latent positions |
 | `FitIndependent` | `solver`, `k` | Not a test; fits the solver independently to each network and stores embeddings |
 
 Permutation-based methods accept `n_jobs` and `batch_size`. The default,
@@ -243,10 +256,7 @@ The experiment type is **auto-detected** from the YAML structure — no explicit
 | Type | Detection rule | Description |
 |------|---------------|-------------|
 | `standard` | Default | Main copula study with H0/H1 sweep |
-| `lee2019` | `setups` contains `gaussian_latent_sims` key | Latent functional-relationship study |
 | `diff_marginals` | First `marginals` entry is a dict | Asymmetric per-network marginal distributions |
-| `sbm` | Top-level `sbm:` key present | Stochastic block model misspecification study |
-| `multiness` | `simulation` block contains `dim_common` | Multi-network common/individual latent dimensions |
 
 Registries in `load_config.py` map YAML string names to classes — extend `DGP_REGISTRY`, `SOLVER_REGISTRY`, and `METHOD_REGISTRY` to add new components without touching the runner script.
 
@@ -276,6 +286,5 @@ matplotlib
 seaborn
 tqdm
 pyyaml
-hyppo          
 numba          
 ```

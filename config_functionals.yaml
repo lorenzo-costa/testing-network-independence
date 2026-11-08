@@ -6,42 +6,83 @@
 # Simulation Setup
 # -----------------------------------------------------------------------------
 simulation:
-  nsim: 100         
+  nsim: 100
   seed: 1                 
 
-  n: [100, 300, 500]      
-  k: [3]                  
-  ky: [3]
-  rho: [0.2]              
+  n: [100, 300]      
+  k: [1]                  
+  ky: [1]
+  snr: [0.1, 0.3, 0.5, 0.7]  # Var(f(Z)) / (Var(f(Z)) + Var(noise))
   alpha: [0.05]           
   edge_var: [3]           
-  noise_scale : [2.0]
+  predictor_distribution: [gaussian, uniform_rdpg]
 
+  # Functional settings for k=1.
   functionals:
-    - name: pareto
+    - name: linear
       kwargs:
-        alpha: 0.8
+        weights: [0.5]
+        normalize_index: true
+    - name: piecewise
+      kwargs:
+        weights: [0.5]
+        normalize_index: true
+        switch_feature: 0
+        threshold: 0.5
+    - name: threshold
+      kwargs:
+        weights: [0.5]
+        normalize_index: true
+        threshold: 0.5
+        global_scale: 10.0
     - name: sigmoid
       kwargs:
-        global_scale : 10.0
+        weights: [0.5]
+        normalize_index: true
+        threshold: 0.0
+        slope: 5.0
+        global_scale: 10.0
+      kwargs_by_predictor_distribution:
+        uniform_rdpg:
+          threshold: 0.5
+          slope: 17.0
     - name: sine
       kwargs:
-        global_scale : 10.0
-    - name: interaction
-      kwargs: {}
-    - name: linear
-      kwargs: {}
-    - name: radial
-      kwargs: {}
+        weights: [0.5]
+        normalize_index: true
+        frequency: 3.0
+        global_scale: 10.0
+      kwargs_by_predictor_distribution:
+        uniform_rdpg:
+          frequency: 15.0
+    - name: abs_max
+      kwargs:
+        center: 0.0
+        input_scale: 1.0
+      kwargs_by_predictor_distribution:
+        uniform_rdpg:
+          center: 0.5
+          input_scale: 6.0
     - name: tanh_product
       kwargs:
-        global_scale : 10.0
-    - name: manifold
-      kwargs: {}
-    - name: abs_max
-      kwargs: {}
-    - name: max
-      kwargs: {}
+        input_scale: 1.0
+        global_scale: 10.0
+        center: 0.0
+      kwargs_by_predictor_distribution:
+        uniform_rdpg:
+          input_scale: 6.0
+          center: 0.5
+    - name: pareto
+      kwargs:
+        weights: [0.5]
+        normalize_index: true
+        alpha: 1.0
+        scale: 2.0
+        tail_clip: 1e-12
+      kwargs_by_predictor_distribution:
+        uniform_rdpg:
+          alpha: 0.2
+          scale: 0.05
 
 # -----------------------------------------------------------------------------
 # Testing Methods
@@ -52,33 +93,30 @@ methods:
 
   # List of test methods to benchmark. 'kwargs' are passed to the method constructor.
   list:
-    # - name: DiffusionCorrelation
-    #   kwargs: {}
-
-    - name: RVtest
-      kwargs:
-        approximation: asymptotic
-
-    - name: RVtest
-      kwargs:
-        approximation: permutation
-        permutation_type: latent
-
     - name: MultivariateACTest
       kwargs:
         M: 1
-        use_permutation_coeff: true
+        use_permutation_coeff: false
 
     - name: MultivariateACTest
       kwargs:
         M: 0.5
-        use_permutation_coeff: true
+        use_permutation_coeff: false
 
     - name: MultivariateACTest
       kwargs:
         adaptive_m: true
-        use_permutation_coeff: true
+        use_permutation_coeff: false
+      
+    - name: RVtest
+      kwargs:
+        test_type: asymptotic
 
+    - name: RVtest
+      kwargs:
+        test_type: permutation
+        permutation_type: latent
+    
 # -----------------------------------------------------------------------------
 # DGP & Solver Setups (H1: rho > 0)
 # Each entry pairs a data-generating process (network type + copula) with a solver.
@@ -86,10 +124,11 @@ methods:
 # -----------------------------------------------------------------------------
 setups:
   - dgp: BernoulliNetwork
-    solver: pgd_fit_wrapper
-
-  - dgp: GaussianNetwork
-    solver: ASE
+    # Match the estimator to the link selected by rdpg: auto.
+    solver:
+      uniform_rdpg: ASE
+      gaussian: pgd_fit_wrapper
+    rdpg: auto
 
 # -----------------------------------------------------------------------------
 # Metrics

@@ -32,26 +32,15 @@ methods:
     - name: RVtest
       kwargs:
         permutation_type: latent
-        approximation: permutation
+        test_type: permutation
 
     - name: RVtest
       kwargs:
-        approximation: asymptotic
-
-    - name: DiffusionCorrelation
-      kwargs: {}
-
-    - name: CanonicalCorrelation
-      kwargs: {}
+        test_type: asymptotic
 
     - name: MultivariateACTest
       kwargs:
         M: half
-
-    - name: MultivariateACTest
-      kwargs:
-        M: sqrt
-        aggregate_coeff: max
 
 # -----------------------------------------------------------------------------
 # DGP & Solver Setups (H1: rho > 0)

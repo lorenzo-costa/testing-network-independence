@@ -8,7 +8,7 @@ __pycache__/
 *.jpg
 *.jpeg
 *.h5
-*.DS_Store
+.DS_Store
 notebooks/
 githubkey.pub
 githubkey
@@ -17,3 +17,4 @@ githubkey
 CONDITIONAL_SIMULATION_SETTINGS.md
 multiviewtest/
 MRQAP_DESIGN.md
+experiments.md

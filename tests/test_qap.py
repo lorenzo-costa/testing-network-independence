@@ -1,7 +1,6 @@
 import numpy as np
 import pytest
 
-from src.load_config import _resolve_method
 from src.methods import MRQAP, QAP
 
 
@@ -36,7 +35,7 @@ def test_qap_uses_finite_permutation_pvalue_correction():
 
     method.fit(data)
 
-    null = np.asarray(method.permutation_distribution)
+    null = np.asarray(method.null_distribution)
     extreme = np.count_nonzero(np.abs(null) >= abs(method.test_stat_estimate))
     assert method.pvalue == (extreme + 1) / 10
     assert method.pvalue >= 0.1
@@ -69,7 +68,7 @@ def test_y_permutation_matches_manual_ols_and_corrected_pvalue():
         )
 
     np.testing.assert_allclose(method.test_stat_estimate, expected_observed)
-    np.testing.assert_allclose(method.permutation_distribution, expected_null)
+    np.testing.assert_allclose(method.null_distribution, expected_null)
     extreme = np.count_nonzero(np.abs(expected_null) >= abs(expected_observed))
     assert method.pvalue == (extreme + 1) / 9
     assert isinstance(method.test_stat_estimate, float)
@@ -116,7 +115,7 @@ def test_dsp_matches_double_semipartialling_formula():
         expected_null.append((u @ outcome_residuals) / (u @ u))
 
     np.testing.assert_allclose(method.test_stat_estimate, expected_observed)
-    np.testing.assert_allclose(method.permutation_distribution, expected_null)
+    np.testing.assert_allclose(method.null_distribution, expected_null)
 
 
 @pytest.mark.parametrize("strategy", ["y_permutation", "dsp"])
@@ -139,7 +138,7 @@ def test_batching_does_not_change_results(strategy):
     batched.fit(data)
 
     np.testing.assert_allclose(
-        unbatched.permutation_distribution, batched.permutation_distribution
+        unbatched.null_distribution, batched.null_distribution
     )
     assert unbatched.test_stat_estimate == pytest.approx(batched.test_stat_estimate)
     assert unbatched.pvalue == batched.pvalue
@@ -218,8 +217,8 @@ def test_diagonal_entries_are_excluded():
         changed_method.test_stat_estimate
     )
     np.testing.assert_allclose(
-        original_method.permutation_distribution,
-        changed_method.permutation_distribution,
+        original_method.null_distribution,
+        changed_method.null_distribution,
     )
 
 
@@ -233,6 +232,7 @@ def test_degenerate_regression_raises_clear_error():
 
 
 def test_mrqap_is_resolvable_from_simulation_configuration():
+    from src.load_config import _resolve_method
     resolved = _resolve_method(
         {
             "name": "MRQAP",

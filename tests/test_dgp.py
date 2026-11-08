@@ -52,6 +52,28 @@ def test_bernoulli_network_generates_only_a_from_z():
     assert set(np.unique(result["A"])).issubset({0, 1})
 
 
+def test_bernoulli_auto_link_matches_functional_predictor_distribution():
+    common_kwargs = {
+        "n": 5,
+        "k": 2,
+        "ky": 1,
+        "rdpg": "auto",
+        "functional_form": "linear",
+    }
+
+    uniform_network = BernoulliNetwork(
+        **common_kwargs,
+        predictor_distribution="uniform_rdpg",
+    )
+    gaussian_network = BernoulliNetwork(
+        **common_kwargs,
+        predictor_distribution="gaussian",
+    )
+
+    assert uniform_network._uses_rdpg_link()
+    assert not gaussian_network._uses_rdpg_link()
+
+
 @pytest.mark.parametrize("network_type", [GaussianNetwork, BernoulliNetwork])
 def test_default_covariate_dimension_is_one(network_type):
     result = network_type(

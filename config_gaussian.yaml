@@ -41,16 +41,13 @@ methods:
 
   # List of test methods to benchmark. 'kwargs' are passed to the method constructor.
   list:
-    - name: DiffusionCorrelation
-      kwargs: {}
+    - name: RVtest
+      kwargs:
+        test_type: asymptotic
 
     - name: RVtest
       kwargs:
-        approximation: asymptotic
-
-    - name: RVtest
-      kwargs:
-        approximation: permutation
+        test_type: permutation
         permutation_type: latent
 
     - name: MultivariateACTest

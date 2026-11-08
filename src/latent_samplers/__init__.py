@@ -7,5 +7,6 @@ from .post_nonlinear_noise_sampler import PostNonLinearNoiseSampler
 __all__ = [
     "LatentSampler",
     "ConditionalIndependenceCopulaSampler",
+    "ConditionalGaussianSampler",
     "PostNonLinearNoiseSampler",
 ]

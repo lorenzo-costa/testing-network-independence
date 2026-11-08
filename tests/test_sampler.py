@@ -2,18 +2,17 @@ import importlib
 
 import pytest
 
+from src.load_config import _resolve_copula_setup
 from src.latent_samplers.copula_sampler import CopulaGenerator
 from src.latent_samplers.conditional_independence_copula_sampler import (
     ConditionalIndependenceCopulaSampler,
 )
 from src.latent_samplers.functional_sampler import FunctionalGenerator
-from src.latent_samplers.orthogonal_subspace import OrthogonalSubspaceSampler
 from src.latent_samplers.post_nonlinear_noise_sampler import (
     PostNonLinearNoiseSampler,
 )
 from src.latent_samplers.rdpg_sampler import RDPGGenerator
 from src.latent_samplers.sampler import LatentSampler
-from src.latent_samplers.sbm_cov_sampler import SBMCovariateGenerator
 
 
 def test_module_imports_latent_sampler():
@@ -41,17 +40,7 @@ def test_module_imports_latent_sampler():
         ),
         ({"copula_model": "gaussian"}, {"marginals": "gaussian"}, CopulaGenerator),
         ({"rdpg_distr": "dirichlet"}, {}, RDPGGenerator),
-        (
-            {"dim_common": 1},
-            {"shared_latent_type": "gaussian"},
-            OrthogonalSubspaceSampler,
-        ),
         ({"functional_form": "linear"}, {"ky": 1}, FunctionalGenerator),
-        (
-            {"sbm_covariate_sampling": "random"},
-            {"y_distribution": "gaussian"},
-            SBMCovariateGenerator,
-        ),
     ],
 )
 def test_dispatches_to_selected_sampler(selector, extra_kwargs, expected_type):
@@ -99,6 +88,26 @@ def test_nonconditioning_sampler_returns_none_x():
     assert Z.shape == (10, 2)
     assert Y.shape == (10, 1)
     assert X is None
+
+
+def test_config_resolver_forwards_standard_copula_arguments():
+    dgp_factory, _ = _resolve_copula_setup(
+        {
+            "dgp": "GaussianNetwork",
+            "solver": "ASE",
+            "copula_model": "gaussian",
+            "center_latent": False,
+        }
+    )
+
+    dgp = dgp_factory(
+        n=10,
+        k=3,
+        rho=0.2,
+        marginals={"z": "uniform 0 0.5773502692", "y": "uniform 0 1"},
+    )
+
+    assert dgp.latent_sampler.center_latent is False
 
 
 def test_conditional_selector_can_use_true_activation_and_copula_model():
