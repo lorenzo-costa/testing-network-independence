@@ -46,10 +46,6 @@ methods:
         test_method: mgc
         permutation_type: covariate
 
-    - name: CanonicalCorrelationTest
-      kwargs:
-        permutation_type: covariate
-
 setup_template: &rdpg_setup
   dgp: BernoulliNetwork
   solver: ASE
