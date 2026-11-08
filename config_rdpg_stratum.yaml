@@ -11,7 +11,7 @@ simulation:
   n: [100, 200, 500, 1000]
   k: [3]
   ky: [3]
-  rho: [0.3, 0.5, 0.75]
+  rho: [0.5]
   alpha: [0.05]
   edge_var: [3]  # Required by the shared design loader; ignored by BernoulliNetwork.
   marginals: [null]  # Class-specific marginals are set in each setup below.

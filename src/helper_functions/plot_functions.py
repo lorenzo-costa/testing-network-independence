@@ -189,6 +189,180 @@ def visualise_latent(
         plt.close(fig)
 
 
+def visualise_conditional_copula_latent(
+    samples,
+    setup_titles=None,
+    layout="separate",
+    figsize=None,
+    kdplot=True,
+    save_path=None,
+    z_dimension=0,
+    y_dimension=0,
+):
+    """Compare latent positions from several two-class copula setups.
+
+    Parameters
+    ----------
+    samples : sequence of tuple
+        One ``(Z, Y, X)`` tuple per conditional-copula setup. ``X`` must contain
+        the two class labels 0 and 1; ``Z`` and ``Y`` must be two-dimensional
+        arrays with the same number of rows as ``X``.
+    setup_titles : sequence of str, optional
+        One label per setup. Defaults to ``"Setup 1"``, ``"Setup 2"``, etc.
+    layout : {"separate", "overlay"}, default="separate"
+        In ``"separate"`` mode, each setup is a row and each value of ``X`` is
+        a column. In ``"overlay"`` mode, each setup has one panel and the two
+        classes are distinguished by colour.
+    figsize : tuple, optional
+        Figure size in inches. A layout-dependent size is used by default.
+    kdplot : bool, default=True
+        Overlay kernel-density contours for class subsets with enough data.
+    save_path : str or path-like, optional
+        Output path without an extension. When supplied, PNG and PDF versions
+        are saved. Otherwise, the figure is shown.
+    z_dimension, y_dimension : int, default=0
+        Columns of ``Z`` and ``Y`` to plot.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The generated figure. The figure is closed before it is returned.
+    """
+    if layout not in {"separate", "overlay"}:
+        raise ValueError("layout must be either 'separate' or 'overlay'.")
+    if not isinstance(samples, (list, tuple)) or len(samples) == 0:
+        raise ValueError("samples must contain at least one (Z, Y, X) tuple.")
+
+    validated_samples = []
+    for index, sample in enumerate(samples):
+        if not isinstance(sample, (list, tuple)) or len(sample) != 3:
+            raise ValueError(f"samples[{index}] must be a (Z, Y, X) tuple.")
+
+        latent_z, latent_y, classes = (np.asarray(value) for value in sample)
+        if latent_z.ndim != 2 or latent_y.ndim != 2:
+            raise ValueError(f"Z and Y in samples[{index}] must be two-dimensional.")
+        if classes.ndim == 2 and classes.shape[1] == 1:
+            classes = classes[:, 0]
+        if classes.ndim != 1:
+            raise ValueError(f"X in samples[{index}] must have shape (n,) or (n, 1).")
+        if not (latent_z.shape[0] == latent_y.shape[0] == classes.size):
+            raise ValueError(f"Z, Y, and X in samples[{index}] must have equal lengths.")
+        if z_dimension < 0 or z_dimension >= latent_z.shape[1]:
+            raise ValueError(f"z_dimension is out of bounds for samples[{index}].")
+        if y_dimension < 0 or y_dimension >= latent_y.shape[1]:
+            raise ValueError(f"y_dimension is out of bounds for samples[{index}].")
+        if not np.all(np.isin(classes, (0, 1))):
+            raise ValueError(
+                f"X in samples[{index}] must contain only labels 0 and 1 (C=2)."
+            )
+        validated_samples.append((latent_z, latent_y, classes))
+
+    if setup_titles is None:
+        setup_titles = [f"Setup {index + 1}" for index in range(len(samples))]
+    elif len(setup_titles) != len(samples):
+        raise ValueError("setup_titles must contain one title per setup.")
+
+    number_of_setups = len(validated_samples)
+    if layout == "separate":
+        nrows, ncols = number_of_setups, 2
+        if figsize is None:
+            figsize = (7.0, 2.5 * number_of_setups)
+    else:
+        nrows, ncols = 1, number_of_setups
+        if figsize is None:
+            figsize = (3.5 * number_of_setups, 2.8)
+
+    plot_style = {
+        "font.family": "sans-serif",
+        "font.sans-serif": ["DejaVu Sans"],
+        "font.size": 8.5,
+        "axes.labelsize": 9,
+        "axes.titlesize": 9,
+        "axes.linewidth": 0.6,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "xtick.direction": "out",
+        "ytick.direction": "out",
+        "xtick.labelsize": 7.5,
+        "ytick.labelsize": 7.5,
+        "savefig.facecolor": "white",
+        "savefig.edgecolor": "white",
+        "savefig.transparent": False,
+    }
+    colours = ("#0072B2", "#D55E00")
+
+    with plt.rc_context(plot_style):
+        fig, axes = plt.subplots(
+            nrows,
+            ncols,
+            figsize=figsize,
+            squeeze=False,
+            layout="constrained",
+        )
+
+        for setup_index, (latent_z, latent_y, classes) in enumerate(validated_samples):
+            if layout == "separate":
+                setup_axes = axes[setup_index]
+            else:
+                setup_axes = [axes[0, setup_index], axes[0, setup_index]]
+
+            for class_value, ax in enumerate(setup_axes):
+                mask = classes == class_value
+                y_values = latent_y[mask, y_dimension]
+                z_values = latent_z[mask, z_dimension]
+                ax.scatter(
+                    y_values,
+                    z_values,
+                    alpha=0.5,
+                    s=5,
+                    color=colours[class_value],
+                    linewidths=0,
+                    label=f"X = {class_value}",
+                    zorder=2,
+                )
+                if kdplot and y_values.size >= 2:
+                    sns.kdeplot(
+                        x=y_values,
+                        y=z_values,
+                        ax=ax,
+                        levels=5,
+                        color=colours[class_value] if layout == "overlay" else "#222222",
+                        linewidths=0.8,
+                        warn_singular=False,
+                        zorder=3,
+                    )
+                ax.grid(axis="y", color="#E2E2E2", linewidth=0.45)
+                ax.set_axisbelow(True)
+                ax.margins(0.04)
+
+            if layout == "separate":
+                for class_value, ax in enumerate(setup_axes):
+                    if setup_index == 0:
+                        ax.set_title(f"X = {class_value}")
+                    if class_value == 0:
+                        ax.set_ylabel(f"{setup_titles[setup_index]}\nLatent Z")
+                    else:
+                        ax.set_ylabel("")
+                    if setup_index == number_of_setups - 1:
+                        ax.set_xlabel("Latent Y")
+            else:
+                ax = axes[0, setup_index]
+                ax.set_title(setup_titles[setup_index])
+                ax.set_xlabel("Latent Y")
+                if setup_index == 0:
+                    ax.set_ylabel("Latent Z")
+                ax.legend(frameon=False, markerscale=1.8)
+
+        if save_path is not None:
+            save_path = os.fspath(save_path)
+            fig.savefig(save_path + ".png", dpi=600, bbox_inches="tight")
+            fig.savefig(save_path + ".pdf", bbox_inches="tight")
+        else:
+            plt.show()
+        plt.close(fig)
+        return fig
+
+
 def create_dashed_boxed_message(message):
     """Wraps the given message string in a box frame made of dashes and pipes.
 
