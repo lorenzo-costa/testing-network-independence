@@ -20,6 +20,7 @@ githubkey
 .logs/
 CONDITIONAL_SIMULATION_SETTINGS.md
 data_analysis/dataverse_files/
+data_analysis/data_cleaning_choices.md
 multiviewtest/
 MRQAP_DESIGN.md
 experiments.md

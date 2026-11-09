@@ -156,9 +156,6 @@ class BasePermutationTest(BaseEstimationMethod):
         n_jobs=1,
         batch_size=32,
         verbose=False,
-        n_jobs=1,
-        batch_size=32,
-        verbose=False,
         test_type="permutation",
         conditional_generator=None,
         **kwargs,
@@ -650,7 +647,7 @@ class BasePermutationTest(BaseEstimationMethod):
         self.test_stat_estimate = test_statistic
         self.permutation_distribution = null.tolist()
         self.pvalue = float((1 + exceedances) / (null.size + 1))
-            exceedances = np.count_nonzero(
+        exceedances = np.count_nonzero(
                 np.abs(null) >= np.abs(test_statistic)
             )
 
