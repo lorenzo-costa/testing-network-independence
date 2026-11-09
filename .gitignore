@@ -8,6 +8,10 @@ __pycache__/
 *.jpg
 *.jpeg
 *.h5
+*.xlsx
+*.json
+*.pkl
+*.zip
 .DS_Store
 notebooks/
 githubkey.pub
@@ -15,6 +19,7 @@ githubkey
 *.txt
 .logs/
 CONDITIONAL_SIMULATION_SETTINGS.md
+data_analysis/dataverse_files/
 multiviewtest/
 MRQAP_DESIGN.md
 experiments.md
