@@ -8,7 +8,7 @@
 simulation:
   nsim: 200
   seed: 1
-  n: [1000]
+  n: [100, 200, 500, 1000]
   k: [3]
   ky: [3]
   rho: [0]
@@ -45,6 +45,8 @@ methods:
       kwargs:
         test_method: mgc
         permutation_type: covariate
+        test_type: model_X
+        conditional_generator: from_dgp
 
 setup_template: &rdpg_setup
   dgp: BernoulliNetwork

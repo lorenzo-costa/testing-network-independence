@@ -40,6 +40,13 @@ methods:
         test_type: model_X
         conditional_generator: from_dgp
         use_permutation_coeff: true
+    
+    - name: DistanceCorrelationTest
+      kwargs:
+        test_method: mgc
+        permutation_type: covariate
+        test_type: model_X
+        conditional_generator: from_dgp
 
 setup_template: &rdpg_setup
   dgp: BernoulliNetwork

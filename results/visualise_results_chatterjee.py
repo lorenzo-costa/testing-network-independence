@@ -35,7 +35,7 @@ import pandas as pd
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPOSITORY_ROOT))
 
-from results.results_processing import process_results
+from results.results_processing import extract_argument, process_results
 from src.helper_functions.analyse_functions import aggregate_results
 
 
@@ -86,6 +86,10 @@ RDPG_COPULA_RESULT_FILES = (
 
 RDPG_COPULA_RESULT_FILES = (
     "simulation_results_63945707.csv",
+)
+
+RDPG_STRATUM_POWER_RESULT_FILE = (
+    "conditional_copula_rdpg_stratum_marginals_65700629.csv"
 )
 
 FUNCTIONAL_RESULT_FILES = (
@@ -208,6 +212,13 @@ MARGINALS_Y = ("gaussian", "chi df=5", "cauchy")
 RDPG_COPULAS = ("gaussian", "clayton", "mixture")
 RDPG_MARGINALS_Z = ("uniform 0 0.5773502692",)
 RDPG_MARGINALS_Y = ("gaussian", "chi df=5", "cauchy", "pareto 1.5")
+RDPG_STRATUM_Y_PAIRS = {
+    ("cauchy", "gaussian 0"): ("Cauchy", r"$\mathcal{N}(0,1)$"),
+    ("gaussian -2", "gaussian 2"): (r"$\mathcal{N}(-2,1)$", r"$\mathcal{N}(2,1)$"),
+    ("gaussian 0", "chi2 3"): (r"$\mathcal{N}(0,1)$", r"$\chi^2_3$"),
+    ("pareto 1.5", "gaussian 0"): ("Pareto(1.5)", r"$\mathcal{N}(0,1)$"),
+}
+RDPG_STRATUM_AC_METHODS = ("AC_1", "AC_sqrt", "AC_adaptive")
 SHARDED_FUNCTIONAL_FORMS = (
     "linear",
     "piecewise",
@@ -274,6 +285,11 @@ def parse_args() -> argparse.Namespace:
         "--rdpg-only",
         action="store_true",
         help="Create only figures for the sharded RDPG copula study.",
+    )
+    parser.add_argument(
+        "--rdpg-stratum-power-only",
+        action="store_true",
+        help="Create only the two-stratum RDPG power figure.",
     )
     parser.add_argument(
         "--functionals-only",
@@ -482,6 +498,33 @@ def prepare_rdpg_copula_results(results_dir: Path) -> pd.DataFrame:
     if rdpg.empty:
         raise ValueError("The RDPG result batch contains no Bernoulli-network rows.")
     return rdpg
+
+
+def prepare_rdpg_stratum_power_results(results_dir: Path) -> pd.DataFrame:
+    """Extract the class-specific Y assignments from the RDPG power batch."""
+    raw = read_result_batch(results_dir, (RDPG_STRATUM_POWER_RESULT_FILE,))
+    data = process_results(raw)
+    strata = raw["args"].map(
+        lambda value: extract_argument(value, "marginals_by_class")
+    )
+    if not strata.map(lambda value: isinstance(value, list) and len(value) == 2).all():
+        raise ValueError("Every RDPG stratum result must specify two marginal pairs.")
+    data["stratum_y_pair"] = strata.map(
+        lambda value: (value[0]["y"], value[1]["y"])
+    )
+    if set(data["stratum_y_pair"]) != set(RDPG_STRATUM_Y_PAIRS):
+        raise ValueError("Unexpected Y marginal assignment in the RDPG stratum batch.")
+    if set(data["method"]) != set(RDPG_STRATUM_AC_METHODS):
+        raise ValueError("Unexpected test method in the RDPG stratum batch.")
+    if set(data["n"]) != {100, 200, 500, 1000}:
+        raise ValueError("The RDPG stratum batch must contain all four network sizes.")
+    if not np.allclose(data["rho"].to_numpy(dtype=float), 0.5):
+        raise ValueError("The RDPG stratum power figure requires rho=0.5.")
+    counts = data.groupby(["n", "stratum_y_pair", "method"]).size()
+    expected_groups = 4 * len(RDPG_STRATUM_Y_PAIRS) * len(RDPG_STRATUM_AC_METHODS)
+    if len(counts) != expected_groups or not counts.eq(200).all():
+        raise ValueError("Expected 200 simulations for each size, Y pair, and method.")
+    return data
 
 
 def prepare_sharded_functional_results(
@@ -1179,6 +1222,45 @@ def plot_rdpg_copula_figures(data: pd.DataFrame, output_dir: Path) -> None:
     save_figure(fig, output_dir, f"30_rdpg_copulas_n{point_n}_ky3")
 
 
+def plot_rdpg_stratum_power(data: pd.DataFrame, output_dir: Path) -> None:
+    """Plot power by network size for each pair of stratum-specific Y marginals."""
+    aggregated = aggregate_results(
+        data,
+        y_axis="Rejection",
+        x_axis="n",
+        factors=["method", "stratum_y_pair"],
+    )
+    assert_unique(
+        aggregated, ["n", "method", "stratum_y_pair"],
+        "RDPG stratum power curves",
+    )
+    fig, axes = plt.subplots(
+        2, 2, figsize=(9.2, 5.8), sharex=True, sharey=True,
+        squeeze=False, layout="constrained",
+    )
+    for ax, (pair, (y0, y1)) in zip(axes.flat, RDPG_STRATUM_Y_PAIRS.items()):
+        panel = aggregated[aggregated["stratum_y_pair"] == pair]
+        plot_line_panel(
+            ax, panel, y_mean="Rejection_mean", y_sem="Rejection_sem",
+            methods=RDPG_STRATUM_AC_METHODS,
+        )
+        style_probability_axis(ax)
+        ax.set_title(rf"$Y\mid X=0$: {y0}     $Y\mid X=1$: {y1}")
+
+    fig.suptitle("Power by network size")
+    fig.supxlabel("Network size")
+    fig.supylabel("Power")
+    add_shared_legend(fig, lines=True, methods=RDPG_STRATUM_AC_METHODS)
+    labels = {
+        "AC_1": r"AC ($M=1$)",
+        "AC_sqrt": r"AC ($M=\sqrt{n}$)",
+        "AC_adaptive": "AC (adaptive)",
+    }
+    for text, method in zip(fig.legends[-1].get_texts(), RDPG_STRATUM_AC_METHODS):
+        text.set_text(labels[method])
+    save_figure(fig, output_dir, "27_rdpg_stratum_power_by_n_ky3_rho_0.5")
+
+
 def aggregate_sharded_functional_results(
     data: pd.DataFrame, *, forms: tuple[str, ...] = SHARDED_FUNCTIONAL_FORMS,
 ) -> pd.DataFrame:
@@ -1490,8 +1572,14 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     configure_plot_style()
-    if args.rdpg_only and args.functionals_only:
-        parser.error("--rdpg-only and --functionals-only cannot be used together")
+    if sum((args.rdpg_only, args.rdpg_stratum_power_only, args.functionals_only)) > 1:
+        raise ValueError("Select only one figure-family-only option.")
+    if args.rdpg_stratum_power_only:
+        plot_rdpg_stratum_power(
+            prepare_rdpg_stratum_power_results(results_dir), output_dir
+        )
+        print(f"Saved RDPG stratum power figure as PNG to {output_dir}")
+        return
     if args.rdpg_only:
         plot_rdpg_copula_figures(prepare_rdpg_copula_results(results_dir), output_dir)
         print(f"Saved RDPG copula figures as PNG to {output_dir}")
