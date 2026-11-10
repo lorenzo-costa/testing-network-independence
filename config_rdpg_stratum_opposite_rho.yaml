@@ -1,0 +1,59 @@
+# One-dimensional Bernoulli RDPG with two equally likely strata.
+# Each stratum has Uniform(0, 1) latent positions and standard normal responses.
+
+simulation:
+  nsim: 10
+  seed: 1
+  n: [200]
+  k: [3]
+  ky: [3]
+  rho: [[0.3, -0.3]]  # Each inner pair gives the correlations for X=0 and X=1.
+  alpha: [0.05]
+  edge_var: [3]  # Required by the shared design loader for BernoulliNetwork.
+  marginals:
+    - {z: uniform, y: gaussian}
+
+methods:
+  npermutations: [100]
+  use_true_latent: [false]
+  list:
+    - name: MultivariateACTest
+      kwargs:
+        M: 1
+        test_type: model_X
+        conditional_generator: from_dgp
+        use_permutation_coeff: true
+    - name: MultivariateACTest
+      kwargs:
+        M: 0.5
+        test_type: model_X
+        conditional_generator: from_dgp
+        use_permutation_coeff: true
+    - name: MultivariateACTest
+      kwargs:
+        adaptive_m: true
+        test_type: model_X
+        conditional_generator: from_dgp
+        use_permutation_coeff: true
+    - name: DistanceCorrelationTest
+      kwargs:
+        test_method: mgc
+        permutation_type: covariate
+        test_type: model_X
+        conditional_generator: from_dgp
+
+setups:
+  - dgp: BernoulliNetwork
+    solver: ASE
+    rdpg: true
+    conditional_copula: gaussian
+    C: 2
+    class_probabilities: [0.5, 0.5]
+    center_latent: false
+
+metrics:
+  compute_all: true
+
+output:
+  results_dir: results
+  file_prefix: conditional_copula_rdpg_stratum_opposite_rho
