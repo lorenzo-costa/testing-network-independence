@@ -4,7 +4,7 @@
 simulation:
   nsim: 10
   seed: 1
-  n: [200]
+  n: [100, 200, 500]
   k: [3]
   ky: [3]
   rho: [[0.3, -0.3]]  # Each inner pair gives the correlations for X=0 and X=1.
