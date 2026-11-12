@@ -48,6 +48,12 @@ methods:
         permutation_type: covariate
         test_type: model_X
         conditional_generator: from_dgp
+    
+    - name: CanonicalCorrelationTest
+      kwargs:
+        permutation_type: covariate
+        test_type: model_X
+        conditional_generator: from_dgp
 
 setup_template: &rdpg_setup
   dgp: BernoulliNetwork
