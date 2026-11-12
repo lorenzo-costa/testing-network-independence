@@ -217,6 +217,8 @@ RDPG_COPULAS = ("gaussian", "clayton", "mixture")
 RDPG_MARGINALS_Z = ("uniform 0 0.5773502692",)
 RDPG_MARGINALS_Y = ("gaussian", "chi df=5", "cauchy", "pareto 1.5")
 RDPG_BY_N_MARGINALS_Y = ("gaussian", "cauchy", "pareto 1.5")
+RDPG_POWER_COPULAS = ("gaussian", "mixture")
+RDPG_POWER_MARGINALS_Y = ("gaussian", "cauchy")
 SHARDED_FUNCTIONAL_FORMS = (
     "linear",
     "piecewise",
@@ -1184,6 +1186,59 @@ def plot_rdpg_copula_figures(data: pd.DataFrame, output_dir: Path) -> None:
     fig.supylabel("Power")
     add_shared_legend(fig, lines=False, methods=RDPG_METHODS)
     save_figure(fig, output_dir, f"30_rdpg_copulas_n{point_n}_ky3")
+
+
+def plot_rdpg_power_subset(data: pd.DataFrame, output_dir: Path) -> None:
+    """Plot Gaussian/mixture RDPG power for Gaussian/Cauchy Y marginals."""
+    aggregated = aggregate_rdpg_copula_results(data)
+    subset = aggregated[
+        aggregated["copula"].isin(RDPG_POWER_COPULAS)
+        & aggregated["marginal_y"].isin(RDPG_POWER_MARGINALS_Y)
+    ].copy()
+    assert_unique(
+        subset,
+        ["n", "method", "copula", "marginal_z", "marginal_y"],
+        "Selected RDPG copula power curves",
+    )
+
+    fig, axes = plt.subplots(
+        len(RDPG_POWER_MARGINALS_Y),
+        len(RDPG_POWER_COPULAS),
+        figsize=(8.0, 6.5),
+        sharex=True,
+        sharey=True,
+        squeeze=False,
+        layout="constrained",
+    )
+    for row, marginal_y in enumerate(RDPG_POWER_MARGINALS_Y):
+        for column, copula in enumerate(RDPG_POWER_COPULAS):
+            ax = axes[row, column]
+            panel = subset[
+                (subset["marginal_y"] == marginal_y)
+                & (subset["copula"] == copula)
+            ]
+            plot_line_panel(
+                ax,
+                panel,
+                y_mean="Rejection_mean",
+                y_sem="Rejection_sem",
+                methods=RDPG_BY_N_METHODS,
+            )
+            style_probability_axis(ax)
+
+    add_facet_labels(
+        axes,
+        column_values=RDPG_POWER_COPULAS,
+        column_prefix="",
+        row_values=RDPG_POWER_MARGINALS_Y,
+        row_prefix="Y marginal: ",
+        row_labeler=display_marginal_label,
+    )
+    fig.suptitle("Power by network size")
+    fig.supxlabel("Number of nodes")
+    fig.supylabel("Power")
+    add_shared_legend(fig, lines=True, methods=RDPG_BY_N_METHODS)
+    save_figure(fig, output_dir, "rdpg_power")
 
 
 def aggregate_sharded_functional_results(

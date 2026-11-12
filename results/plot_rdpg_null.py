@@ -54,11 +54,28 @@ def main() -> None:
             / "results/chatterjee_figures/65130774/31_null_rdpg_ky3.png"
         ),
     )
+    parser.add_argument(
+        "--marginals",
+        nargs="+",
+        choices=tuple(name for name, _ in MARGINALS),
+        default=tuple(name for name, _ in MARGINALS),
+        help="Y marginals to include, in panel order.",
+    )
+    parser.add_argument(
+        "--y-max",
+        type=float,
+        default=0.20,
+        help="Upper limit of the Type I error axis (default: 0.20).",
+    )
     args = parser.parse_args()
 
     configure_plot_style()
     data = process_results(pd.read_csv(args.source))
-    marginal_names = tuple(name for name, _ in MARGINALS)
+    marginal_labels = dict(MARGINALS)
+    selected_marginals = tuple(
+        (name, marginal_labels[name]) for name in args.marginals
+    )
+    marginal_names = tuple(name for name, _ in selected_marginals)
     method_names = tuple(name for name, *_ in METHODS)
     data = data[
         (data["dgp_name"] == "BernoulliNetwork")
@@ -75,11 +92,13 @@ def main() -> None:
         x_axis="n",
         factors=["method", "marginal_y"],
     )
-    expected = len(MARGINALS) * len(METHODS) * data["n"].nunique()
+    expected = len(selected_marginals) * len(METHODS) * data["n"].nunique()
     if len(summary) != expected:
         raise ValueError(f"Expected {expected} null-study points, found {len(summary)}")
 
-    fig, axes = plt.subplots(1, 3, figsize=(11.0, 4.0), sharex=True, sharey=True)
+    fig, axes = plt.subplots(
+        1, len(selected_marginals), figsize=(11.0, 4.0), sharex=True, sharey=True
+    )
     fig.subplots_adjust(left=0.075, right=0.985, bottom=0.20, top=0.67, wspace=0.15)
     handles = []
     for method, color, marker, label in METHODS:
@@ -89,7 +108,7 @@ def main() -> None:
                 label=label,
             )
         )
-    for ax, (marginal, label) in zip(axes, MARGINALS):
+    for ax, (marginal, label) in zip(axes, selected_marginals):
         panel = summary[summary["marginal_y"] == marginal]
         for method, color, marker, _ in METHODS:
             curve = panel[panel["method"] == method].sort_values("n")
@@ -101,6 +120,8 @@ def main() -> None:
         ax.set_title(f"Y marginal: {label}")
         ax.set_xticks([100, 200, 500, 1000])
         style_probability_axis(ax, null=True)
+        ax.set_ylim(0, args.y_max)
+        ax.set_yticks(np.arange(0, args.y_max + 0.001, 0.05))
 
     fig.suptitle("Type I error", y=0.98)
     fig.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 0.89), ncol=3, frameon=False)
