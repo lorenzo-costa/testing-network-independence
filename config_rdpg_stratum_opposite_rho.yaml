@@ -2,7 +2,7 @@
 # Each stratum has Uniform(0, 1) latent positions and standard normal responses.
 
 simulation:
-  nsim: 10
+  nsim: 200
   seed: 1
   n: [100, 200, 500, 1000]
   k: [3]

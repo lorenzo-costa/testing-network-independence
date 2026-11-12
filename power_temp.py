@@ -25,10 +25,10 @@ from src.solvers.weighted_network import ASE
 # Edit these defaults to run the experiment without command-line options.
 DEFAULT_NSIM = 10
 DEFAULT_SAMPLE_SIZES = (200)
-DEFAULT_RHOS = (0.5)
+DEFAULT_RHOS = (0, 0.5)
 CLASS_RHO_SIGNS = (1, -1)
 DEFAULT_NPERMUTATIONS = 100
-DEFAULT_JOBS = 4
+DEFAULT_JOBS = 6
 MIN_SAMPLE_SIZE = 20
 
 SEED = 1
@@ -48,18 +48,18 @@ NETWORK_OPTIONS = {
 
 # Each pair lists the coordinate marginals for X=0 and X=1, in that order.
 MARGINAL_SETUPS = (
-    (
-        {"z": "uniform", "y": "gaussian"},
-        {"z": "uniform", "y": "gaussian"},
+    (   
+        {"z": "uniform 0 0.5773502691896257", "y": "gaussian"},
+        {"z": "uniform 0 0.5773502691896257", "y": "gaussian"}
     ),
 )
 
 MODEL_X_OPTIONS = {"test_type": "model_X", "conditional_generator": "from_dgp"}
 AC_OPTIONS = {**MODEL_X_OPTIONS, "use_permutation_coeff": True}
 METHODS = (
-    ("AC (1 neighbor)", partial(MultivariateACTest, M=1, **AC_OPTIONS)),
+    # ("AC (1 neighbor)", partial(MultivariateACTest, M=1, **AC_OPTIONS)),
     ("AC (sqrt(n))", partial(MultivariateACTest, M=0.5, **AC_OPTIONS)),
-    ("AC adaptive", partial(MultivariateACTest, adaptive_m=True, **AC_OPTIONS)),
+    # ("AC adaptive", partial(MultivariateACTest, adaptive_m=True, **AC_OPTIONS)),
     (
         "MGC",
         partial(
