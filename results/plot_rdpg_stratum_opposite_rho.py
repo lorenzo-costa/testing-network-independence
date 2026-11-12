@@ -88,10 +88,6 @@ def plot_power(data: pd.DataFrame, output_dir: Path) -> Path:
         methods=METHODS,
     )
     style_probability_axis(ax)
-    ax.set_title(
-        r"Gaussian copula: $\rho_{X=0}=0.3$, $\rho_{X=1}=-0.3$",
-        fontsize=9,
-    )
 
     fig.suptitle("Power by network size")
     fig.supxlabel("Number of nodes")
