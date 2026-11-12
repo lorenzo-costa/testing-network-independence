@@ -18,6 +18,7 @@ from src.dgp import BernoulliNetwork
 from src.helper_functions.simulation_functions import run_simulation
 from src.methods.ac_test import MultivariateACTest
 from src.methods.distance_correlation_test import DistanceCorrelationTest
+from src.methods.cca_test import CanonicalCorrelationTest
 from src.metrics import ReturnMetric
 from src.solvers.weighted_network import ASE
 
@@ -68,6 +69,12 @@ METHODS = (
             **MODEL_X_OPTIONS,
         ),
     ),
+    (
+        "CCA", partial(
+            CanonicalCorrelationTest, 
+            permutation_type="covariate", 
+            **MODEL_X_OPTIONS)
+    )
 )
 
 
