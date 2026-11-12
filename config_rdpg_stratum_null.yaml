@@ -54,15 +54,24 @@ methods:
         permutation_type: covariate
         test_type: model_X
         conditional_generator: from_dgp
+  
+setups:
+  - dgp: BernoulliNetwork
+    solver: ASE
+    rdpg: true
+    conditional_copula: gaussian
+    C: 2
+    class_probabilities: [0.5, 0.5]
+    center_latent: false
 
-setup_template: &rdpg_setup
-  dgp: BernoulliNetwork
-  solver: ASE
-  rdpg: true
-  conditional_copula: gaussian
-  C: 2
-  class_probabilities: [0.5, 0.5]
-  center_latent: false
+# setup_template: &rdpg_setup
+#   dgp: BernoulliNetwork
+#   solver: ASE
+#   rdpg: true
+#   conditional_copula: gaussian
+#   C: 2
+#   class_probabilities: [0.5, 0.5]
+#   center_latent: false
 
 # setups:
 #   # # Pareto(1.5) versus N(0, 1), then reverse the Y assignments.
