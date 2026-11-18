@@ -6,74 +6,91 @@
 # Simulation Setup
 # -----------------------------------------------------------------------------
 simulation:
-  nsim: 100
+  nsim: 200
   seed: 1
 
   n: [100, 300, 500, 1000]
   k: [3]
   ky: [1]
-  snr: [0.2, 0.5]
+  # Match power_experiment.py: use fixed additive noise rather than
+  # signal-variance-calibrated SNR.
+  rho: [null]
+  noise_scale: [1.0]
   alpha: [0.05]
   edge_var: [3]
   predictor_distribution: [uniform_rdpg]
 
   functionals:
-    - name: pareto
-      kwargs:
-        alpha: 0.8
-    - name: sigmoid
-      kwargs:
-        global_scale: 10.0
     - name: sine
       kwargs:
         global_scale: 10.0
+        frequency: 30.0
     - name: interaction
       kwargs: {}
     - name: linear
       kwargs: {}
-    - name: radial
-      kwargs: {}
     - name: tanh_product
       kwargs:
         global_scale: 10.0
-    - name: manifold
-      kwargs: {}
-    - name: abs_max
-      kwargs: {}
     - name: max
       kwargs: {}
+    - name: radial
+      kwargs: {}
+    - name: piecewise
+      kwargs:
+        weights: [0.5, 0.5, 0.5]
+        normalize_index: true
+        switch_feature: 0
+        threshold: 0.5
+    - name: threshold
+      kwargs:
+        weights: [0.5, 0.5, 0.5]
+        normalize_index: true
+        threshold: 0.5
+    - name: abs_max
+      kwargs:
+        center: 0.5
+        input_scale: 6.0
 
 # -----------------------------------------------------------------------------
 # Testing Methods
 # -----------------------------------------------------------------------------
 methods:
-  npermutations: [200]
+  npermutations: [500]
   use_true_latent: [False]
 
   # List of test methods to benchmark. 'kwargs' are passed to the method constructor.
   list:
-    - name: DiffusionCorrelation
-      kwargs: {}
+    - name: DistanceCorrelationTest
+      kwargs:
+        test_method: mgc
+        permutation_type: covariate
 
     - name: CanonicalCorrelationTest
-      kwargs: {}
+      kwargs:
+        permutation_type: covariate
 
     - name: MultivariateACTest
       kwargs:
         M: 1
         test_type: asymptotic
+        use_permutation_coeff: false
 
     - name: MultivariateACTest
       kwargs:
         M: 0.5
         test_type: asymptotic
+        use_permutation_coeff: false
 
     - name: MultivariateACTest
       kwargs:
         adaptive_m: true
+        test_type: permutation
+        permutation_type: covariate
+        use_permutation_coeff: false
 
 # -----------------------------------------------------------------------------
-# DGP & Solver Setups (H1: rho > 0)
+# DGP & Solver Setup
 # Each entry pairs a data-generating process (network type + copula) with a solver.
 # 'dgp' and 'solver' are string identifiers resolved in the loader.
 # -----------------------------------------------------------------------------
