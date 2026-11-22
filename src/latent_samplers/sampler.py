@@ -3,8 +3,8 @@ import warnings
 from numbers import Integral
 
 from .copula_sampler import CopulaGenerator
-from .conditional_independence_copula_sampler import (
-    ConditionalIndependenceCopulaSampler,
+from .mixture_copula_sampler import (
+    MixtureCopulaSampler,
 )
 from .post_nonlinear_noise_sampler import PostNonLinearNoiseSampler
 from .rdpg_sampler import RDPGGenerator
@@ -91,7 +91,7 @@ class LatentSampler:
             )
 
         factories = {
-            "conditional_copula": lambda value: ConditionalIndependenceCopulaSampler(
+            "conditional_copula": lambda value: MixtureCopulaSampler(
                 n=n,
                 k=k,
                 ky=ky,

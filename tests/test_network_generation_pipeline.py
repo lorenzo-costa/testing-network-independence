@@ -3,8 +3,8 @@ import pytest
 
 from src.dgp import BernoulliNetwork, GaussianNetwork
 from src.latent_samplers.copula_sampler import CopulaGenerator
-from src.latent_samplers.conditional_independence_copula_sampler import (
-    ConditionalIndependenceCopulaSampler,
+from src.latent_samplers.mixture_copula_sampler import (
+    MixtureCopulaSampler,
 )
 from src.latent_samplers.functional_sampler import FunctionalGenerator
 from src.latent_samplers.post_nonlinear_noise_sampler import (
@@ -32,7 +32,7 @@ LATENT_POSITION_CONFIGS = [
             "rho": [0, 0.5],
             "marginals": {"z": "gaussian", "y": "gaussian"},
         },
-        ConditionalIndependenceCopulaSampler,
+        MixtureCopulaSampler,
         2,
         1,
         id="conditional-gaussian-copula",
@@ -100,7 +100,7 @@ def test_user_can_select_latent_positions_and_generate_networks(
     assert np.isfinite(result["Y"]).all()
     if isinstance(
         network.latent_sampler,
-        (ConditionalIndependenceCopulaSampler, PostNonLinearNoiseSampler),
+        (MixtureCopulaSampler, PostNonLinearNoiseSampler),
     ):
         assert result["X"].shape == (n, 1)
     else:

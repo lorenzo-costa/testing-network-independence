@@ -7,7 +7,7 @@ import numpy as np
 from .copula_sampler import CopulaGenerator
 
 
-class ConditionalIndependenceCopulaSampler:
+class MixtureCopulaSampler:
     """Sample ``(Z, Y, X)`` from stratum-specific copula models.
 
     A categorical conditioning variable ``X`` is sampled first. Conditional on

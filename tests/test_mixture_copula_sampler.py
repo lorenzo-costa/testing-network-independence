@@ -5,8 +5,8 @@ import pytest
 
 from src.dgp import BernoulliNetwork, GaussianNetwork
 from src.load_config import _resolve_copula_setup
-from src.latent_samplers.conditional_independence_copula_sampler import (
-    ConditionalIndependenceCopulaSampler,
+from src.latent_samplers.mixture_copula_sampler import (
+    MixtureCopulaSampler,
 )
 from src.methods.ac_test import MultivariateACTest
 
@@ -16,11 +16,11 @@ MARGINALS = {"z": "gaussian", "y": "uniform -1 1"}
 
 def test_module_imports_sampler():
     module = importlib.import_module(
-        "src.latent_samplers.conditional_independence_copula_sampler"
+        "src.latent_samplers.mixture_copula_sampler"
     )
     assert (
-        module.ConditionalIndependenceCopulaSampler
-        is ConditionalIndependenceCopulaSampler
+        module.MixtureCopulaSampler
+        is MixtureCopulaSampler
     )
 
 
@@ -34,7 +34,7 @@ def test_module_imports_sampler():
     ],
 )
 def test_supported_copulas_return_expected_shapes(copula_model, copula_params):
-    sampler = ConditionalIndependenceCopulaSampler(
+    sampler = MixtureCopulaSampler(
         n=120,
         k=3,
         ky=2,
@@ -58,7 +58,7 @@ def test_supported_copulas_return_expected_shapes(copula_model, copula_params):
 
 
 def test_scalar_rho_is_repeated_for_every_stratum():
-    sampler = ConditionalIndependenceCopulaSampler(
+    sampler = MixtureCopulaSampler(
         n=10,
         k=2,
         C=4,
@@ -69,7 +69,7 @@ def test_scalar_rho_is_repeated_for_every_stratum():
 
 
 def test_gaussian_uses_the_matching_stratum_correlation():
-    sampler = ConditionalIndependenceCopulaSampler(
+    sampler = MixtureCopulaSampler(
         n=4000,
         k=1,
         ky=1,
@@ -98,7 +98,7 @@ STRATUM_MARGINALS = [
 
 
 def test_category_specific_marginals_generate_conditional_null_with_marginal_dependence():
-    sampler = ConditionalIndependenceCopulaSampler(
+    sampler = MixtureCopulaSampler(
         n=8000,
         k=1,
         C=2,
@@ -135,7 +135,7 @@ def test_category_specific_marginals_generate_conditional_null_with_marginal_dep
     ],
 )
 def test_category_specific_marginals_work_with_each_copula(copula_model, copula_params):
-    sampler = ConditionalIndependenceCopulaSampler(
+    sampler = MixtureCopulaSampler(
         n=100,
         k=1,
         C=2,
@@ -164,7 +164,7 @@ def test_category_specific_marginals_work_with_each_copula(copula_model, copula_
 )
 def test_category_specific_marginal_validation(extra, message):
     with pytest.raises((TypeError, ValueError), match=message):
-        ConditionalIndependenceCopulaSampler(n=10, k=1, C=2, **extra)
+        MixtureCopulaSampler(n=10, k=1, C=2, **extra)
 
 
 def test_bernoulli_rdpg_with_category_marginals_runs_model_x():
@@ -196,7 +196,7 @@ def test_bernoulli_rdpg_with_category_marginals_runs_model_x():
 
 
 def test_gaussian_category_means_preserve_rho_and_create_marginal_dependence():
-    sampler = ConditionalIndependenceCopulaSampler(
+    sampler = MixtureCopulaSampler(
         n=12000,
         k=1,
         C=2,
@@ -222,7 +222,7 @@ def test_gaussian_category_covariances_control_full_joint_law():
         [[1.5, 0.3, 0], [0.3, 2, 0], [0, 0, 0.8]],
         [[2, 0.1, 0.6], [0.1, 1, -0.2], [0.6, -0.2, 1.5]],
     ]
-    sampler = ConditionalIndependenceCopulaSampler(
+    sampler = MixtureCopulaSampler(
         n=16000,
         k=2,
         C=2,
@@ -241,7 +241,7 @@ def test_gaussian_category_covariances_control_full_joint_law():
 
 
 def test_sample_given_x_uses_gaussian_response_marginals():
-    sampler = ConditionalIndependenceCopulaSampler(
+    sampler = MixtureCopulaSampler(
         n=10,
         k=1,
         ky=2,
@@ -265,7 +265,7 @@ def test_sample_given_x_uses_gaussian_response_marginals():
 
 
 def test_sample_given_x_reproduces_stratum_centering():
-    sampler = ConditionalIndependenceCopulaSampler(
+    sampler = MixtureCopulaSampler(
         n=10,
         k=1,
         C=2,
@@ -290,7 +290,7 @@ def test_sample_given_x_reproduces_stratum_centering():
     ],
 )
 def test_sample_given_x_supports_every_copula_family(copula_model, copula_params):
-    sampler = ConditionalIndependenceCopulaSampler(
+    sampler = MixtureCopulaSampler(
         n=10,
         k=2,
         ky=2,
@@ -315,7 +315,7 @@ def test_sample_given_x_supports_every_copula_family(copula_model, copula_params
     ([0, 2], "labels must lie"),
 ])
 def test_sample_given_x_rejects_invalid_labels(X, message):
-    sampler = ConditionalIndependenceCopulaSampler(n=10, k=1, C=2)
+    sampler = MixtureCopulaSampler(n=10, k=1, C=2)
     with pytest.raises(ValueError, match=message):
         sampler.sample(X)
 
@@ -357,11 +357,11 @@ def test_conditional_copula_runs_model_x_test():
 )
 def test_explicit_gaussian_parameters_validate_configuration(extra, message):
     with pytest.raises(ValueError, match=message):
-        ConditionalIndependenceCopulaSampler(n=10, k=1, C=1, **extra)
+        MixtureCopulaSampler(n=10, k=1, C=1, **extra)
 
 
 def test_centering_is_applied_separately_within_each_stratum():
-    sampler = ConditionalIndependenceCopulaSampler(
+    sampler = MixtureCopulaSampler(
         n=300,
         k=2,
         ky=2,
@@ -382,7 +382,7 @@ def test_centering_is_applied_separately_within_each_stratum():
 
 
 def test_custom_class_probabilities_are_used():
-    sampler = ConditionalIndependenceCopulaSampler(
+    sampler = MixtureCopulaSampler(
         n=40,
         k=1,
         C=3,
@@ -396,7 +396,7 @@ def test_custom_class_probabilities_are_used():
 
 
 def test_p_is_an_alias_for_class_probabilities():
-    sampler = ConditionalIndependenceCopulaSampler(
+    sampler = MixtureCopulaSampler(
         n=20,
         k=1,
         C=2,
@@ -427,7 +427,7 @@ def test_p_is_an_alias_for_class_probabilities():
 )
 def test_common_parameters_are_validated(kwargs, message):
     with pytest.raises(ValueError, match=message):
-        ConditionalIndependenceCopulaSampler(
+        MixtureCopulaSampler(
             n=10,
             k=2,
             marginals=MARGINALS,
@@ -438,7 +438,7 @@ def test_common_parameters_are_validated(kwargs, message):
 @pytest.mark.parametrize("copula_model", ["clayton", "gumbel"])
 def test_archimedean_copulas_reject_negative_rho(copula_model):
     with pytest.raises(ValueError, match="does not support negative rho"):
-        ConditionalIndependenceCopulaSampler(
+        MixtureCopulaSampler(
             n=10,
             k=1,
             C=2,
@@ -450,7 +450,7 @@ def test_archimedean_copulas_reject_negative_rho(copula_model):
 
 def test_student_t_requires_positive_df():
     with pytest.raises(ValueError, match="positive 'df'"):
-        ConditionalIndependenceCopulaSampler(
+        MixtureCopulaSampler(
             n=10,
             k=1,
             C=2,
@@ -470,7 +470,7 @@ def test_student_t_requires_positive_df():
 )
 def test_marginals_require_new_dictionary_format(marginals, error):
     with pytest.raises(error, match="keys 'z' and 'y'"):
-        ConditionalIndependenceCopulaSampler(
+        MixtureCopulaSampler(
             n=10,
             k=1,
             C=2,
@@ -480,7 +480,7 @@ def test_marginals_require_new_dictionary_format(marginals, error):
 
 def test_unknown_marginal_is_rejected_during_initialization():
     with pytest.raises(ValueError, match="Unknown distribution"):
-        ConditionalIndependenceCopulaSampler(
+        MixtureCopulaSampler(
             n=10,
             k=1,
             C=2,
@@ -489,7 +489,7 @@ def test_unknown_marginal_is_rejected_during_initialization():
 
 
 def test_unused_keyword_arguments_are_accepted():
-    sampler = ConditionalIndependenceCopulaSampler(
+    sampler = MixtureCopulaSampler(
         n=10,
         k=1,
         C=2,
@@ -503,7 +503,7 @@ def test_unused_keyword_arguments_are_accepted():
 
 
 def test_gaussian_marginals_are_the_default():
-    sampler = ConditionalIndependenceCopulaSampler(
+    sampler = MixtureCopulaSampler(
         n=20,
         k=2,
         ky=1,
@@ -538,7 +538,7 @@ def test_config_resolver_forwards_conditional_sampler_arguments():
         rng=np.random.default_rng(60),
     )
 
-    assert isinstance(dgp.latent_sampler, ConditionalIndependenceCopulaSampler)
+    assert isinstance(dgp.latent_sampler, MixtureCopulaSampler)
     np.testing.assert_allclose(
         dgp.latent_sampler.class_probabilities,
         [0.25, 0.75],
