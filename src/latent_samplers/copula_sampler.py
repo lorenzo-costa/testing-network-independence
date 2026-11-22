@@ -378,62 +378,63 @@ class CopulaGenerator:
         if not isinstance(marginals, dict):
             marginals = {"y": marginals, "z": marginals}
 
-        # 2. Define a helper to parse a single string/distribution
-        def parse_dist(dist_str):
-            parts = dist_str.split()
-            name = parts[0]
-            args = [float(p) for p in parts[1:]]  # Convert params to floats
+        self.marginal_y = self.parse_marginal(marginals["y"])
+        self.marginal_z = self.parse_marginal(marginals["z"])
 
-            # Dispatch table: maps name to (scipy_func, arg_names)
-            registry = {
-                "gaussian": (stats.norm, []),
-                "exponential": (stats.expon, []),
-                "uniform": (stats.uniform, []),
-                "t": (stats.t, ["df"]),
-                "chi": (stats.chi2, ["df"]),
-                "chi2": (stats.chi2, ["df"]),
-                "beta": (stats.beta, []),
-                "gamma": (stats.gamma, ["a", "scale"]),  # Special handling for scale
-                "lognormal": (stats.lognorm, ["s"]),
-                "cauchy": (stats.cauchy, ["loc", "scale"]),
-                "pareto": (stats.pareto, ["b", "scale"]),
-                "dirichlet": (stats.dirichlet, ["alpha"]),
-            }
+    @staticmethod
+    def parse_marginal(dist_str):
+        """Parse one marginal specification shared by the copula samplers."""
+        parts = dist_str.split()
+        name = parts[0]
+        args = [float(p) for p in parts[1:]]  # Convert params to floats
 
-            if name not in registry:
-                raise ValueError(f"Unknown distribution: {name}")
+        # Dispatch table: maps name to (scipy_func, arg_names)
+        registry = {
+            "gaussian": (stats.norm, []),
+            "exponential": (stats.expon, []),
+            "uniform": (stats.uniform, []),
+            "t": (stats.t, ["df"]),
+            "chi": (stats.chi2, ["df"]),
+            "chi2": (stats.chi2, ["df"]),
+            "beta": (stats.beta, []),
+            "gamma": (stats.gamma, ["a", "scale"]),  # Special handling for scale
+            "lognormal": (stats.lognorm, ["s"]),
+            "cauchy": (stats.cauchy, ["loc", "scale"]),
+            "pareto": (stats.pareto, ["b", "scale"]),
+            "dirichlet": (stats.dirichlet, ["alpha"]),
+        }
 
-            func, arg_keys = registry[name]
+        if name not in registry:
+            raise ValueError(f"Unknown distribution: {name}")
 
-            # Handle simple positional distributions vs keyword ones
-            if name == "pareto":
-                if len(args) not in {1, 2}:
-                    raise ValueError(
-                        "pareto requires a positive shape and optional scale: "
-                        "'pareto <shape> [scale]'"
-                    )
-                shape = args[0]
-                scale = args[1] if len(args) == 2 else 1.0
-                if shape <= 0 or scale <= 0:
-                    raise ValueError("pareto shape and scale must both be positive")
-                return func(b=shape, scale=scale)
-            if not args:
-                return func
-            if name == "uniform" and len(args) == 2:
-                a, b = args
-                return func(loc=a, scale=b - a)  # scale is the width (max - min)
-            if name == "gamma" and len(args) == 2:
-                return func(a=args[0], scale=args[1])
-            if name == "cauchy" and len(args) == 2:
-                return func(loc=args[0], scale=args[1])
+        func, arg_keys = registry[name]
 
-            # Map args to keys if provided, otherwise pass as positional
-            kwargs = {k: v for k, v in zip(arg_keys, args) if k}
-            return func(**kwargs) if kwargs else func(*args)
+        # Handle simple positional distributions vs keyword ones
+        if name == "pareto":
+            if len(args) not in {1, 2}:
+                raise ValueError(
+                    "pareto requires a positive shape and optional scale: "
+                    "'pareto <shape> [scale]'"
+                )
+            shape = args[0]
+            scale = args[1] if len(args) == 2 else 1.0
+            if shape <= 0 or scale <= 0:
+                raise ValueError("pareto shape and scale must both be positive")
+            return func(b=shape, scale=scale)
+        if not args:
+            return func
+        if name == "uniform" and len(args) == 2:
+            a, b = args
+            return func(loc=a, scale=b - a)  # scale is the width (max - min)
+        if name == "gamma" and len(args) == 2:
+            return func(a=args[0], scale=args[1])
+        if name == "cauchy" and len(args) == 2:
+            return func(loc=args[0], scale=args[1])
 
-        # 3. Apply to both variables
-        self.marginal_y = parse_dist(marginals["y"])
-        self.marginal_z = parse_dist(marginals["z"])
+        # Map args to keys if provided, otherwise pass as positional
+        kwargs = {k: v for k, v in zip(arg_keys, args) if k}
+        return func(**kwargs) if kwargs else func(*args)
+
 
     def _sample_latent_copula(self):
         u_z, u_y = self._generate_copula_uniforms()

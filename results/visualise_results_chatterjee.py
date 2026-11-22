@@ -164,6 +164,7 @@ COLORS = {
     "AC_1": "#D55E00",
     "AC_sqrt": "#009E73",
     "AC_adaptive": "#CC79A7",
+    "CanonicalCorrelationTest": "#222222",
     "RVTest_permutation": "#E69F00",
     "RVTest_asymptotic": "#222222",
 }
@@ -173,6 +174,7 @@ MARKERS = {
     "AC_1": "D",
     "AC_sqrt": "^",
     "AC_adaptive": "s",
+    "CanonicalCorrelationTest": "P",
     "RVTest_permutation": "v",
     "RVTest_asymptotic": "o",
 }
@@ -182,6 +184,7 @@ LINESTYLES = {
     "AC_1": "-",
     "AC_sqrt": "-",
     "AC_adaptive": "-",
+    "CanonicalCorrelationTest": "-",
     "RVTest_permutation": "-",
     "RVTest_asymptotic": "-",
 }
@@ -191,6 +194,7 @@ METHOD_LABELS = {
     "AC_1": r"AC ($k=1$)",
     "AC_sqrt": r"AC ($k=\sqrt{n}$)",
     "AC_adaptive": "AC (adaptive)",
+    "CanonicalCorrelationTest": "CCA",
     "RVTest_permutation": "RV (permutation)",
     "RVTest_asymptotic": "RV (asymptotic)",
 }
@@ -212,6 +216,9 @@ MARGINALS_Y = ("gaussian", "chi df=5", "cauchy")
 RDPG_COPULAS = ("gaussian", "clayton", "mixture")
 RDPG_MARGINALS_Z = ("uniform 0 0.5773502692",)
 RDPG_MARGINALS_Y = ("gaussian", "chi df=5", "cauchy", "pareto 1.5")
+RDPG_POWER_COPULAS = ("gaussian", "mixture")
+RDPG_POWER_MARGINALS_Y = ("gaussian", "cauchy")
+RDPG_POWER_METHODS = ("DC", "AC_1", "AC_sqrt", "AC_adaptive", "CanonicalCorrelationTest")
 RDPG_STRATUM_Y_PAIRS = {
     ("cauchy", "gaussian 0"): ("Cauchy", r"$\mathcal{N}(0,1)$"),
     ("gaussian -2", "gaussian 2"): (r"$\mathcal{N}(-2,1)$", r"$\mathcal{N}(2,1)$"),
@@ -285,6 +292,11 @@ def parse_args() -> argparse.Namespace:
         "--rdpg-only",
         action="store_true",
         help="Create only figures for the sharded RDPG copula study.",
+    )
+    parser.add_argument(
+        "--rdpg-power-only",
+        action="store_true",
+        help="Create the focused, high-resolution RDPG power figure and vector PDF.",
     )
     parser.add_argument(
         "--rdpg-stratum-power-only",
@@ -1222,6 +1234,101 @@ def plot_rdpg_copula_figures(data: pd.DataFrame, output_dir: Path) -> None:
     save_figure(fig, output_dir, f"30_rdpg_copulas_n{point_n}_ky3")
 
 
+def plot_rdpg_power_for_latex(data: pd.DataFrame, output_dir: Path) -> None:
+    """Export the focused RDPG power panels with readable text and vector artwork."""
+    selected = data[
+        (data["rho"] != 0.0)
+        & data["copula"].isin(RDPG_POWER_COPULAS)
+        & data["marginal_y"].isin(RDPG_POWER_MARGINALS_Y)
+        & data["marginal_z"].isin(RDPG_MARGINALS_Z)
+        & data["method"].isin(RDPG_POWER_METHODS)
+    ].copy()
+    aggregated = aggregate_results(
+        selected,
+        y_axis="Rejection",
+        x_axis="n",
+        factors=["method", "copula", "marginal_z", "marginal_y"],
+    )
+    assert_unique(
+        aggregated,
+        ["n", "method", "copula", "marginal_z", "marginal_y"],
+        "Focused RDPG power curves",
+    )
+    if len(aggregated) != 4 * len(RDPG_POWER_COPULAS) * len(RDPG_POWER_MARGINALS_Y) * len(RDPG_POWER_METHODS):
+        raise ValueError("Focused RDPG power figure has missing network-size or method results.")
+
+    with plt.rc_context({
+        "font.size": 15,
+        "axes.labelsize": 16,
+        "axes.titlesize": 15,
+        "xtick.labelsize": 14,
+        "ytick.labelsize": 14,
+        "legend.fontsize": 14,
+        "lines.linewidth": 1.8,
+        "lines.markersize": 6,
+    }):
+        fig, axes = plt.subplots(
+            len(RDPG_POWER_MARGINALS_Y),
+            len(RDPG_POWER_COPULAS),
+            figsize=(8.0, 6.5),
+            sharex=True,
+            sharey=True,
+            squeeze=False,
+            layout="constrained",
+        )
+        for row, marginal_y in enumerate(RDPG_POWER_MARGINALS_Y):
+            for column, copula in enumerate(RDPG_POWER_COPULAS):
+                ax = axes[row, column]
+                panel = aggregated[
+                    (aggregated["marginal_y"] == marginal_y)
+                    & (aggregated["copula"] == copula)
+                ]
+                plot_line_panel(
+                    ax,
+                    panel,
+                    y_mean="Rejection_mean",
+                    y_sem="Rejection_sem",
+                    methods=RDPG_POWER_METHODS,
+                )
+                style_probability_axis(ax)
+                if row == 0:
+                    ax.set_title(display_label(copula))
+            axes[row, -1].annotate(
+                f"Y: {display_marginal_label(marginal_y)}",
+                xy=(1.04, 0.5),
+                xycoords="axes fraction",
+                ha="left",
+                va="center",
+                rotation=270,
+                fontsize=15,
+                annotation_clip=False,
+            )
+
+        for ax in axes[-1]:
+            plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
+
+        fig.supxlabel("Number of nodes")
+        fig.supylabel("Power")
+        add_shared_legend(fig, lines=True, methods=RDPG_POWER_METHODS)
+        xi_labels = {
+            "AC_1": r"$\xi$ ($k=1$)",
+            "AC_sqrt": r"$\xi$ ($k=\sqrt{n}$)",
+            "AC_adaptive": r"$\xi$ (adaptive)",
+        }
+        for text, method in zip(fig.legends[-1].get_texts(), RDPG_POWER_METHODS):
+            if method in xi_labels:
+                text.set_text(xi_labels[method])
+        fig.get_layout_engine().set(rect=(0.0, 0.0, 1.0, 0.89))
+        fig.legends[-1].set_bbox_to_anchor((0.5, 0.99))
+        output_dir.mkdir(parents=True, exist_ok=True)
+        png_path = output_dir / "rdpg_power.png"
+        pdf_path = output_dir / "rdpg_power.pdf"
+        fig.savefig(png_path, dpi=600, metadata={"Creator": "visualise_results_chatterjee.py"})
+        fig.savefig(pdf_path, metadata={"Creator": "visualise_results_chatterjee.py"})
+        plt.close(fig)
+        print(f"Saved {png_path} and {pdf_path}")
+
+
 def plot_rdpg_stratum_power(data: pd.DataFrame, output_dir: Path) -> None:
     """Plot power by network size for each pair of stratum-specific Y marginals."""
     aggregated = aggregate_results(
@@ -1572,8 +1679,11 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     configure_plot_style()
-    if sum((args.rdpg_only, args.rdpg_stratum_power_only, args.functionals_only)) > 1:
+    if sum((args.rdpg_only, args.rdpg_power_only, args.rdpg_stratum_power_only, args.functionals_only)) > 1:
         raise ValueError("Select only one figure-family-only option.")
+    if args.rdpg_power_only:
+        plot_rdpg_power_for_latex(prepare_rdpg_copula_results(results_dir), output_dir)
+        return
     if args.rdpg_stratum_power_only:
         plot_rdpg_stratum_power(
             prepare_rdpg_stratum_power_results(results_dir), output_dir

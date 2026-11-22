@@ -1,3 +1,4 @@
+from .continuous_conditional_copula_sampler import ContinuousConditionalCopulaSampler
 from .sampler import LatentSampler
 from .mixture_copula_sampler import (
     MixtureCopulaSampler,

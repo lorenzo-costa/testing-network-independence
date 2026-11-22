@@ -11,7 +11,7 @@ simulation:
   alpha: [0.05]
   edge_var: [3]  # Required by the shared design loader for BernoulliNetwork.
   marginals:
-    - {z: uniform, y: gaussian}
+    - {z: uniform, y: cauchy}
 
 methods:
   npermutations: [100]

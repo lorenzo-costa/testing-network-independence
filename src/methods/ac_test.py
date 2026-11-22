@@ -71,6 +71,13 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
     exponents 0.3, 0.5, 0.7, and 0.9. At each grid value it computes the
     coefficient for Y, which may be univariate or multivariate. All other
     coefficient and permutation options retain their usual behavior.
+
+    With ``standardize=True``, divide the tested Z block by
+    ``sqrt(mean(var(Z, axis=0, ddof=0)))`` before finding neighbors. X and Y
+    are unchanged, and Z is not centered. This single block scale preserves
+    rotations of the embedding. The fitted ``standardization_scale_`` is
+    held fixed for the observed statistic and all null draws, including
+    every adaptive-M component. A constant block uses scale 1.
     """
 
     def __init__(
@@ -93,12 +100,17 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
         test_type="permutation",
         conditional_generator=None,
         _ignore_X=False, # temp for testing
+        standardize=False,
         **kwargs,
     ):
         if "approximation" in kwargs:
             raise TypeError("'approximation' is no longer supported; use 'test_type'.")
         if test_type == "model_X" and _ignore_X:
             raise ValueError("Model-X requires the AC statistic to use conditioning X.")
+        if not isinstance(standardize, (bool, np.bool_)):
+            raise ValueError("standardize must be a boolean.")
+        self.standardize = bool(standardize)
+        self.standardization_scale_ = 1.0
         self.M = M
         self.use_permutation_coeff = use_permutation_coeff
         self.adaptive_m = bool(adaptive_m)
@@ -128,6 +140,14 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
 
     def fit(self, data, **kwargs):
         self._process_input(data)
+        self.standardization_scale_ = 1.0
+        if self.standardize:
+            with np.errstate(over="ignore", invalid="ignore"):
+                scale = float(np.sqrt(np.mean(np.var(self.Zhat, axis=0))))
+            if not np.isfinite(scale):
+                raise ValueError("Z block standard deviation must be finite to standardize.")
+            if scale > 0:
+                self.standardization_scale_ = scale
         if self.adaptive_m:
             if self.npermutations < 1:
                 raise ValueError(
@@ -161,6 +181,8 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
         )
 
     def _evaluate_test_statistic(self, Z, Y, rng):
+        if self.standardize:
+            Z = Z / self.standardization_scale_
         if self.adaptive_m:
             return self._adaptive_statistics(Z, Y, rng=rng)
         return self._ac_statistic(Z, Y, rng=rng)
@@ -178,4 +200,6 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
         )
         if self._ignore_X:
             name += "_ignoreX"
+        if self.standardize:
+            name += "_standardized"
         return name

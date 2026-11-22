@@ -24,6 +24,8 @@ class LatentSampler:
     conditional_copula : str or True, optional
         Select the conditional copula sampler. A string names the copula model;
         with True, ``copula_model`` is used and defaults to ``"gaussian"``.
+    continuous_conditional_copula : str or True, optional
+        Select the Gaussian copula with scalar continuous X and exact Y | X draws.
     conditional_gaussian : True, optional
         Select the categorical joint Gaussian sampler. Requires ``means``,
         ``covariances``, and ``class_probabilities`` in keyword arguments.
@@ -45,6 +47,7 @@ class LatentSampler:
         functional_form=None,
         rng=None,
         conditional_gaussian=None,
+        continuous_conditional_copula=None,
         **kwargs,
     ):
         if rng is None:
@@ -58,6 +61,7 @@ class LatentSampler:
         self.ky = int(ky)
 
         sampler_options = [
+            ("continuous_conditional_copula", continuous_conditional_copula),
             ("conditional_gaussian", conditional_gaussian),
             ("conditional_copula", conditional_copula),
             ("post_nonlinear_noise", post_nonlinear_noise),
@@ -66,7 +70,7 @@ class LatentSampler:
             (
                 "copula_model",
                 copula_model
-                if conditional_gaussian is None and conditional_copula is None and post_nonlinear_noise is None
+                if continuous_conditional_copula is None and conditional_gaussian is None and conditional_copula is None and post_nonlinear_noise is None
                 else None,
             ),
         ]
@@ -130,6 +134,7 @@ class LatentSampler:
         self.sampler_name = latent_sampler.get_name()
 
         self.copula_model = copula_model
+        self.continuous_conditional_copula = continuous_conditional_copula
         self.conditional_copula = conditional_copula
         self.conditional_gaussian = conditional_gaussian
         self.post_nonlinear_noise = post_nonlinear_noise
@@ -190,7 +195,9 @@ class LatentSampler:
         """
         Z, Y, X = None, None, None
 
-        if self.conditional_gaussian is not None:
+        if self.continuous_conditional_copula is not None:
+            Z, Y, X = self.latent_sampler.sample_latent()
+        elif self.conditional_gaussian is not None:
             Z, Y, X = self.latent_sampler.sample_latent()
         elif self.conditional_copula is not None:
             Z, Y, X = self.latent_sampler._sample_latent_conditional_copula()

@@ -88,6 +88,7 @@ def _resolve_copula_setup(entry: dict):
         "dgp",
         "solver",
         "conditional_copula",
+        "continuous_conditional_copula",
         "post_nonlinear_noise",
         "copula_model",
         "rdgp",
@@ -114,6 +115,12 @@ def _resolve_copula_setup(entry: dict):
         "column_covariance_y",
         "cross_covariance",
     }
+    continuous_keys = {
+        "marginals", "correlation_zx", "correlation_yx",
+        "conditional_correlation_zy", "center_latent",
+    }
+    if entry.get("continuous_conditional_copula") is not None:
+        reserved.update(continuous_keys | conditional_keys)
     post_nonlinear_keys = {
         "C",
         "rho",
@@ -138,6 +145,7 @@ def _resolve_copula_setup(entry: dict):
     copula_params = {k: v for k, v in entry.items() if k not in reserved}
 
     dgp_kwargs = {
+        "continuous_conditional_copula": entry.get("continuous_conditional_copula"),
         "conditional_copula": entry.get("conditional_copula"),
         "post_nonlinear_noise": entry.get("post_nonlinear_noise"),
         "copula_model": entry.get("copula_model"),
@@ -145,6 +153,8 @@ def _resolve_copula_setup(entry: dict):
         "rdpg_distr": entry.get("rdpg_distr", None),
         "copula_params": copula_params,
     }
+    if entry.get("continuous_conditional_copula") is not None:
+        dgp_kwargs.update({key: entry[key] for key in continuous_keys | conditional_keys if key in entry})
     if entry.get("post_nonlinear_noise") is not None:
         dgp_kwargs.pop("copula_params")
     if entry.get("conditional_copula") is not None:
@@ -316,7 +326,9 @@ def _detect_experiment_type(raw: dict) -> str:
             entry.get("post_nonlinear_noise") for entry in setups_raw
         )
         has_conditional_copula = any(
-            entry.get("conditional_copula") is not None for entry in setups_raw
+            (entry.get("conditional_copula") is not None
+             or entry.get("continuous_conditional_copula") is not None)
+            for entry in setups_raw
         )
         if has_post_nonlinear and has_conditional_copula:
             return "conditioning_mixed"
@@ -600,7 +612,8 @@ def _build_single_design(exp: str, cfg: dict) -> list[dict]:
         conditional_setups = [
             setup
             for setup in sets
-            if setup[0].keywords.get("conditional_copula") is not None
+            if (setup[0].keywords.get("conditional_copula") is not None
+                or setup[0].keywords.get("continuous_conditional_copula") is not None)
         ]
         post_nonlinear_setups = [
             setup

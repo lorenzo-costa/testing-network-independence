@@ -255,6 +255,17 @@ the observed `Y` shape. The test sets `conditional_generator.rng` to its RNG,
 holds the fitted latent positions and `X` fixed, and uses serial draws
 (`n_jobs=1`). The Monte Carlo results are available as `null_distribution`.
 
+Set `standardize=True` on `MultivariateACTest` to divide the tested Z or
+estimated-Z block by `sqrt(mean(var(Z, axis=0, ddof=0)))`. This uses one scale
+for the entire block, preserves embedding rotations, and leaves X, Y, and
+stored latent positions unchanged. It does not center Z. The scale is fitted
+once per `fit`, exposed as `standardization_scale_`, and reused for the
+observed statistic and every null draw, including adaptive-M components.
+A constant block uses scale 1; nonfinite scales are rejected. The default is
+`False`. YAML methods can enable it with `kwargs: {standardize: true}`.
+This option changes finite-sample neighbor geometry; sample-SD scaling does
+not by itself extend consistency results to infinite-variance predictors.
+
 For an unconditional multivariate response, `MultivariateACTest` also accepts
 `test_type="asymptotic"` with `use_permutation_coeff=True` and a fixed integer
 `M` (default 1). This uses the realized nearest-neighbor graph and empirical
@@ -336,6 +347,45 @@ model_x_generator = dgp.latent_sampler  # exposes sample(data["X"])
 The Gaussian-only `means` and `covariances` options cannot be combined with
 `marginals_by_class`. A Student-t copula still has conditional dependence at
 `rho=0` because its coordinates share a random scale.
+
+For scalar continuous `X`, select `continuous_conditional_copula="gaussian"`.
+This leaves categorical `conditional_copula` behavior unchanged:
+
+```python
+dgp = GaussianNetwork(
+    n=200, k=1, ky=1,
+    continuous_conditional_copula="gaussian",
+    correlation_zx=0.5, correlation_yx=0.5,
+    conditional_correlation_zy=0.0,
+    marginals={"x": "gaussian", "z": "uniform -1 1", "y": "exponential"},
+)
+data = dgp.generate()
+fresh_Y = dgp.latent_sampler.sample(data["X"])
+```
+
+The correlations with X refer to normal copula coordinates. Each accepts a
+scalar broadcast or a vector of length `k` or `ky`, respectively. The
+`conditional_correlation_zy` parameter specifies residual correlations given X:
+a scalar broadcasts to all pairs, or supply a matrix of shape `(k, ky)`.
+Residual coordinates within each block are independent. The resulting residual
+and joint correlation matrices must be positive definite; invalid combinations
+are rejected. Zero residual cross correlation is the conditional null even
+when Z and Y are marginally correlated. For example, the two 0.5 loadings
+above imply a marginal normal-coordinate correlation of 0.25 under the null.
+
+Marginals require exactly `x`, `z`, and `y` and default to standard Gaussian.
+Use existing scalar continuous distribution strings with valid CDF and inverse
+CDF; one distribution is shared across columns of each block. Conditional
+sampling returns `(len(X), ky)`, accepts `(n,)` or `(n, 1)` X, and preserves
+both supplied X and stored observations. X must be finite and its CDF must be
+strictly between zero and one at machine precision. Empirical centering and
+non-Gaussian copula families are unsupported in this mode.
+
+See `config_continuous_conditional_copula.yaml` for null and alternative CCA
+Model-X setups using `conditional_generator: from_dgp`. Keep the legacy
+`simulation.rho` grid at `[0]`; control conditional dependence through
+`conditional_correlation_zy` in each setup. Nonzero `rho` is rejected to avoid
+confusing marginal and conditional association.
 
 Multivariate AC orthant counts use the exact recursive sorted-block algorithm
 from [Huang, Li and Wang, Section 5](https://arxiv.org/abs/2512.07443v2).
