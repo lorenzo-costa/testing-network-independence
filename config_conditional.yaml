@@ -4,7 +4,7 @@
 # Under the null, Y uses an independent Z' with the same distribution.
 
 simulation:
-  nsim: 1
+  nsim: 200
   seed: 1
   n: [100, 200, 500, 1000]
   k: [1]
