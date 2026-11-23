@@ -92,6 +92,11 @@ RDPG_STRATUM_POWER_RESULT_FILE = (
     "conditional_copula_rdpg_stratum_marginals_65700629.csv"
 )
 
+CONDITIONAL_MODULO_RESULT_FILE = "conditional_modulo_66656239.csv"
+CONDITIONAL_MODULO_METHODS = (
+    "DC", "AC_sqrt", "AC_1", "AC_adaptive", "CanonicalCorrelationTest",
+)
+
 FUNCTIONAL_RESULT_FILES = (
     "simulation_results_63690183_shard-000-of-003.csv",
     "simulation_results_63690183_shard-001-of-003.csv",
@@ -302,6 +307,11 @@ def parse_args() -> argparse.Namespace:
         "--rdpg-stratum-power-only",
         action="store_true",
         help="Create only the two-stratum RDPG power figure.",
+    )
+    parser.add_argument(
+        "--conditional-modulo-only",
+        action="store_true",
+        help="Create the conditional-modulo power-by-network-size figure.",
     )
     parser.add_argument(
         "--functionals-only",
@@ -537,6 +547,40 @@ def prepare_rdpg_stratum_power_results(results_dir: Path) -> pd.DataFrame:
     if len(counts) != expected_groups or not counts.eq(200).all():
         raise ValueError("Expected 200 simulations for each size, Y pair, and method.")
     return data
+
+
+def plot_conditional_modulo_power(results_dir: Path, output_dir: Path) -> None:
+    """Plot rejection power by network size for the modulo alternatives."""
+    raw = read_result_batch(results_dir, (CONDITIONAL_MODULO_RESULT_FILE,))
+    is_null = raw["args"].map(
+        lambda value: extract_argument(value, "independent_response")
+    )
+    if not is_null.map(lambda value: isinstance(value, bool)).all():
+        raise ValueError("Every conditional-modulo row must identify its null status.")
+
+    data = process_results(raw.loc[~is_null].copy())
+    if set(data["n"]) != {100, 200, 500, 1000}:
+        raise ValueError("Expected four network sizes in the conditional-modulo batch.")
+    if set(data["method"]) != set(CONDITIONAL_MODULO_METHODS):
+        raise ValueError("Unexpected method in the conditional-modulo batch.")
+    counts = data.groupby(["n", "method"]).size()
+    if len(counts) != 20 or not counts.eq(200).all():
+        raise ValueError("Expected 200 alternatives per network size and method.")
+
+    aggregated = aggregate_results(
+        data, y_axis="Rejection", x_axis="n", factors=["method"]
+    )
+    fig, ax = plt.subplots(figsize=(7.0, 4.2), layout="constrained")
+    plot_line_panel(
+        ax, aggregated, y_mean="Rejection_mean", y_sem="Rejection_sem",
+        methods=CONDITIONAL_MODULO_METHODS,
+    )
+    style_probability_axis(ax)
+    fig.suptitle("Power by network size — conditional modulo, Bernoulli network")
+    fig.supxlabel(r"Network size, $n$")
+    fig.supylabel("Power")
+    add_shared_legend(fig, lines=True, methods=CONDITIONAL_MODULO_METHODS)
+    save_figure(fig, output_dir, "conditional_modulo_66656239_power_by_n")
 
 
 def prepare_sharded_functional_results(
@@ -1679,8 +1723,11 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     configure_plot_style()
-    if sum((args.rdpg_only, args.rdpg_power_only, args.rdpg_stratum_power_only, args.functionals_only)) > 1:
+    if sum((args.rdpg_only, args.rdpg_power_only, args.rdpg_stratum_power_only, args.conditional_modulo_only, args.functionals_only)) > 1:
         raise ValueError("Select only one figure-family-only option.")
+    if args.conditional_modulo_only:
+        plot_conditional_modulo_power(results_dir, output_dir)
+        return
     if args.rdpg_power_only:
         plot_rdpg_power_for_latex(prepare_rdpg_copula_results(results_dir), output_dir)
         return
