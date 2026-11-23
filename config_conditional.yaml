@@ -10,7 +10,7 @@ simulation:
   k: [1]
   ky: [1]
   rho: [0]  # Required by the shared design grid; unused by this sampler.
-  noise_scale: [0.25, 0.5]
+  noise_scale: [0.75]
   alpha: [0.05]
   edge_var: [1]  # Unused by BernoulliNetwork.
 
