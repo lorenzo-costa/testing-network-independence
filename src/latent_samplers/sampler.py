@@ -2,12 +2,10 @@
 import warnings
 from numbers import Integral
 
-from .continuous_conditional_copula_sampler import ContinuousConditionalCopulaSampler
+from .conditional_sampler import ConditionalSampler
 from .copula_sampler import CopulaGenerator
-from .mixture_copula_sampler import (
-    MixtureCopulaSampler,
-)
-from .post_nonlinear_noise_sampler import PostNonLinearNoiseSampler
+from .mixture_copula_sampler import MixtureCopulaSampler 
+
 from .rdpg_sampler import RDPGGenerator
 from .functional_sampler import FunctionalGenerator
 import numpy as np
@@ -42,13 +40,12 @@ class LatentSampler:
         k,
         ky=1,
         conditional_copula=None,
-        post_nonlinear_noise=None,
         copula_model=None,
         rdpg_distr=None,
         functional_form=None,
         rng=None,
         conditional_gaussian=None,
-        continuous_conditional_copula=None,
+        conditional_modulo=None,
         **kwargs,
     ):
         if rng is None:
@@ -62,16 +59,15 @@ class LatentSampler:
         self.ky = int(ky)
 
         sampler_options = [
-            ("continuous_conditional_copula", continuous_conditional_copula),
+            ("conditional_modulo", conditional_modulo),
             ("conditional_gaussian", conditional_gaussian),
             ("conditional_copula", conditional_copula),
-            ("post_nonlinear_noise", post_nonlinear_noise),
             ("functional_form", functional_form),
             ("rdpg_distr", rdpg_distr),
             (
                 "copula_model",
                 copula_model
-                if continuous_conditional_copula is None and conditional_gaussian is None and conditional_copula is None and post_nonlinear_noise is None
+                if conditional_gaussian is None and conditional_copula is None
                 else None,
             ),
         ]
@@ -96,14 +92,9 @@ class LatentSampler:
             )
 
         factories = {
-            "continuous_conditional_copula": lambda value: ContinuousConditionalCopulaSampler(
-                n=n,
-                k=k,
-                ky=ky,
-                copula_model=self._conditional_copula_model(value, copula_model),
-                rng=rng,
-                **kwargs,
-            ),
+            "conditional_modulo": lambda value: ConditionalSampler(
+                n=n, k=k, ky=ky, rng=rng, **kwargs
+            ) if value is True else self._invalid_conditional_modulo(),
             "conditional_copula": lambda value: MixtureCopulaSampler(
                 n=n,
                 k=k,
@@ -111,20 +102,6 @@ class LatentSampler:
                 copula_model=self._conditional_copula_model(value, copula_model),
                 rng=rng,
                 **kwargs,
-            ),
-            "conditional_gaussian": lambda value: ConditionalGaussianSampler(
-                n=n,
-                k=k,
-                ky=ky,
-                rng=rng,
-                **self._conditional_gaussian_kwargs(value, kwargs),
-            ),
-            "post_nonlinear_noise": lambda value: PostNonLinearNoiseSampler(
-                n=n,
-                k=k,
-                ky=ky,
-                rng=rng,
-                **self._post_nonlinear_kwargs(value, kwargs),
             ),
             "functional_form": lambda value: FunctionalGenerator(
                 n=n, k=k, ky=ky, functional_form=value, rng=rng, **kwargs
@@ -143,14 +120,17 @@ class LatentSampler:
         self.sampler_name = latent_sampler.get_name()
 
         self.copula_model = copula_model
-        self.continuous_conditional_copula = continuous_conditional_copula
+        self.conditional_modulo = conditional_modulo
         self.conditional_copula = conditional_copula
         self.conditional_gaussian = conditional_gaussian
-        self.post_nonlinear_noise = post_nonlinear_noise
         self.rdpg_distr = rdpg_distr
 
         self.functional_form = functional_form
         self.X = None
+
+    @staticmethod
+    def _invalid_conditional_modulo():
+        raise ValueError("conditional_modulo must be True when selected.")
 
     @staticmethod
     def _conditional_copula_model(activation, copula_model):
@@ -161,26 +141,6 @@ class LatentSampler:
         raise ValueError(
             "conditional_copula must be a copula-model string or True."
         )
-
-    @staticmethod
-    def _post_nonlinear_kwargs(activation, kwargs):
-        if activation is not True:
-            raise ValueError("post_nonlinear_noise must be True when selected.")
-        allowed = {
-            "C",
-            "rho",
-            "error_covariance",
-            "stratum_covariance",
-            "column_covariance_z",
-            "column_covariance_y",
-            "column_covariance",
-            "cross_correlation_template",
-            "class_probabilities",
-            "p",
-            "center_latent",
-            "function_type",
-        }
-        return {key: value for key, value in kwargs.items() if key in allowed}
 
     @staticmethod
     def _conditional_gaussian_kwargs(activation, kwargs):
@@ -204,14 +164,12 @@ class LatentSampler:
         """
         Z, Y, X = None, None, None
 
-        if self.continuous_conditional_copula is not None:
+        if self.conditional_modulo is not None:
             Z, Y, X = self.latent_sampler.sample_latent()
         elif self.conditional_gaussian is not None:
             Z, Y, X = self.latent_sampler.sample_latent()
         elif self.conditional_copula is not None:
             Z, Y, X = self.latent_sampler._sample_latent_conditional_copula()
-        elif self.post_nonlinear_noise is not None:
-            Z, Y, X = self.latent_sampler._sample_latent_post_nonlinear_noise()
         elif self.functional_form is not None:
             Z, Y = self.latent_sampler._sample_latent_functional()
         elif self.rdpg_distr is not None:
