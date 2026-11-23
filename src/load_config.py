@@ -83,6 +83,15 @@ def _resolve_copula_setup(entry: dict):
     """
     dgp_cls = DGP_REGISTRY[entry["dgp"]]
     solver = SOLVER_REGISTRY[entry["solver"]]
+    if entry.get("conditional_modulo") is not None:
+        keys = {
+            "conditional_modulo", "rdpg", "z_distribution", "x_distribution",
+            "z_scale", "response_scale", "independent_response", "noise_scale",
+        }
+        unknown = set(entry) - keys - {"dgp", "solver"}
+        if unknown:
+            raise ValueError(f"Unknown conditional_modulo setup fields: {sorted(unknown)}")
+        return partial(dgp_cls, **{key: entry[key] for key in keys if key in entry}), solver
 
     reserved = {
         "dgp",
@@ -322,6 +331,8 @@ def _detect_experiment_type(raw: dict) -> str:
     setups_raw = raw.get("setups", {})
 
     if isinstance(setups_raw, list):
+        if any(entry.get("conditional_modulo") is not None for entry in setups_raw):
+            return "conditional_modulo"
         has_post_nonlinear = any(
             entry.get("post_nonlinear_noise") for entry in setups_raw
         )
@@ -477,7 +488,7 @@ def _build_single_design(exp: str, cfg: dict) -> list[dict]:
 
     def _standard_rows(setups_list, rho_list, include_marginals=None):
         if include_marginals is None:
-            include_marginals = exp != "post_nonlinear_noise"
+            include_marginals = exp not in {"post_nonlinear_noise", "conditional_modulo"}
         names = [
             "setup",
             "method",

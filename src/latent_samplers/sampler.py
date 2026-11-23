@@ -93,7 +93,12 @@ class LatentSampler:
 
         factories = {
             "conditional_modulo": lambda value: ConditionalSampler(
-                n=n, k=k, ky=ky, rng=rng, **kwargs
+                n=n, k=k, ky=ky, rng=rng,
+                **{key: kwargs[key] for key in (
+                    "z_distribution", "x_distribution", "z_scale",
+                    "response_scale", "independent_response", "noise_scale",
+                    "column_covariance",
+                ) if key in kwargs},
             ) if value is True else self._invalid_conditional_modulo(),
             "conditional_copula": lambda value: MixtureCopulaSampler(
                 n=n,

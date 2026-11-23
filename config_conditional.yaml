@@ -1,0 +1,62 @@
+# Conditional dependence with no marginal Z-Y dependence.
+# Z_j ~ Uniform(0, 1/sqrt(3)); U_j = sqrt(3) Z_j.
+# X ~ Uniform(0, 1), Y_j = (U_j + X) mod 1.
+# Under the null, Y uses an independent Z' with the same distribution.
+
+simulation:
+  nsim: 200
+  seed: 1
+  n: [100, 200, 500, 1000]
+  k: [3]
+  ky: [3]
+  rho: [0]  # Required by the shared design grid; unused by this sampler.
+  alpha: [0.05]
+  edge_var: [1]  # Unused by BernoulliNetwork.
+
+methods:
+  npermutations: [99]
+  use_true_latent: [false]
+  list:
+    - name: MultivariateACTest
+      kwargs:
+        M: 0.5
+        standardize: true
+        use_permutation_coeff: true
+        test_type: model_X
+        conditional_generator: from_dgp
+    - name: DistanceCorrelationTest
+      kwargs:
+        test_method: mgc
+        test_type: model_X
+        conditional_generator: from_dgp
+    - name: CanonicalCorrelationTest
+      kwargs:
+        test_type: model_X
+        conditional_generator: from_dgp
+
+setups:
+  - dgp: BernoulliNetwork
+    solver: ASE
+    rdpg: true
+    conditional_modulo: true
+    z_distribution: uniform
+    x_distribution: uniform
+    z_scale: 0.5773502691896258
+    response_scale: 1.7320508075688772
+    independent_response: true
+  - dgp: BernoulliNetwork
+    solver: ASE
+    rdpg: true
+    conditional_modulo: true
+    z_distribution: uniform
+    x_distribution: uniform
+    z_scale: 0.5773502691896258
+    response_scale: 1.7320508075688772
+    independent_response: false
+
+metrics:
+  compute_all: true
+
+output:
+  results_dir: results
+  file_prefix: conditional_modulo
