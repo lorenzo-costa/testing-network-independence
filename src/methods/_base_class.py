@@ -121,7 +121,11 @@ class BaseEstimationMethod(BaseMethod):
 
 
 class BasePermutationTest(BaseEstimationMethod):
-    """Monte Carlo test for independence between network latent Z and observed Y."""
+    """Shared Monte Carlo test, routing null draws to a method subclass.
+
+    The constructor remains usable by existing test classes and callers. Its
+    selected implementation supplies only the sampling-specific hooks below.
+    """
 
     def __init__(
         self,
@@ -142,8 +146,7 @@ class BasePermutationTest(BaseEstimationMethod):
         conditional_generator=None,
         **kwargs,
     ):
-        if "approximation" in kwargs:
-            raise TypeError("'approximation' is no longer supported; use 'test_type'.")
+        
         super().__init__(
             rng=rng,
             solver=solver,
@@ -155,24 +158,15 @@ class BasePermutationTest(BaseEstimationMethod):
         if test_type not in {"permutation", "model_X"}:
             raise ValueError("test_type must be 'permutation' or 'model_X'.")
         if test_type == "model_X":
-            if conditional_generator is None:
-                raise ValueError("Model-X requires a conditional_generator.")
-            if not callable(getattr(conditional_generator, "sample", None)):
-                raise TypeError("conditional_generator must define callable sample(X).")
-            if permutation_type != "covariate":
-                raise ValueError("permutation_type is incompatible with model_X.")
-            if stratify_permutations:
-                raise ValueError("stratify_permutations is incompatible with model_X.")
-            if n_jobs != 1:
-                raise ValueError("Model-X currently requires n_jobs=1.")
-        if permutation_type not in {"covariate", "latent", "observed"}:
-            raise ValueError(
-                "Invalid permutation_type. Must be 'covariate', 'latent', or 'observed'."
-            )
-        if permutation_type == "observed" and use_true_latent:
-            raise ValueError(
-                "permutation_type='observed' requires use_true_latent=False."
-            )
+            self._implementation = ModelXSamplingTest
+        elif stratify_permutations:
+            self._implementation = WithinStratumPermutationTest
+        else:
+            self._implementation = StandardPermutationTest
+        self._implementation._validate_method_options(
+            permutation_type, stratify_permutations, use_true_latent,
+            conditional_generator, n_jobs,
+        )
         if (
             isinstance(n_jobs, bool)
             or not isinstance(n_jobs, (int, np.integer))
@@ -185,6 +179,7 @@ class BasePermutationTest(BaseEstimationMethod):
             or batch_size < 1
         ):
             raise ValueError("batch_size must be a positive integer.")
+        
         self.npermutations = npermutations
         self.alpha = alpha
         self.test_function = test_function
@@ -198,55 +193,31 @@ class BasePermutationTest(BaseEstimationMethod):
         self.conditional_generator = conditional_generator
 
     def _draw_null_data(self):
-        """Draw one permutation or one conditional response."""
-        if self.test_type == "permutation":
-            return self._draw_permutation()
-        try:
-            self.conditional_generator.rng = self.rng
-        except (AttributeError, TypeError) as exc:
-            raise TypeError(
-                "conditional_generator must allow its rng attribute to be set."
-            ) from exc
-        X = self.X.copy()
-        sampled = self.conditional_generator.sample(X)
-        try:
-            Y_null = np.asarray(sampled)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("conditional_generator.sample(X) returned an invalid Y.") from exc
-        if Y_null.ndim == 1:
-            Y_null = Y_null.reshape(-1, 1)
-        if Y_null.shape != self.Y.shape:
-            raise ValueError(
-                "conditional_generator.sample(X) must return Y with shape "
-                f"{self.Y.shape}; got {Y_null.shape}."
-            )
-        return Y_null.copy()
+        """Delegate the null draw to the selected test method."""
+        return self._implementation._draw_null_data(self)
 
     def _draw_permutation(self):
-        """Draw a global permutation or one restricted within rows of ``X``."""
-        n = self.Y.shape[0]
-        if not self.stratify_permutations or self.X is None:
-            return self.rng.permutation(n)
-
-        _, strata = np.unique(self.X, axis=0, return_inverse=True)
-        permutation = np.arange(n)
-        for stratum in np.unique(strata):
-            indices = np.flatnonzero(strata == stratum)
-            permutation[indices] = self.rng.permutation(indices)
-        return permutation
+        """Keep the permutation hook available to existing callers."""
+        return self._implementation._draw_permutation(self)
 
     def _construct_permuted_data(self, permutation, rng):
-        """Construct the latent positions and covariates for one permutation."""
-        if self.permutation_type == "covariate":
-            return self.Zhat, self.Y[permutation, :]
-        if self.permutation_type == "latent":
-            return self.Zhat[permutation, :], self.Y
+        """Keep the permuted-data hook available to existing callers."""
+        return self._implementation._construct_permuted_data(self, permutation, rng)
 
-        if self.A is None:
-            raise ValueError("A is required for observed permutations.")
-        A_perm = self.A[permutation][:, permutation]
-        Zhat_perm = self.solver(A_perm, k=self.k, rng=rng)[0]
-        return Zhat_perm, self.Y
+    def _observed_data(self):
+        return self._implementation._observed_data(self)
+
+    def _null_statistic_inputs(self, draw, rng):
+        return self._implementation._null_statistic_inputs(self, draw, rng)
+
+    def _prepare_null_draws(self):
+        return self._implementation._prepare_null_draws(self)
+
+    def _validate_method_input(self):
+        return self._implementation._validate_method_input(self)
+
+    def _progress_label(self):
+        return self._implementation._progress_label(self)
 
     def _evaluate_test_statistic(self, Z, Y, rng):
         """Evaluate a statistic, with a hook for RNG-aware subclasses."""
@@ -265,10 +236,7 @@ class BasePermutationTest(BaseEstimationMethod):
     def _evaluate_null_draw(self, task):
         """Evaluate one indexed null draw without mutating result state."""
         draw_number, draw, rng, expected_shape = task
-        if self.test_type == "model_X":
-            Z_stat, Y_stat = self.Zhat.copy(), draw.copy()
-        else:
-            Z_stat, Y_stat = self._construct_permuted_data(draw, rng)
+        Z_stat, Y_stat = self._null_statistic_inputs(draw, rng)
         statistic = self._as_statistic_array(
             self._evaluate_test_statistic(Z_stat, Y_stat, rng)
         )
@@ -287,10 +255,11 @@ class BasePermutationTest(BaseEstimationMethod):
     def _collect_permutation_statistics(self, indexed_statistics):
         """Collect unordered null results in draw order and report progress."""
         ordered_statistics = [None] * self.npermutations
+        description, unit = self._progress_label()
         with tqdm(
             total=self.npermutations,
-            desc="Permutations" if self.test_type == "permutation" else "Model-X draws",
-            unit="permutation" if self.test_type == "permutation" else "draw",
+            desc=description,
+            unit=unit,
             disable=not self.verbose,
         ) as progress:
             for permutation_number, statistic in indexed_statistics:
@@ -301,18 +270,12 @@ class BasePermutationTest(BaseEstimationMethod):
 
     def _compute_null_statistics(self):
         """Evaluate the observed and null scalar or vector statistics."""
-        if self.test_type == "model_X" and self.X is None:
-            raise ValueError("Model-X requires conditioning X in the input data.")
-        observed_Z = self.Zhat.copy() if self.test_type == "model_X" else self.Zhat
-        observed_Y = self.Y.copy() if self.test_type == "model_X" else self.Y
+        self._validate_method_input()
+        observed_Z, observed_Y = self._observed_data()
         observed = self._as_statistic_array(
             self._evaluate_test_statistic(observed_Z, observed_Y, self.rng)
         )
-        if self.test_type == "permutation":
-            draws = [self._draw_null_data() for _ in range(self.npermutations)]
-            self.permutation_indices = draws
-        else:
-            draws = (self._draw_null_data() for _ in range(self.npermutations))
+        draws = self._prepare_null_draws()
         task_rngs = self.rng.spawn(self.npermutations)
         tasks = (
             (draw_number, draw, rng, observed.shape)
@@ -370,6 +333,8 @@ class BasePermutationTest(BaseEstimationMethod):
         observed = self._as_statistic_array(observed)
         null_statistics = np.asarray(null_statistics, dtype=float)
 
+        # if the observed statistic is scalar, we can use the null statistics directly.
+        # else assume it needs to be standardized and take the max
         if observed.ndim == 0:
             if null_statistics.ndim != 1:
                 raise ValueError(
@@ -435,3 +400,142 @@ class BasePermutationTest(BaseEstimationMethod):
     def _fit_permutation(self):
         """Keep the existing RV permutation path available."""
         self._fit_null()
+
+
+class StandardPermutationTest(BasePermutationTest):
+    """Draw unrestricted permutations and construct their test inputs."""
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("test_type", "permutation")
+        kwargs.setdefault("stratify_permutations", False)
+        super().__init__(*args, **kwargs)
+
+    @staticmethod
+    def _validate_method_options(
+        permutation_type, stratify_permutations, use_true_latent,
+        conditional_generator, n_jobs,
+    ):
+        if permutation_type not in {"covariate", "latent", "observed"}:
+            raise ValueError(
+                "Invalid permutation_type. Must be 'covariate', 'latent', or 'observed'."
+            )
+        if permutation_type == "observed" and use_true_latent:
+            raise ValueError(
+                "permutation_type='observed' requires use_true_latent=False."
+            )
+
+    def _validate_method_input(self):
+        pass
+
+    def _observed_data(self):
+        return self.Zhat, self.Y
+
+    def _draw_null_data(self):
+        return self._draw_permutation()
+
+    def _draw_permutation(self):
+        return self.rng.permutation(self.Y.shape[0])
+
+    def _construct_permuted_data(self, permutation, rng):
+        if self.permutation_type == "covariate":
+            return self.Zhat, self.Y[permutation, :]
+        if self.permutation_type == "latent":
+            return self.Zhat[permutation, :], self.Y
+
+        if self.A is None:
+            raise ValueError("A is required for observed permutations.")
+        A_perm = self.A[permutation][:, permutation]
+        Zhat_perm = self.solver(A_perm, k=self.k, rng=rng)[0]
+        return Zhat_perm, self.Y
+
+    def _null_statistic_inputs(self, draw, rng):
+        return self._construct_permuted_data(draw, rng)
+
+    def _prepare_null_draws(self):
+        draws = [self._draw_null_data() for _ in range(self.npermutations)]
+        self.permutation_indices = draws
+        return draws
+
+    def _progress_label(self):
+        return "Permutations", "permutation"
+
+
+class WithinStratumPermutationTest(StandardPermutationTest):
+    """Permute node labels only among rows with the same conditioning X."""
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("stratify_permutations", True)
+        super().__init__(*args, **kwargs)
+
+    def _draw_permutation(self):
+        n = self.Y.shape[0]
+        if self.X is None:
+            return self.rng.permutation(n)
+
+        _, strata = np.unique(self.X, axis=0, return_inverse=True)
+        permutation = np.arange(n)
+        for stratum in np.unique(strata):
+            indices = np.flatnonzero(strata == stratum)
+            permutation[indices] = self.rng.permutation(indices)
+        return permutation
+
+
+class ModelXSamplingTest(BasePermutationTest):
+    """Sample responses from the conditional law given X."""
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("test_type", "model_X")
+        super().__init__(*args, **kwargs)
+
+    @staticmethod
+    def _validate_method_options(
+        permutation_type, stratify_permutations, use_true_latent,
+        conditional_generator, n_jobs,
+    ):
+        if conditional_generator is None:
+            raise ValueError("Model-X requires a conditional_generator.")
+        if not callable(getattr(conditional_generator, "sample", None)):
+            raise TypeError("conditional_generator must define callable sample(X).")
+        if permutation_type != "covariate":
+            raise ValueError("permutation_type is incompatible with model_X.")
+        if stratify_permutations:
+            raise ValueError("stratify_permutations is incompatible with model_X.")
+        if n_jobs != 1:
+            raise ValueError("Model-X currently requires n_jobs=1.")
+
+    def _validate_method_input(self):
+        if self.X is None:
+            raise ValueError("Model-X requires conditioning X in the input data.")
+
+    def _observed_data(self):
+        return self.Zhat.copy(), self.Y.copy()
+
+    def _draw_null_data(self):
+        try:
+            self.conditional_generator.rng = self.rng
+        except (AttributeError, TypeError) as exc:
+            raise TypeError(
+                "conditional_generator must allow its rng attribute to be set."
+            ) from exc
+        sampled = self.conditional_generator.sample(self.X.copy())
+        try:
+            Y_null = np.asarray(sampled)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("conditional_generator.sample(X) returned an invalid Y.") from exc
+        if Y_null.ndim == 1:
+            Y_null = Y_null.reshape(-1, 1)
+        if Y_null.shape != self.Y.shape:
+            raise ValueError(
+                "conditional_generator.sample(X) must return Y with shape "
+                f"{self.Y.shape}; got {Y_null.shape}."
+            )
+        return Y_null.copy()
+
+    def _null_statistic_inputs(self, draw, rng):
+        return self.Zhat.copy(), draw.copy()
+
+    def _prepare_null_draws(self):
+        return (self._draw_null_data() for _ in range(self.npermutations))
+
+    def _progress_label(self):
+        return "Model-X draws", "draw"

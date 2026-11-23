@@ -10,7 +10,7 @@ class _ACMixin:
         return ac_coefficient(
             Y=Y,
             Z=Z,
-            X=self.X if not self._ignore_X else None,
+            X=self.X,
             M=self.M,
             rng=rng,
             permutation=self.use_permutation_coeff,
@@ -23,7 +23,7 @@ class _ACMixin:
         return ac_coefficient(
             Y=Y,
             Z=Z,
-            X=self.X if not self._ignore_X else None,
+            X=self.X,
             M=M,
             rng=rng,
             permutation=self.use_permutation_coeff,
@@ -51,7 +51,6 @@ class EstimateAC(_ACMixin, BaseEstimationMethod):
         self.M = M
         self.use_permutation_coeff = use_permutation_coeff
         self.block_size = block_size
-        self._ignore_X = False
 
     def fit(self, data, **kwargs):
         self._process_input(data)
@@ -99,13 +98,11 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
         verbose=False,
         test_type="permutation",
         conditional_generator=None,
-        _ignore_X=False, # temp for testing
         standardize=False,
         **kwargs,
     ):
-        if "approximation" in kwargs:
-            raise TypeError("'approximation' is no longer supported; use 'test_type'.")
-        if test_type == "model_X" and _ignore_X:
+       
+        if test_type == "model_X":
             raise ValueError("Model-X requires the AC statistic to use conditioning X.")
         if not isinstance(standardize, (bool, np.bool_)):
             raise ValueError("standardize must be a boolean.")
@@ -119,7 +116,6 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
             else (0.3, 0.5, 0.7, 0.9))
         
         self.block_size = block_size
-        self._ignore_X = _ignore_X
         super().__init__(
             k=k,
             npermutations=npermutations,
@@ -129,7 +125,7 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
             solver=solver,
             test_function=self._ac_statistic,
             rng=rng,
-            stratify_permutations=test_type == "permutation" and not _ignore_X,
+            stratify_permutations=test_type == "permutation",
             one_sided=True,
             n_jobs=n_jobs,
             batch_size=batch_size,
@@ -198,8 +194,6 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
             f"MultivariateAC_{test_label}_"
             f"{self.permutation_type}_{statistic_description}"
         )
-        if self._ignore_X:
-            name += "_ignoreX"
         if self.standardize:
             name += "_standardized"
         return name
