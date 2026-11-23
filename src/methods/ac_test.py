@@ -5,12 +5,17 @@ from ..test_functions.ac_coefficient import ac_coefficient
 
 
 class _ACMixin:
+    def _conditioning_x(self):
+        if getattr(self, "estimate_conditional", False):
+            return self.X[self.test_indices]
+        return self.X
+
     def _ac_statistic(self, Z, Y, rng=None):
         rng = self.rng if rng is None else rng
         return ac_coefficient(
             Y=Y,
             Z=Z,
-            X=self.X,
+            X=self._conditioning_x(),
             M=self.M,
             rng=rng,
             permutation=self.use_permutation_coeff,
@@ -23,7 +28,7 @@ class _ACMixin:
         return ac_coefficient(
             Y=Y,
             Z=Z,
-            X=self.X,
+            X=self._conditioning_x(),
             M=M,
             rng=rng,
             permutation=self.use_permutation_coeff,
@@ -101,8 +106,7 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
         standardize=False,
         **kwargs,
     ):
-       
-        if test_type == "model_X":
+        if test_type == "model_X" and kwargs.get("_ignore_X", False):
             raise ValueError("Model-X requires the AC statistic to use conditioning X.")
         if not isinstance(standardize, (bool, np.bool_)):
             raise ValueError("standardize must be a boolean.")
@@ -132,14 +136,18 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
             verbose=verbose,
             test_type=test_type,
             conditional_generator=conditional_generator,
+            **kwargs,
         )
 
     def fit(self, data, **kwargs):
         self._process_input(data)
+        if self.estimate_conditional:
+            self._validate_method_input()
+        tested_z = self.Zhat[self.test_indices] if self.estimate_conditional else self.Zhat
         self.standardization_scale_ = 1.0
         if self.standardize:
             with np.errstate(over="ignore", invalid="ignore"):
-                scale = float(np.sqrt(np.mean(np.var(self.Zhat, axis=0))))
+                scale = float(np.sqrt(np.mean(np.var(tested_z, axis=0))))
             if not np.isfinite(scale):
                 raise ValueError("Z block standard deviation must be finite to standardize.")
             if scale > 0:
@@ -150,7 +158,7 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
                     "Adaptive M selection requires at least one null draw to "
                     "compute sample standard deviations."
                 )
-            self.adaptive_m_values = self._adaptive_m_grid(self.Y.shape[0])
+            self.adaptive_m_values = self._adaptive_m_grid(tested_z.shape[0])
         self._fit_null()
 
         if self.adaptive_m: 

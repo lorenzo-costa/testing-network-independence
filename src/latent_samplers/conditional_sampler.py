@@ -49,7 +49,7 @@ class ConditionalSampler:
         if np.linalg.eigvalsh(self.column_covariance).min() < -1e-10:
             raise ValueError("column_covariance must be positive semidefinite.")
         self.is_null = self.independent_response
-
+ 
     def _sample_z(self):
         shape = (self.n, self.kz)
         if self.z_distribution == "uniform":

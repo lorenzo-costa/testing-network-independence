@@ -118,6 +118,9 @@ class BaseEstimationMethod(BaseMethod):
         self.X = X
         self.Z = None if Z is None else np.asarray(Z)
         self.Zhat = Zhat
+        for name in ("train_indices", "test_indices"):
+            if hasattr(self, name):
+                delattr(self, name)
 
 
 class BasePermutationTest(BaseEstimationMethod):
@@ -144,6 +147,9 @@ class BasePermutationTest(BaseEstimationMethod):
         verbose=False,
         test_type="permutation",
         conditional_generator=None,
+        estimate_conditional=False,
+        conditional_estimator=None,
+        test_size=0.5,
         **kwargs,
     ):
         
@@ -163,9 +169,18 @@ class BasePermutationTest(BaseEstimationMethod):
             self._implementation = WithinStratumPermutationTest
         else:
             self._implementation = StandardPermutationTest
+        if estimate_conditional and test_type != "model_X":
+            raise ValueError("estimate_conditional requires test_type='model_X'.")
+        if estimate_conditional and conditional_estimator is None:
+            raise ValueError("conditional_estimator is required when estimate_conditional=True.")
+        if estimate_conditional and conditional_generator is not None:
+            raise ValueError("Provide either conditional_estimator or conditional_generator.")
+        if estimate_conditional and not 0 < test_size < 1:
+            raise ValueError("test_size must be between zero and one.")
+        effective_generator = conditional_estimator if estimate_conditional else conditional_generator
         self._implementation._validate_method_options(
             permutation_type, stratify_permutations, use_true_latent,
-            conditional_generator, n_jobs,
+            effective_generator, n_jobs,
         )
         if (
             isinstance(n_jobs, bool)
@@ -190,8 +205,10 @@ class BasePermutationTest(BaseEstimationMethod):
         self.batch_size = int(batch_size)
         self.verbose = bool(verbose)
         self.test_type = test_type
-        self.conditional_generator = conditional_generator
-
+        self.estimate_conditional = bool(estimate_conditional)
+        self.conditional_estimator = conditional_estimator
+        self.test_size = test_size
+        self.conditional_generator = effective_generator
     def _draw_null_data(self):
         """Delegate the null draw to the selected test method."""
         return self._implementation._draw_null_data(self)
@@ -506,8 +523,25 @@ class ModelXSamplingTest(BasePermutationTest):
     def _validate_method_input(self):
         if self.X is None:
             raise ValueError("Model-X requires conditioning X in the input data.")
+        if self.estimate_conditional:
+            if hasattr(self, "test_indices"):
+                return
+            if self.X.shape[1] != 1 or self.Y.shape[1] != 1:
+                raise ValueError("Conditional KDE estimation requires scalar X and Y.")
+            n = self.Y.shape[0]
+            n_test = int(round(n * self.test_size))
+            if n_test < 1 or n - n_test < 2:
+                raise ValueError("Need at least two training rows and one test row.")
+            permutation = self.rng.permutation(n)
+            self.test_indices = permutation[:n_test]
+            self.train_indices = permutation[n_test:]
+            self.conditional_estimator.fit(
+                self.X[self.train_indices], self.Y[self.train_indices]
+            )
 
     def _observed_data(self):
+        if self.estimate_conditional:
+            return self.Zhat[self.test_indices, :], self.Y[self.test_indices, :]
         return self.Zhat.copy(), self.Y.copy()
 
     def _draw_null_data(self):
@@ -517,21 +551,25 @@ class ModelXSamplingTest(BasePermutationTest):
             raise TypeError(
                 "conditional_generator must allow its rng attribute to be set."
             ) from exc
-        sampled = self.conditional_generator.sample(self.X.copy())
+        X = self.X[self.test_indices] if self.estimate_conditional else self.X
+        sampled = self.conditional_generator.sample(X.copy())
         try:
             Y_null = np.asarray(sampled)
         except (TypeError, ValueError) as exc:
             raise ValueError("conditional_generator.sample(X) returned an invalid Y.") from exc
         if Y_null.ndim == 1:
             Y_null = Y_null.reshape(-1, 1)
-        if Y_null.shape != self.Y.shape:
+        expected_shape = self.Y[self.test_indices].shape if self.estimate_conditional else self.Y.shape
+        if Y_null.shape != expected_shape:
             raise ValueError(
                 "conditional_generator.sample(X) must return Y with shape "
-                f"{self.Y.shape}; got {Y_null.shape}."
+                f"{expected_shape}; got {Y_null.shape}."
             )
         return Y_null.copy()
 
     def _null_statistic_inputs(self, draw, rng):
+        if self.estimate_conditional:
+            return self.Zhat[self.test_indices].copy(), draw.copy()
         return self.Zhat.copy(), draw.copy()
 
     def _prepare_null_draws(self):
