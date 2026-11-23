@@ -23,7 +23,13 @@ def test_k4_design_preserves_requested_functionals(tmp_path, paired_sweep):
     path = tmp_path / "functionals.yaml"
     path.write_text(yaml.safe_dump(raw))
     design = build_factorial_design(load_config(path))
-    assert len(design) == 22 * 2 * 3 * 5
+    assert len(design) == (
+        len(raw["simulation"]["functionals"])
+        * len(raw["simulation"]["n"])
+        * len(raw["simulation"]["snr"])
+        * len(raw["methods"]["list"])
+        * 2
+    )
     assert all(row["k"] == 4 and row["ky"] == 1 for row in design)
 
     for distribution, expected_count, threshold in [

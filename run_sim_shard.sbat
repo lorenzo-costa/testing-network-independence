@@ -62,5 +62,10 @@ python -m src.run_sim_script_shard \
 # shard again before deleting any source file.
 python -m src.merge_simulation_shards \
     "$CONFIG_FILE" "$ARRAY_JOB_ID" "$NUM_SHARDS" "$SHARD_INDEX"
+# A completion marker is written only after the shard CSV closes and its row
+# count is verified. The final merge waits for all markers and checks every
+# shard again before deleting any source file.
+python -m src.merge_simulation_shards \
+    "$CONFIG_FILE" "$ARRAY_JOB_ID" "$NUM_SHARDS" "$SHARD_INDEX"
 
 echo "End time: $(date)"
