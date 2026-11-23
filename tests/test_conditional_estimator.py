@@ -4,7 +4,7 @@ import pytest
 from src.methods import (
     GaussianKDEConditionalEstimator, CanonicalCorrelationTest, MultivariateACTest,
 )
-from src.load_config import _resolve_method
+from src.load_config import _resolve_method, load_config
 
 
 def test_conditional_density_and_samples_depend_on_x():
@@ -64,6 +64,17 @@ def test_yaml_method_resolves_conditional_estimator():
     assert isinstance(
         method.keywords["conditional_estimator"], GaussianKDEConditionalEstimator
     )
+
+
+def test_conditional_config_uses_estimators_for_every_model_x_method():
+    methods = load_config("config_conditional.yaml")["methods"]["list"]
+    assert methods
+    for method in methods:
+        assert method.keywords["estimate_conditional"] is True
+        assert isinstance(
+            method.keywords["conditional_estimator"], GaussianKDEConditionalEstimator
+        )
+        assert "conditional_generator" not in method.keywords
 
 
 def test_ac_embeds_full_graph_then_calibrates_only_test_nodes(monkeypatch):
