@@ -4,31 +4,46 @@
 # Under the null, Y uses an independent Z' with the same distribution.
 
 simulation:
-  nsim: 200
+  nsim: 1
   seed: 1
   n: [100, 200, 500, 1000]
-  k: [3]
-  ky: [3]
+  k: [1]
+  ky: [1]
   rho: [0]  # Required by the shared design grid; unused by this sampler.
   alpha: [0.05]
   edge_var: [1]  # Unused by BernoulliNetwork.
 
 methods:
-  npermutations: [99]
+  npermutations: [500]
   use_true_latent: [false]
   list:
     - name: MultivariateACTest
       kwargs:
         M: 0.5
-        standardize: true
-        use_permutation_coeff: true
+        use_permutation_coeff: false
         test_type: model_X
         conditional_generator: from_dgp
+   
+    - name: MultivariateACTest
+      kwargs:
+        M: 1
+        use_permutation_coeff: false
+        test_type: model_X
+        conditional_generator: from_dgp
+    
+    - name: MultivariateACTest
+      kwargs:
+        adaptive_m: true
+        use_permutation_coeff: false
+        test_type: model_X
+        conditional_generator: from_dgp
+
     - name: DistanceCorrelationTest
       kwargs:
         test_method: mgc
         test_type: model_X
         conditional_generator: from_dgp
+
     - name: CanonicalCorrelationTest
       kwargs:
         test_type: model_X
@@ -41,17 +56,14 @@ setups:
     conditional_modulo: true
     z_distribution: uniform
     x_distribution: uniform
-    z_scale: 0.5773502691896258
-    response_scale: 1.7320508075688772
     independent_response: true
+  
   - dgp: BernoulliNetwork
     solver: ASE
     rdpg: true
     conditional_modulo: true
     z_distribution: uniform
     x_distribution: uniform
-    z_scale: 0.5773502691896258
-    response_scale: 1.7320508075688772
     independent_response: false
 
 metrics:

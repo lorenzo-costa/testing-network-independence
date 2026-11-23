@@ -25,7 +25,7 @@ from src.methods.distance_correlation_test import DistanceCorrelationTest
 from src.metrics import ReturnMetric
 from src.solvers.weighted_network import ASE
 
-DEFAULT_NSIM = 100
+DEFAULT_NSIM = 50
 DEFAULT_SAMPLE_SIZES = (200,)
 DEFAULT_NPERMUTATIONS = 99
 DEFAULT_JOBS = 6
@@ -45,7 +45,7 @@ NETWORK_OPTIONS = {
 }
 MODEL_X_OPTIONS = {"test_type": "model_X", "conditional_generator": "from_dgp"}
 AC_METHOD = partial(
-    MultivariateACTest, M=0.5, standardize=True,
+    MultivariateACTest, M=0.5, standardize=False,
     use_permutation_coeff=False, **MODEL_X_OPTIONS
 )
 METHODS = (
