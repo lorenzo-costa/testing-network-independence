@@ -24,6 +24,7 @@ from src.methods.cca_test import CanonicalCorrelationTest
 from src.methods.distance_correlation_test import DistanceCorrelationTest
 from src.metrics import ReturnMetric
 from src.solvers.weighted_network import ASE
+from src.methods.conditional_estimator import GaussianKDEConditionalEstimator
 
 DEFAULT_NSIM = 50
 DEFAULT_SAMPLE_SIZES = (200,)
@@ -43,15 +44,26 @@ NETWORK_OPTIONS = {
     "x_distribution": "uniform",
     "z_distribution": "uniform_rdpg",
 }
-MODEL_X_OPTIONS = {"test_type": "model_X", "conditional_generator": "from_dgp"}
+MODEL_X_OPTIONS = {"test_type": "model_X", "estimate_conditional": True, "test_size": 0.5}
+
+
+def conditional_options():
+    return {
+        **MODEL_X_OPTIONS,
+        "conditional_estimator": GaussianKDEConditionalEstimator(
+            bandwidth=[0.1, 0.2, 0.5, 1.0]
+        ),
+    }
+
+
 AC_METHOD = partial(
     MultivariateACTest, M=0.5, standardize=False,
-    use_permutation_coeff=False, **MODEL_X_OPTIONS
+    use_permutation_coeff=False, **conditional_options()
 )
 METHODS = (
     ("AC Model-X (sqrt(n))", AC_METHOD),
-    ("MGC Model-X", partial(DistanceCorrelationTest, test_method="mgc", **MODEL_X_OPTIONS)),
-    ("CCA Model-X", partial(CanonicalCorrelationTest, **MODEL_X_OPTIONS)),
+    ("MGC Model-X", partial(DistanceCorrelationTest, test_method="mgc", **conditional_options())),
+    ("CCA Model-X", partial(CanonicalCorrelationTest, **conditional_options())),
 )
 
 
@@ -149,7 +161,10 @@ def run_experiment(args, design):
 
     summary = []
     print(f"nsim={args.nsim}, alpha={ALPHA}, null draws={args.npermutations}, seed={args.seed}")
-    print("Bernoulli RDPG; k=ky=3; estimated latent positions (ASE); uniform X.")
+    print(
+        f"Bernoulli RDPG; k={LATENT_DIMENSION}, ky={RESPONSE_DIMENSION}; "
+        "estimated latent positions (ASE); uniform X; conditional KDE fit on training nodes."
+    )
     print("Rates use p < alpha; brackets show 95% Wilson intervals across replicates.")
     print(f"{'n':>5} {'condition':>12}  {'method':25} {'rate':>6}  95% interval")
     for key, values in grouped.items():

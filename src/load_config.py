@@ -28,6 +28,7 @@ from src.solvers.MaMa_uuuuu import pgd_fit_wrapper
 
 # -- Test methods -------------------------------------------------------------
 from src.methods import *
+from src.methods.conditional_estimator import GaussianKDEConditionalEstimator
 
 # -- Metrics ------------------------------------------------------------------
 from src.metrics import ComputeAll
@@ -66,9 +67,20 @@ def _resolve_method(entry: dict):
     Convert a YAML method entry into a callable (or partial).
     """
     name = entry["name"]
-    kwargs = entry.get("kwargs") or {}
+    kwargs = dict(entry.get("kwargs") or {})
     if "approximation" in kwargs:
         raise ValueError("'approximation' is no longer supported; use 'test_type'.")
+    estimator_spec = kwargs.get("conditional_estimator")
+    if estimator_spec is not None:
+        if not isinstance(estimator_spec, dict) or estimator_spec.get("name") != "GaussianKDEConditionalEstimator":
+            raise ValueError("conditional_estimator must name GaussianKDEConditionalEstimator.")
+        if kwargs.get("test_type") != "model_X" or kwargs.get("estimate_conditional") is not True:
+            raise ValueError("conditional_estimator requires test_type: model_X and estimate_conditional: true.")
+        if "conditional_generator" in kwargs:
+            raise ValueError("Do not specify conditional_generator with conditional_estimator.")
+        kwargs["conditional_estimator"] = GaussianKDEConditionalEstimator(
+            **(estimator_spec.get("kwargs") or {})
+        )
     cls = METHOD_REGISTRY[name]
 
     return partial(cls, **kwargs) if kwargs else cls

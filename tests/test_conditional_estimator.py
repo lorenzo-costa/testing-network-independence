@@ -4,6 +4,7 @@ import pytest
 from src.methods import (
     GaussianKDEConditionalEstimator, CanonicalCorrelationTest, MultivariateACTest,
 )
+from src.load_config import _resolve_method
 
 
 def test_conditional_density_and_samples_depend_on_x():
@@ -45,6 +46,24 @@ def test_scalar_inputs_are_required():
     estimator = GaussianKDEConditionalEstimator()
     with pytest.raises(ValueError, match="scalar column"):
         estimator.fit(np.ones((10, 2)), np.ones((10, 1)))
+
+
+def test_yaml_method_resolves_conditional_estimator():
+    method = _resolve_method({
+        "name": "CanonicalCorrelationTest",
+        "kwargs": {
+            "test_type": "model_X",
+            "estimate_conditional": True,
+            "test_size": 0.5,
+            "conditional_estimator": {
+                "name": "GaussianKDEConditionalEstimator",
+                "kwargs": {"bandwidth": [0.1, 0.2], "n_splits": 2},
+            },
+        },
+    })
+    assert isinstance(
+        method.keywords["conditional_estimator"], GaussianKDEConditionalEstimator
+    )
 
 
 def test_ac_embeds_full_graph_then_calibrates_only_test_nodes(monkeypatch):
