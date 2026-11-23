@@ -27,9 +27,9 @@ from src.methods.distance_correlation_test import DistanceCorrelationTest
 from src.metrics import ReturnMetric
 from src.solvers.weighted_network import ASE
 
-DEFAULT_NSIM = 100
+DEFAULT_NSIM = 40
 DEFAULT_SAMPLE_SIZES = (200)
-DEFAULT_RHOS = 0.3
+DEFAULT_RHOS = [0, 0.3]
 DEFAULT_NPERMUTATIONS = 99
 DEFAULT_JOBS = 6
 MIN_SAMPLE_SIZE = 20
@@ -39,11 +39,11 @@ LATENT_DIMENSION = 3
 RESPONSE_DIMENSION = 3
 USE_TRUE_LATENT = False
 EMBEDDING_SOLVER = ASE
-DEFAULT_X_CORRELATIONS = 0
+DEFAULT_X_CORRELATIONS = [0, 0.3]
 
 # Z lies in [0, 1/sqrt(k)] so every RDPG dot product is a probability.
 MARGINALS = {
-    "x": f"cauchy",
+    "x": f"gaussian",
     "z": f"uniform 0 {1 / np.sqrt(LATENT_DIMENSION)}",
     "y": "cauchy",
 }

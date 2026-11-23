@@ -2,6 +2,7 @@
 import warnings
 from numbers import Integral
 
+from .continuous_conditional_copula_sampler import ContinuousConditionalCopulaSampler
 from .copula_sampler import CopulaGenerator
 from .mixture_copula_sampler import (
     MixtureCopulaSampler,
@@ -95,6 +96,14 @@ class LatentSampler:
             )
 
         factories = {
+            "continuous_conditional_copula": lambda value: ContinuousConditionalCopulaSampler(
+                n=n,
+                k=k,
+                ky=ky,
+                copula_model=self._conditional_copula_model(value, copula_model),
+                rng=rng,
+                **kwargs,
+            ),
             "conditional_copula": lambda value: MixtureCopulaSampler(
                 n=n,
                 k=k,
