@@ -9,7 +9,7 @@ simulation:
   nsim: 200
   seed: 1
 
-  n: [100, 300, 500, 1000]
+  n: [100, 200, 500, 1000]
   k: [3]
   ky: [1]
   # Match power_experiment.py: use fixed additive noise rather than
