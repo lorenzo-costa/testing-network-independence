@@ -1,9 +1,7 @@
 import numpy as np
-from scipy.stats import norm
 
 from ._base_class import BaseEstimationMethod, BasePermutationTest
-from ..test_functions.ac_coefficient import ac_coefficient, asymptotic_unconditional_ac
-from ..test_functions._ac_helpers import _validate_m
+from ..test_functions.ac_coefficient import ac_coefficient
 
 
 class _ACMixin:
@@ -70,12 +68,7 @@ class EstimateAC(_ACMixin, BaseEstimationMethod):
 
 
 class MultivariateACTest(_ACMixin, BasePermutationTest):
-    """Permutation, Model-X, or asymptotic test using AC coefficients.
-
-    A float ``M`` below one selects ``round(n**M)`` neighbors for either
-    test type. The asymptotic calibration is derived for fixed neighbor counts.
-    Scalar Y uses the rank coefficient and does not need a shuffled reference;
-    multivariate Y requires ``use_permutation_coeff=True``.
+    """Permutation or Model-X test using fixed-M or adaptive AC coefficients.
 
     With ``adaptive_m=True``, ``M`` is ignored. The test uses the rounded,
     capped, and deduplicated grid containing 1 and the powers of n with
@@ -141,12 +134,10 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
             n_jobs=n_jobs,
             batch_size=batch_size,
             verbose=verbose,
-            # The shared resampling base has no asymptotic fitting path.
-            test_type="permutation" if test_type == "asymptotic" else test_type,
+            test_type=test_type,
             conditional_generator=conditional_generator,
             **kwargs,
         )
-        self.test_type = test_type
 
     def fit(self, data, **kwargs):
         self._process_input(data)
@@ -176,27 +167,6 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
             self.adaptive_m_stds = self.statistic_standard_deviations
             self.adaptive_z_statistics = self.standardized_statistics
 
-    def _fit_asymptotic(self):
-        if self.X is not None and not self._ignore_X:
-            raise ValueError("Asymptotic AC requires unconditional X=None.")
-        if self.Y.shape[1] > 1 and not self.use_permutation_coeff:
-            raise ValueError(
-                "Asymptotic AC with multivariate Y requires "
-                "use_permutation_coeff=True."
-            )
-        self.effective_M = _validate_m(
-            1 if self.M is None else self.M, len(self.Y)
-        )
-        coefficient, variance = asymptotic_unconditional_ac(
-            self.Y, self.Zhat, M=self.effective_M,
-            rng=self.rng, block_size=self.block_size,
-        )
-        self.test_stat_estimate = coefficient
-        self.asymptotic_variance = variance
-        self.asymptotic_z_statistic = np.sqrt(len(self.Y)) * coefficient / np.sqrt(variance)
-        self.pvalue = float(norm.sf(self.asymptotic_z_statistic))
-        self.reject_null = bool(self.pvalue < self.alpha)
-
     def _adaptive_m_grid(self, n):
         """Return the adaptive M grid, always including one nearest neighbor."""
         capped = (
@@ -222,8 +192,6 @@ class MultivariateACTest(_ACMixin, BasePermutationTest):
         return self._ac_statistic(Z, Y, rng=rng)
 
     def get_name(self):
-        if self.test_type == "asymptotic":
-            return f"MultivariateAC_AsymptoticTest_{1 if self.M is None else self.M}"
         if self.adaptive_m:
             statistic_description = "adaptive"
         else:

@@ -8,7 +8,6 @@ def test_methods_package_exports_public_components():
     expected_exports = {
         "EstimateAC",
         "MultivariateACTest",
-        "CanonicalCorrelationTest",
         "DistanceCorrelationTest",
         "ConditionalGenerator",
         "MRQAP",

@@ -2,76 +2,64 @@
 # Simulation Configuration
 # =============================================================================
 
-
 # -----------------------------------------------------------------------------
 # Simulation Setup
 # -----------------------------------------------------------------------------
 simulation:
-  nsim: 300         # Number of Monte Carlo repetitions per parameter combination
+  nsim: 5          # Number of Monte Carlo repetitions per parameter combination
   seed: 1                 # Master RNG seed for reproducibility (passed to np.random.default_rng)
 
-  n: [100, 200, 500, 1000]      # Sample sizes (number of nodes)
+  n: [100]      # Sample sizes (number of nodes)
   k: [3]                  # Number of latent dimensions for the network embedding
-  ky: [3]                 # Number of observed-covariate dimensions
-  rho: [0]              # Correlation parameter under H1 (signal strength); 0.0 = null hypothesis
+  ky: [1]
+  rho: [0.2]              # Correlation parameter under H1 (signal strength); 0.0 = null hypothesis
   alpha: [0.05]           # Nominal significance level(s) for hypothesis tests
   edge_var: [3]           # Edge weight variance (used in Gaussian networks)
 
   marginals:
-    - z: "uniform 0 0.5773502692"
-      y: gaussian
-    - z: "uniform 0 0.5773502692"
-      y: cauchy
-    - z: "uniform 0 0.5773502692"
-      y: "pareto 1.5"
+    - gaussian
 
 # -----------------------------------------------------------------------------
 # Testing Methods
 # -----------------------------------------------------------------------------
 methods:
-  npermutations: [500]      # Number of permutations used in permutation-based tests
+  npermutations: [200]      # Number of permutations used in permutation-based tests
+  df: [3]                   # Degrees of freedom (used in Student-t approximations)
   use_true_latent: [False]
-
 
   # List of test methods to benchmark. 'kwargs' are passed to the method constructor.
   list:
-    - name: MultivariateACTest
+    - name: RVtest
       kwargs:
+        permutation_type: latent
         test_type: permutation
-        adaptive_m: true
-        use_permutation_coeff: true
 
-    - name: DistanceCorrelationTest
+    - name: RVtest
       kwargs:
-        test_method: mgc
-        permutation_type: covariate
-
-    - name: CanonicalCorrelationTest
-      kwargs:
-        permutation_type: covariate
+        test_type: asymptotic
 
     - name: MultivariateACTest
       kwargs:
-        test_type: asymptotic
-        M: 1
-        use_permutation_coeff: true
+        M: half
 
-    - name: MultivariateACTest
-      kwargs:
-        test_type: asymptotic
-        M: 0.5
-        use_permutation_coeff: true
-    
 # -----------------------------------------------------------------------------
 # DGP & Solver Setups (H1: rho > 0)
 # Each entry pairs a data-generating process (network type + copula) with a solver.
 # 'dgp' and 'solver' are string identifiers resolved in load_config.py.
 # -----------------------------------------------------------------------------
 setups:
-  - dgp: BernoulliNetwork
-    rdpg: true
+  # --- Gaussian (continuous-weight) networks ---
+  - dgp: GaussianNetwork
     copula_model: gaussian
-    center_latent: false
+    solver: ASE
+
+  - dgp: GaussianNetwork
+    copula_model: gumbel           # Upper-tail dependent copula
+    solver: ASE
+
+  - dgp: GaussianNetwork
+    copula_model: student_t
+    df: 3                          # Degrees of freedom for the Student-t copula
     solver: ASE
 
 # -----------------------------------------------------------------------------

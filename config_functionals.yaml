@@ -6,98 +6,129 @@
 # Simulation Setup
 # -----------------------------------------------------------------------------
 simulation:
-  nsim: 200
-  seed: 1
+  nsim: 100
+  seed: 1                 
 
-  n: [100, 200, 500, 1000]
-  k: [3]
+  n: [100, 300]      
+  k: [1]                  
   ky: [1]
-  # Match power_experiment.py: use fixed additive noise rather than
-  # signal-variance-calibrated SNR.
-  rho: [null]
-  noise_scale: [1.0]
-  alpha: [0.05]
-  edge_var: [3]
-  predictor_distribution: [uniform_rdpg]
+  snr: [0.1, 0.3, 0.5, 0.7]  # Var(f(Z)) / (Var(f(Z)) + Var(noise))
+  alpha: [0.05]           
+  edge_var: [3]           
+  predictor_distribution: [gaussian, uniform_rdpg]
 
+  # Functional settings for k=1.
   functionals:
-    - name: sine
-      kwargs:
-        global_scale: 10.0
-        frequency: 30.0
-    - name: interaction
-      kwargs: {}
     - name: linear
-      kwargs: {}
-    - name: tanh_product
       kwargs:
-        global_scale: 10.0
-    - name: max
-      kwargs: {}
-    - name: radial
-      kwargs: {}
+        weights: [0.5]
+        normalize_index: true
     - name: piecewise
       kwargs:
-        weights: [0.5, 0.5, 0.5]
+        weights: [0.5]
         normalize_index: true
         switch_feature: 0
         threshold: 0.5
     - name: threshold
       kwargs:
-        weights: [0.5, 0.5, 0.5]
+        weights: [0.5]
         normalize_index: true
         threshold: 0.5
+        global_scale: 10.0
+    - name: sigmoid
+      kwargs:
+        weights: [0.5]
+        normalize_index: true
+        threshold: 0.0
+        slope: 5.0
+        global_scale: 10.0
+      kwargs_by_predictor_distribution:
+        uniform_rdpg:
+          threshold: 0.5
+          slope: 17.0
+    - name: sine
+      kwargs:
+        weights: [0.5]
+        normalize_index: true
+        frequency: 3.0
+        global_scale: 10.0
+      kwargs_by_predictor_distribution:
+        uniform_rdpg:
+          frequency: 15.0
     - name: abs_max
       kwargs:
-        center: 0.5
-        input_scale: 6.0
+        center: 0.0
+        input_scale: 1.0
+      kwargs_by_predictor_distribution:
+        uniform_rdpg:
+          center: 0.5
+          input_scale: 6.0
+    - name: tanh_product
+      kwargs:
+        input_scale: 1.0
+        global_scale: 10.0
+        center: 0.0
+      kwargs_by_predictor_distribution:
+        uniform_rdpg:
+          input_scale: 6.0
+          center: 0.5
+    - name: pareto
+      kwargs:
+        weights: [0.5]
+        normalize_index: true
+        alpha: 1.0
+        scale: 2.0
+        tail_clip: 1e-12
+      kwargs_by_predictor_distribution:
+        uniform_rdpg:
+          alpha: 0.2
+          scale: 0.05
 
 # -----------------------------------------------------------------------------
 # Testing Methods
 # -----------------------------------------------------------------------------
 methods:
-  npermutations: [500]
+  npermutations: [200]      
   use_true_latent: [False]
 
   # List of test methods to benchmark. 'kwargs' are passed to the method constructor.
   list:
-    - name: DistanceCorrelationTest
-      kwargs:
-        test_method: mgc
-        permutation_type: covariate
-
-    - name: CanonicalCorrelationTest
-      kwargs:
-        permutation_type: covariate
-
     - name: MultivariateACTest
       kwargs:
         M: 1
-        test_type: asymptotic
         use_permutation_coeff: false
 
     - name: MultivariateACTest
       kwargs:
         M: 0.5
-        test_type: asymptotic
         use_permutation_coeff: false
 
     - name: MultivariateACTest
       kwargs:
         adaptive_m: true
-        test_type: permutation
-        permutation_type: covariate
         use_permutation_coeff: false
+      
+    - name: RVtest
+      kwargs:
+        test_type: asymptotic
 
+    - name: RVtest
+      kwargs:
+        test_type: permutation
+        permutation_type: latent
+    
 # -----------------------------------------------------------------------------
-# DGP & Solver Setup
+# DGP & Solver Setups (H1: rho > 0)
 # Each entry pairs a data-generating process (network type + copula) with a solver.
-# 'dgp' and 'solver' are string identifiers resolved in the loader.
+# 'dgp' and 'solver' are string identifiers resolved in load_config.py.
 # -----------------------------------------------------------------------------
 setups:
   - dgp: BernoulliNetwork
-    solver: ASE
-    rdpg: true
+    # Match the estimator to the link selected by rdpg: auto.
+    solver:
+      uniform_rdpg: ASE
+      gaussian: pgd_fit_wrapper
+    rdpg: auto
 
 # -----------------------------------------------------------------------------
 # Metrics

@@ -1,5 +1,4 @@
-from .ac_coefficient import ac_coefficient, asymptotic_unconditional_ac
-from .rv_cca_coefficients import first_cca_component
+from .ac_coefficient import ac_coefficient
 from .graph_correlation import gcor, gcov
 from .matrix_helpers import mse, relative_frobenius_norm, relative_nuclear_error
 from .rv_coefficients import rv_coefficient, rv_coefficient_adjusted
@@ -14,7 +13,5 @@ __all__ = [
     "relative_nuclear_error",
     "rv_coefficient",
     "rv_coefficient_adjusted",
-    "first_cca_component",
-    "asymptotic_unconditional_ac",
     "first_cca_component",
 ]

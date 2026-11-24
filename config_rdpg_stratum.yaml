@@ -4,19 +4,10 @@
 # Z | X=1 ~ Uniform(0.6/sqrt(3), 1/sqrt(3)). Thus Z_i dot Z_j <= 1.
 # The eight setups contain four Y pairs and their reversals.
 # "gaussian <mean>" denotes a unit-variance normal for each Y coordinate.
-# Each Z coordinate follows the original stratum interval scaled by 1/sqrt(3):
-# Z | X=0 ~ Uniform(0, 0.4/sqrt(3)) and
-# Z | X=1 ~ Uniform(0.6/sqrt(3), 1/sqrt(3)). Thus Z_i dot Z_j <= 1.
-# The eight setups contain four Y pairs and their reversals.
-# "gaussian <mean>" denotes a unit-variance normal for each Y coordinate.
 
 simulation:
   nsim: 200
   seed: 1
-  n: [100, 300]
-  k: [3]
-  ky: [3]
-  rho: [0, 0.3]
   n: [1000]
   k: [3]
   ky: [3]
