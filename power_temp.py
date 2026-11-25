@@ -1,8 +1,9 @@
 """Power experiment for a continuous conditional copula on Bernoulli RDPGs.
 
 Compare AC, MGC, and CCA Model-X tests on shared data and ASE embeddings.
-The conditional Z-Y correlation is zero under the null and 0.5 under the
-alternative. Correlations of Z and Y with X each range over {0, 0.5}.
+Four scenarios distinguish marginal Z-Y dependence from dependence given X.
+Nonzero correlations of Z and Y with X are 0.5. The negative conditional
+correlation in the first scenario exactly cancels marginal dependence.
 X and Y have standard Gaussian marginals; Z is uniform on [0, 1].
 Model-X null draws use the copula sampler's exact Y | X distribution.
 
@@ -43,8 +44,21 @@ NETWORK_OPTIONS = {
     "continuous_conditional_copula": "gaussian",
     "marginals": {"x": "gaussian", "z": "uniform 0 1", "y": "gaussian"},
 }
-CORRELATIONS_WITH_X = (0.0, 0.5)
-ALTERNATIVE_CONDITIONAL_CORRELATION = 0.5
+CORRELATION_WITH_X = 0.5
+CANCELLING_CONDITIONAL_CORRELATION = (
+    -CORRELATION_WITH_X**2 / (1 - CORRELATION_WITH_X**2)
+)
+SCENARIOS = (
+    ("marginal_independent_conditional_dependent",
+     CORRELATION_WITH_X, CORRELATION_WITH_X,
+     CANCELLING_CONDITIONAL_CORRELATION, "independent", "dependent"),
+    ("marginal_dependent_conditional_independent",
+     CORRELATION_WITH_X, CORRELATION_WITH_X, 0.0, "dependent", "independent"),
+    ("marginal_dependent_conditional_dependent",
+     CORRELATION_WITH_X, CORRELATION_WITH_X, 0.5, "dependent", "dependent"),
+    ("marginal_independent_conditional_independent",
+     0.0, 0.0, 0.0, "independent", "independent"),
+)
 MODEL_X_OPTIONS = {"test_type": "model_X", "conditional_generator": "from_dgp"}
 
 
@@ -84,34 +98,33 @@ def parse_args(argv=None):
     return args
 
 
-def make_design(args, methods, conditions=("null", "alternative")):
+def make_design(args, methods):
     """Pair methods on each dataset; reuse its embedding via the simulation runner."""
     design = []
     for n in args.n:
-        for correlation_zx in CORRELATIONS_WITH_X:
-            for correlation_yx in CORRELATIONS_WITH_X:
-                for condition in conditions:
-                    dgp = partial(
-                        BernoulliNetwork, **NETWORK_OPTIONS,
-                        correlation_zx=correlation_zx,
-                        correlation_yx=correlation_yx,
-                        conditional_correlation_zy=(
-                            0.0 if condition == "null"
-                            else ALTERNATIVE_CONDITIONAL_CORRELATION
-                        ),
-                    )
-                    generation = {"setup": (dgp, EMBEDDING_SOLVER), "n": n,
-                                  "k": LATENT_DIMENSION, "ky": RESPONSE_DIMENSION}
-                    for label, method in methods:
-                        design.append({
-                            **generation, "_generation_keys": tuple(generation),
-                            "condition": condition,
-                            "correlation_zx": correlation_zx,
-                            "correlation_yx": correlation_yx,
-                            "method_label": label, "method": method, "alpha": ALPHA,
-                            "npermutations": args.npermutations,
-                            "use_true_latent": USE_TRUE_LATENT,
-                        })
+        for (scenario, correlation_zx, correlation_yx, conditional_correlation_zy,
+             marginal_dependence, conditional_dependence) in SCENARIOS:
+            dgp = partial(
+                BernoulliNetwork, **NETWORK_OPTIONS,
+                correlation_zx=correlation_zx,
+                correlation_yx=correlation_yx,
+                conditional_correlation_zy=conditional_correlation_zy,
+            )
+            generation = {"setup": (dgp, EMBEDDING_SOLVER), "n": n,
+                          "k": LATENT_DIMENSION, "ky": RESPONSE_DIMENSION}
+            for label, method in methods:
+                design.append({
+                    **generation, "_generation_keys": tuple(generation),
+                    "scenario": scenario,
+                    "marginal_dependence": marginal_dependence,
+                    "conditional_dependence": conditional_dependence,
+                    "correlation_zx": correlation_zx,
+                    "correlation_yx": correlation_yx,
+                    "conditional_correlation_zy": conditional_correlation_zy,
+                    "method_label": label, "method": method, "alpha": ALPHA,
+                    "npermutations": args.npermutations,
+                    "use_true_latent": USE_TRUE_LATENT,
+                })
     return design
 
 
@@ -120,8 +133,7 @@ def experiment_design(args):
 
 
 def result_key(row):
-    return (row["n"], row["correlation_zx"], row["correlation_yx"],
-            row["condition"], row["method_label"])
+    return (row["n"], row["scenario"], row["method_label"])
 
 
 def wilson_interval(rejections, nsim):
@@ -149,6 +161,7 @@ def run_experiment(args, design):
         parallel=args.jobs > 1, n_jobs=args.jobs,
     )
     grouped = {result_key(row): [] for row in design}
+    design_by_key = {result_key(row): row for row in design}
     raw = []
     for result in results:
         row = result["args"]
@@ -157,8 +170,12 @@ def run_experiment(args, design):
         if pvalue is None or not np.isfinite(pvalue) or not 0 <= pvalue <= 1:
             raise RuntimeError(f"Invalid p-value for {key}: {pvalue}")
         grouped[key].append(float(pvalue))
-        raw.append({"n": row["n"], "correlation_zx": row["correlation_zx"],
-                    "correlation_yx": row["correlation_yx"], "condition": row["condition"],
+        raw.append({"n": row["n"], "scenario": row["scenario"],
+                    "marginal_dependence": row["marginal_dependence"],
+                    "conditional_dependence": row["conditional_dependence"],
+                    "correlation_zx": row["correlation_zx"],
+                    "correlation_yx": row["correlation_yx"],
+                    "conditional_correlation_zy": row["conditional_correlation_zy"],
                     "method": row["method_label"], "pvalue": pvalue,
                     "rejected": bool(pvalue < ALPHA), "alpha": ALPHA,
                     "npermutations": args.npermutations, "seed": args.seed})
@@ -170,21 +187,31 @@ def run_experiment(args, design):
         "estimated latent positions (ASE); uniform Z; exact conditional Y draws."
     )
     print("Rates use p < alpha; brackets show 95% Wilson intervals across replicates.")
-    print(f"{'n':>5} {'rho_zx':>6} {'rho_yx':>6} {'condition':>12}  {'method':25} {'rate':>6}  95% interval")
+    print(f"{'n':>5} {'marginal Z-Y':>14} {'Z-Y given X':>14} "
+          f"{'rho_zx':>6} {'rho_yx':>6} {'rho_zy|x':>9} "
+          f"{'method':25} {'rate':>6}  95% interval")
     for key, values in grouped.items():
         if len(values) != args.nsim:
             raise RuntimeError(f"Expected {args.nsim} p-values for {key}, got {len(values)}")
-        n, correlation_zx, correlation_yx, condition, method = key
+        n, scenario, method = key
+        row = design_by_key[key]
         count = int(np.count_nonzero(np.asarray(values) < ALPHA))
         low, high = wilson_interval(count, args.nsim)
         rate = count / args.nsim
-        summary.append({"n": n, "correlation_zx": correlation_zx,
-                        "correlation_yx": correlation_yx, "condition": condition,
+        summary.append({"n": n, "scenario": scenario,
+                        "marginal_dependence": row["marginal_dependence"],
+                        "conditional_dependence": row["conditional_dependence"],
+                        "correlation_zx": row["correlation_zx"],
+                        "correlation_yx": row["correlation_yx"],
+                        "conditional_correlation_zy": row["conditional_correlation_zy"],
                         "method": method, "nsim": args.nsim, "rejections": count,
                         "rejection_rate": rate, "ci95_low": low, "ci95_high": high,
                         "alpha": ALPHA, "npermutations": args.npermutations, "seed": args.seed})
-        print(f"{n:5d} {correlation_zx:6.1f} {correlation_yx:6.1f} "
-              f"{condition:>12}  {method:25} {rate:6.3f}  [{low:.3f}, {high:.3f}]")
+        print(f"{n:5d} {row['marginal_dependence']:>14} "
+              f"{row['conditional_dependence']:>14} "
+              f"{row['correlation_zx']:6.1f} {row['correlation_yx']:6.1f} "
+              f"{row['conditional_correlation_zy']:9.4f} "
+              f"{method:25} {rate:6.3f}  [{low:.3f}, {high:.3f}]")
     write_csv(args.output, summary)
     raw_path = args.output.with_name(f"{args.output.stem}_pvalues.csv")
     write_csv(raw_path, raw)
@@ -194,7 +221,7 @@ def run_experiment(args, design):
 
 def main():
     args = parse_args()
-    print("Power experiment: continuous conditional copula null and alternative.")
+    print("Power experiment: four marginal and conditional dependence scenarios.")
     run_experiment(args, experiment_design(args))
 
 
