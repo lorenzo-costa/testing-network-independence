@@ -1,9 +1,10 @@
-"""Power experiment for the modulo-one conditional alternative on Bernoulli RDPGs.
+"""Power experiment for a continuous conditional copula on Bernoulli RDPGs.
 
 Compare AC, MGC, and CCA Model-X tests on shared data and ASE embeddings.
-Alternative: Y = (Z + X) mod 1, componentwise.
-Null: Y = (Z' + X) mod 1 for an independent draw Z' from the same law.
-X is uniform on [0, 1); Z is uniform in the positive orthant of the unit ball.
+The conditional Z-Y correlation is zero under the null and 0.5 under the
+alternative. Correlations of Z and Y with X each range over {0, 0.5}.
+X and Y have standard Gaussian marginals; Z is uniform on [0, 1].
+Model-X null draws use the copula sampler's exact Y | X distribution.
 
 Examples:
     python power_temp.py
@@ -24,7 +25,6 @@ from src.methods.cca_test import CanonicalCorrelationTest
 from src.methods.distance_correlation_test import DistanceCorrelationTest
 from src.metrics import ReturnMetric
 from src.solvers.weighted_network import ASE
-from src.methods.conditional_estimator import GaussianKDEConditionalEstimator
 
 DEFAULT_NSIM = 50
 DEFAULT_SAMPLE_SIZES = (200,)
@@ -40,30 +40,22 @@ EMBEDDING_SOLVER = ASE
 
 NETWORK_OPTIONS = {
     "rdpg": True,
-    "conditional_modulo": True,
-    "x_distribution": "uniform",
-    "z_distribution": "uniform_rdpg",
+    "continuous_conditional_copula": "gaussian",
+    "marginals": {"x": "gaussian", "z": "uniform 0 1", "y": "gaussian"},
 }
-MODEL_X_OPTIONS = {"test_type": "model_X", "estimate_conditional": True, "test_size": 0.5}
-
-
-def conditional_options():
-    return {
-        **MODEL_X_OPTIONS,
-        "conditional_estimator": GaussianKDEConditionalEstimator(
-            bandwidth=[0.1, 0.2, 0.5, 1.0]
-        ),
-    }
+CORRELATIONS_WITH_X = (0.0, 0.5)
+ALTERNATIVE_CONDITIONAL_CORRELATION = 0.5
+MODEL_X_OPTIONS = {"test_type": "model_X", "conditional_generator": "from_dgp"}
 
 
 AC_METHOD = partial(
     MultivariateACTest, M=0.5, standardize=False,
-    use_permutation_coeff=False, **conditional_options()
+    use_permutation_coeff=False, **MODEL_X_OPTIONS
 )
 METHODS = (
     ("AC Model-X (sqrt(n))", AC_METHOD),
-    ("MGC Model-X", partial(DistanceCorrelationTest, test_method="mgc", **conditional_options())),
-    ("CCA Model-X", partial(CanonicalCorrelationTest, **conditional_options())),
+    ("MGC Model-X", partial(DistanceCorrelationTest, test_method="mgc", **MODEL_X_OPTIONS)),
+    ("CCA Model-X", partial(CanonicalCorrelationTest, **MODEL_X_OPTIONS)),
 )
 
 
@@ -96,20 +88,30 @@ def make_design(args, methods, conditions=("null", "alternative")):
     """Pair methods on each dataset; reuse its embedding via the simulation runner."""
     design = []
     for n in args.n:
-        for condition in conditions:
-            dgp = partial(
-                BernoulliNetwork, **NETWORK_OPTIONS,
-                independent_response=(condition == "null"),
-            )
-            generation = {"setup": (dgp, EMBEDDING_SOLVER), "n": n,
-                          "k": LATENT_DIMENSION, "ky": RESPONSE_DIMENSION}
-            for label, method in methods:
-                design.append({
-                    **generation, "_generation_keys": tuple(generation),
-                    "condition": condition,
-                    "method_label": label, "method": method, "alpha": ALPHA,
-                    "npermutations": args.npermutations, "use_true_latent": USE_TRUE_LATENT,
-                })
+        for correlation_zx in CORRELATIONS_WITH_X:
+            for correlation_yx in CORRELATIONS_WITH_X:
+                for condition in conditions:
+                    dgp = partial(
+                        BernoulliNetwork, **NETWORK_OPTIONS,
+                        correlation_zx=correlation_zx,
+                        correlation_yx=correlation_yx,
+                        conditional_correlation_zy=(
+                            0.0 if condition == "null"
+                            else ALTERNATIVE_CONDITIONAL_CORRELATION
+                        ),
+                    )
+                    generation = {"setup": (dgp, EMBEDDING_SOLVER), "n": n,
+                                  "k": LATENT_DIMENSION, "ky": RESPONSE_DIMENSION}
+                    for label, method in methods:
+                        design.append({
+                            **generation, "_generation_keys": tuple(generation),
+                            "condition": condition,
+                            "correlation_zx": correlation_zx,
+                            "correlation_yx": correlation_yx,
+                            "method_label": label, "method": method, "alpha": ALPHA,
+                            "npermutations": args.npermutations,
+                            "use_true_latent": USE_TRUE_LATENT,
+                        })
     return design
 
 
@@ -118,7 +120,8 @@ def experiment_design(args):
 
 
 def result_key(row):
-    return (row["n"], row["condition"], row["method_label"])
+    return (row["n"], row["correlation_zx"], row["correlation_yx"],
+            row["condition"], row["method_label"])
 
 
 def wilson_interval(rejections, nsim):
@@ -154,7 +157,8 @@ def run_experiment(args, design):
         if pvalue is None or not np.isfinite(pvalue) or not 0 <= pvalue <= 1:
             raise RuntimeError(f"Invalid p-value for {key}: {pvalue}")
         grouped[key].append(float(pvalue))
-        raw.append({"n": row["n"], "condition": row["condition"],
+        raw.append({"n": row["n"], "correlation_zx": row["correlation_zx"],
+                    "correlation_yx": row["correlation_yx"], "condition": row["condition"],
                     "method": row["method_label"], "pvalue": pvalue,
                     "rejected": bool(pvalue < ALPHA), "alpha": ALPHA,
                     "npermutations": args.npermutations, "seed": args.seed})
@@ -163,22 +167,24 @@ def run_experiment(args, design):
     print(f"nsim={args.nsim}, alpha={ALPHA}, null draws={args.npermutations}, seed={args.seed}")
     print(
         f"Bernoulli RDPG; k={LATENT_DIMENSION}, ky={RESPONSE_DIMENSION}; "
-        "estimated latent positions (ASE); uniform X; conditional KDE fit on training nodes."
+        "estimated latent positions (ASE); uniform Z; exact conditional Y draws."
     )
     print("Rates use p < alpha; brackets show 95% Wilson intervals across replicates.")
-    print(f"{'n':>5} {'condition':>12}  {'method':25} {'rate':>6}  95% interval")
+    print(f"{'n':>5} {'rho_zx':>6} {'rho_yx':>6} {'condition':>12}  {'method':25} {'rate':>6}  95% interval")
     for key, values in grouped.items():
         if len(values) != args.nsim:
             raise RuntimeError(f"Expected {args.nsim} p-values for {key}, got {len(values)}")
-        n, condition, method = key
+        n, correlation_zx, correlation_yx, condition, method = key
         count = int(np.count_nonzero(np.asarray(values) < ALPHA))
         low, high = wilson_interval(count, args.nsim)
         rate = count / args.nsim
-        summary.append({"n": n, "condition": condition,
+        summary.append({"n": n, "correlation_zx": correlation_zx,
+                        "correlation_yx": correlation_yx, "condition": condition,
                         "method": method, "nsim": args.nsim, "rejections": count,
                         "rejection_rate": rate, "ci95_low": low, "ci95_high": high,
                         "alpha": ALPHA, "npermutations": args.npermutations, "seed": args.seed})
-        print(f"{n:5d} {condition:>12}  {method:25} {rate:6.3f}  [{low:.3f}, {high:.3f}]")
+        print(f"{n:5d} {correlation_zx:6.1f} {correlation_yx:6.1f} "
+              f"{condition:>12}  {method:25} {rate:6.3f}  [{low:.3f}, {high:.3f}]")
     write_csv(args.output, summary)
     raw_path = args.output.with_name(f"{args.output.stem}_pvalues.csv")
     write_csv(raw_path, raw)
@@ -188,7 +194,7 @@ def run_experiment(args, design):
 
 def main():
     args = parse_args()
-    print("Power experiment: independent-response null and modulo-one alternative.")
+    print("Power experiment: continuous conditional copula null and alternative.")
     run_experiment(args, experiment_design(args))
 
 
