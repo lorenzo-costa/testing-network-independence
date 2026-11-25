@@ -3,6 +3,7 @@ import warnings
 from numbers import Integral
 
 from .conditional_sampler import ConditionalSampler
+from .continuous_copula_sampler import ContinuousConditionalCopulaSampler
 from .copula_sampler import CopulaGenerator
 from .mixture_copula_sampler import MixtureCopulaSampler 
 
@@ -46,6 +47,7 @@ class LatentSampler:
         rng=None,
         conditional_gaussian=None,
         conditional_modulo=None,
+        continuous_conditional_copula=None,
         **kwargs,
     ):
         if rng is None:
@@ -60,6 +62,7 @@ class LatentSampler:
 
         sampler_options = [
             ("conditional_modulo", conditional_modulo),
+            ("continuous_conditional_copula", continuous_conditional_copula),
             ("conditional_gaussian", conditional_gaussian),
             ("conditional_copula", conditional_copula),
             ("functional_form", functional_form),
@@ -67,7 +70,9 @@ class LatentSampler:
             (
                 "copula_model",
                 copula_model
-                if conditional_gaussian is None and conditional_copula is None
+                if (conditional_gaussian is None
+                    and conditional_copula is None
+                    and continuous_conditional_copula is None)
                 else None,
             ),
         ]
@@ -108,6 +113,14 @@ class LatentSampler:
                 rng=rng,
                 **kwargs,
             ),
+            "continuous_conditional_copula": lambda value: ContinuousConditionalCopulaSampler(
+                n=n,
+                k=k,
+                ky=ky,
+                copula_model=self._conditional_copula_model(value, copula_model),
+                rng=rng,
+                **kwargs,
+            ),
             "functional_form": lambda value: FunctionalGenerator(
                 n=n, k=k, ky=ky, functional_form=value, rng=rng, **kwargs
             ),
@@ -127,6 +140,7 @@ class LatentSampler:
         self.copula_model = copula_model
         self.conditional_modulo = conditional_modulo
         self.conditional_copula = conditional_copula
+        self.continuous_conditional_copula = continuous_conditional_copula
         self.conditional_gaussian = conditional_gaussian
         self.rdpg_distr = rdpg_distr
 
@@ -160,6 +174,8 @@ class LatentSampler:
     def _sample_latent(self):
         """Return ``(Z, Y, X)``; ``X`` is ``None`` when not generated.
         Hierarchy of generation is:
+        - if continuous_conditional_copula is specified, generate (Z, Y, X)
+          with a scalar continuous conditioning variable.
         - if conditional_gaussian is specified, generate (Z, Y, X) from the
           explicitly configured category Gaussians.
         - if conditional_copula is specified, generate (Z, Y, X) by stratum and
@@ -170,6 +186,8 @@ class LatentSampler:
         Z, Y, X = None, None, None
 
         if self.conditional_modulo is not None:
+            Z, Y, X = self.latent_sampler.sample_latent()
+        elif self.continuous_conditional_copula is not None:
             Z, Y, X = self.latent_sampler.sample_latent()
         elif self.conditional_gaussian is not None:
             Z, Y, X = self.latent_sampler.sample_latent()
@@ -183,7 +201,7 @@ class LatentSampler:
             Z, Y = self.latent_sampler._sample_latent_copula()
         else:
             raise ValueError(
-                "No valid latent generation method specified. Please provide one of: conditional_gaussian, conditional_copula, post_nonlinear_noise, functional_form, rdpg_distr, or copula_model."
+                "No valid latent generation method specified. Please provide one of: continuous_conditional_copula, conditional_gaussian, conditional_copula, post_nonlinear_noise, functional_form, rdpg_distr, or copula_model."
             )
 
         Z = np.asarray(Z)

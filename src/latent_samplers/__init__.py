@@ -1,4 +1,5 @@
 from .conditional_sampler import ConditionalSampler
+from .continuous_copula_sampler import ContinuousConditionalCopulaSampler
 from .sampler import LatentSampler
 from .mixture_copula_sampler import (
     MixtureCopulaSampler,
@@ -6,6 +7,7 @@ from .mixture_copula_sampler import (
 
 __all__ = [
     "ConditionalSampler",
+    "ContinuousConditionalCopulaSampler",
     "LatentSampler",
     "MixtureCopulaSampler",
 ]

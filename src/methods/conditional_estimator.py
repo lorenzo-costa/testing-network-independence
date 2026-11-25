@@ -116,7 +116,3 @@ class GaussianKDEConditionalEstimator(ConditionalEstimator):
         indices = np.minimum(indices, len(self.y_train_) - 1)
         draws = self.y_train_[indices] + self.rng.normal(scale=self.y_bandwidth_, size=len(x))
         return draws[:, None]
-
-    def predict(self, X):
-        """Return conditional draws for the original estimator interface."""
-        return self.sample(X)
