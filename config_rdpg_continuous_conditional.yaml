@@ -25,14 +25,32 @@ methods:
       kwargs:
         M: 0.5
         standardize: false
-        use_permutation_coeff: false
+        use_permutation_coeff: true
         test_type: model_X
         conditional_generator: from_dgp
+    
+    - name: MultivariateACTest
+      kwargs:
+        M: 1
+        standardize: false
+        use_permutation_coeff: true
+        test_type: model_X
+        conditional_generator: from_dgp
+    
+    - name: MultivariateACTest
+      kwargs:
+        adaptive_m: true
+        standardize: false
+        use_permutation_coeff: true
+        test_type: model_X
+        conditional_generator: from_dgp
+    
     - name: DistanceCorrelationTest
       kwargs:
         test_method: mgc
         test_type: model_X
         conditional_generator: from_dgp
+        
     - name: CanonicalCorrelationTest
       kwargs:
         test_type: model_X
