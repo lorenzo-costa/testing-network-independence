@@ -367,6 +367,10 @@ The correlations with X refer to normal copula coordinates. Each accepts a
 scalar broadcast or a vector of length `k` or `ky`, respectively. The
 `conditional_correlation_zy` parameter specifies residual correlations given X:
 a scalar broadcasts to all pairs, or supply a matrix of shape `(k, ky)`.
+For multivariate X, set `px` to its number of columns and provide
+`correlation_zx` and `correlation_yx` as loading matrices of shapes `(k, px)`
+and `(ky, px)`. The X coordinates are independent in copula coordinates;
+`sample(X)` returns exact conditional Y draws for an `(n, px)` X matrix.
 Residual coordinates within each block are independent. The resulting residual
 and joint correlation matrices must be positive definite; invalid combinations
 are rejected. Zero residual cross correlation is the conditional null even

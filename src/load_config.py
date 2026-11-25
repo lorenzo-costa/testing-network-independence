@@ -137,7 +137,7 @@ def _resolve_copula_setup(entry: dict):
         "cross_covariance",
     }
     continuous_keys = {
-        "marginals", "correlation_zx", "correlation_yx",
+        "marginals", "px", "correlation_zx", "correlation_yx",
         "conditional_correlation_zy", "center_latent",
     }
     if entry.get("continuous_conditional_copula") is not None:

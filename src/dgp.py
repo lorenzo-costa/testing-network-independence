@@ -62,8 +62,9 @@ class GaussianNetwork(LatentSampler):
             X = np.asarray(X)
             if X.ndim == 1:
                 X = X.reshape(-1, 1)
-            if X.shape != (self.n, 1):
-                raise ValueError(f"X must have shape ({self.n}, 1); got {X.shape}.")
+            px = getattr(self.latent_sampler, "px", 1)
+            if X.shape != (self.n, px):
+                raise ValueError(f"X must have shape ({self.n}, {px}); got {X.shape}.")
         self.X = X
         return Z, Y, X
 

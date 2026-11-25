@@ -2,9 +2,11 @@
 
 Compare AC, MGC, and CCA Model-X tests on shared data and ASE embeddings.
 Four scenarios distinguish marginal Z-Y dependence from dependence given X.
-Nonzero correlations of Z and Y with X are 0.5. The negative conditional
-correlation in the first scenario exactly cancels marginal dependence.
-X and Y have standard Gaussian marginals; Z is uniform on [0, 1].
+Each Z and Y coordinate loads on its matching X coordinate. Nonzero loadings
+are 0.7. The negative conditional correlation in the first scenario exactly
+cancels marginal dependence for each matching pair.
+X and Y have standard Gaussian marginals; each Z coordinate is uniform on
+[0, 1/sqrt(3)] so RDPG inner products stay in [0, 1].
 Model-X null draws use the copula sampler's exact Y | X distribution.
 
 Examples:
@@ -28,23 +30,29 @@ from src.metrics import ReturnMetric
 from src.solvers.weighted_network import ASE
 
 DEFAULT_NSIM = 50
-DEFAULT_SAMPLE_SIZES = (200,)
+DEFAULT_SAMPLE_SIZES = (100,)
 DEFAULT_NPERMUTATIONS = 99
 DEFAULT_JOBS = 6
 MIN_SAMPLE_SIZE = 20
 SEED = 1
 ALPHA = 0.05
-LATENT_DIMENSION = 1
-RESPONSE_DIMENSION = 1
+LATENT_DIMENSION = 3
+RESPONSE_DIMENSION = 3
+CONDITIONING_DIMENSION = 3
 USE_TRUE_LATENT = False
 EMBEDDING_SOLVER = ASE
 
 NETWORK_OPTIONS = {
     "rdpg": True,
     "continuous_conditional_copula": "gaussian",
-    "marginals": {"x": "gaussian", "z": "uniform 0 1", "y": "gaussian"},
+    "px": CONDITIONING_DIMENSION,
+    "marginals": {
+        "x": "gaussian",
+        "z": f"uniform 0 {1 / np.sqrt(LATENT_DIMENSION)}",
+        "y": "gaussian",
+    },
 }
-CORRELATION_WITH_X = 0.5
+CORRELATION_WITH_X = 0.7
 CANCELLING_CONDITIONAL_CORRELATION = (
     -CORRELATION_WITH_X**2 / (1 - CORRELATION_WITH_X**2)
 )
@@ -55,7 +63,7 @@ SCENARIOS = (
     ("marginal_dependent_conditional_independent",
      CORRELATION_WITH_X, CORRELATION_WITH_X, 0.0, "dependent", "independent"),
     ("marginal_dependent_conditional_dependent",
-     CORRELATION_WITH_X, CORRELATION_WITH_X, 0.5, "dependent", "dependent"),
+     CORRELATION_WITH_X, CORRELATION_WITH_X, 0.7, "dependent", "dependent"),
     ("marginal_independent_conditional_independent",
      0.0, 0.0, 0.0, "independent", "independent"),
 )
@@ -106,9 +114,11 @@ def make_design(args, methods):
              marginal_dependence, conditional_dependence) in SCENARIOS:
             dgp = partial(
                 BernoulliNetwork, **NETWORK_OPTIONS,
-                correlation_zx=correlation_zx,
-                correlation_yx=correlation_yx,
-                conditional_correlation_zy=conditional_correlation_zy,
+                correlation_zx=correlation_zx * np.eye(LATENT_DIMENSION, CONDITIONING_DIMENSION),
+                correlation_yx=correlation_yx * np.eye(RESPONSE_DIMENSION, CONDITIONING_DIMENSION),
+                conditional_correlation_zy=(
+                    conditional_correlation_zy * np.eye(LATENT_DIMENSION, RESPONSE_DIMENSION)
+                ),
             )
             generation = {"setup": (dgp, EMBEDDING_SOLVER), "n": n,
                           "k": LATENT_DIMENSION, "ky": RESPONSE_DIMENSION}
@@ -183,8 +193,9 @@ def run_experiment(args, design):
     summary = []
     print(f"nsim={args.nsim}, alpha={ALPHA}, null draws={args.npermutations}, seed={args.seed}")
     print(
-        f"Bernoulli RDPG; k={LATENT_DIMENSION}, ky={RESPONSE_DIMENSION}; "
-        "estimated latent positions (ASE); uniform Z; exact conditional Y draws."
+        f"Bernoulli RDPG; k={LATENT_DIMENSION}, ky={RESPONSE_DIMENSION}, "
+        f"px={CONDITIONING_DIMENSION}; "
+        "estimated latent positions (ASE); bounded uniform Z; exact conditional Y draws."
     )
     print("Rates use p < alpha; brackets show 95% Wilson intervals across replicates.")
     print(f"{'n':>5} {'marginal Z-Y':>14} {'Z-Y given X':>14} "

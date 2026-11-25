@@ -214,9 +214,10 @@ class LatentSampler:
             raise ValueError(f"Y must have shape ({self.n}, {self.ky}); got {Y.shape}.")
         if X is not None:
             X = np.asarray(X)
-            if X.ndim != 2 or X.shape != (self.n, 1):
+            px = getattr(self.latent_sampler, "px", 1)
+            if X.ndim != 2 or X.shape != (self.n, px):
                 raise ValueError(
-                    f"X must have shape ({self.n}, 1); got {X.shape}."
+                    f"X must have shape ({self.n}, {px}); got {X.shape}."
                 )
         self.X = X
         self.is_null = getattr(self.latent_sampler, "is_null", None)
