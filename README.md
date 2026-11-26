@@ -216,6 +216,19 @@ All methods inherit from `BaseMethod` and expose `fit(data)`, `get_estimated()`,
 |-------|---------------|-------|
 | `DistanceCorrelationTest` | `test_method` (`'dcorr'` / `'mgc'`), `permutation_type`, `npermutations`, `solver` | Uses latent positions and observed covariates; MGC is the default statistic |
 | `RVtest` | `test_type` (`'permutation'` / `'asymptotic'`), `permutation_type` (`'latent'` / `'observed'`), `npermutations`, `solver` | The asymptotic branch uses the Imhof method (`imhof.py`) to compute the p-value |
+| `CanonicalCorrelationTest` | `test_type` (`'permutation'` / `'model_X'`), `conditional_generator`, `npermutations`, `solver` | Largest canonical correlation; Model-X uses conditional Y draws for CRT calibration |
+
+To run CCA with CRT calibration in a YAML experiment whose DGP provides
+conditional `Y | X` draws, add this entry under `methods.list`:
+
+```yaml
+- name: CanonicalCorrelationTest
+  kwargs:
+    test_type: model_X
+    conditional_generator: from_dgp
+```
+
+The `methods.npermutations` setting controls the number of conditional draws.
 | `ObservedCVM` | `test_function` | CvM statistic on adjacency matrices; no embedding step needed |
 | `LLKRatioTest` | — | Likelihood-ratio test |
 | `QAP` | — | Quadratic Assignment Procedure |

@@ -8,6 +8,9 @@ from src.methods._base_class import (
     BaseMethod,
     BasePermutationTest,
     ConditionalGenerator,
+    ModelXSamplingTest,
+    StandardPermutationTest,
+    WithinStratumPermutationTest,
 )
 
 
@@ -168,6 +171,64 @@ def test_model_x_requires_x_and_valid_generator_and_sample_shape():
     method._process_input({"Z": np.ones((2, 1)), "Y": np.ones((2, 1)), "X": np.ones((2, 1))})
     with pytest.raises(ValueError, match="must return Y with shape"):
         method._fit_null()
+
+
+def test_explicit_permutation_subclasses_match_base_constructor():
+    data = {
+        "Z": np.arange(8.0).reshape(4, 2),
+        "Y": np.arange(4.0).reshape(4, 1),
+        "X": np.array([0, 0, 1, 1]),
+    }
+    for method_class, stratified in (
+        (StandardPermutationTest, False),
+        (WithinStratumPermutationTest, True),
+    ):
+        options = dict(
+            use_true_latent=True,
+            test_function=dot_product_statistic,
+            npermutations=4,
+        )
+        facade = BasePermutationTest(
+            **options,
+            stratify_permutations=stratified,
+            rng=np.random.default_rng(17),
+        )
+        explicit = method_class(**options, rng=np.random.default_rng(17))
+        for method in (facade, explicit):
+            method._process_input(data)
+            method._fit_null()
+        for facade_draw, explicit_draw in zip(
+            facade.permutation_indices, explicit.permutation_indices
+        ):
+            np.testing.assert_array_equal(facade_draw, explicit_draw)
+            if stratified:
+                np.testing.assert_array_equal(
+                    data["X"][facade_draw], data["X"]
+                )
+        np.testing.assert_allclose(facade.null_statistics, explicit.null_statistics)
+
+
+def test_explicit_model_x_subclass_matches_base_constructor():
+    data = {"Z": np.ones((2, 1)), "Y": [[3.0], [0.0]], "X": [[0], [1]]}
+    options = dict(
+        use_true_latent=True,
+        test_function=dot_product_statistic,
+        npermutations=2,
+    )
+    facade = BasePermutationTest(
+        **options,
+        test_type="model_X",
+        conditional_generator=SequenceGenerator([[[1.0], [0.0]], [[2.0], [0.0]]]),
+    )
+    explicit = ModelXSamplingTest(
+        **options,
+        conditional_generator=SequenceGenerator([[[1.0], [0.0]], [[2.0], [0.0]]]),
+    )
+    for method in (facade, explicit):
+        method._process_input(data)
+        method._fit_null()
+    np.testing.assert_allclose(facade.null_statistics, explicit.null_statistics)
+    assert facade.pvalue == explicit.pvalue
 
 
 def test_result_structure_contains_one_latent_and_observed_y():

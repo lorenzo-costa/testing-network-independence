@@ -48,22 +48,6 @@ if __name__ == "__main__":
     out = pd.DataFrame(out)
     print(f"Completed H1 simulations in: {datetime.now() - start}")
 
-    # # -- H0 run ---------------------------------------------------------------
-    # rng_null = __import__("numpy").random.default_rng(sim["seed"])
-    # out0 = run_simulation(
-    #     nsim=sim["nsim"],
-    #     metrics=cfg["metrics"],
-    #     factorial_design=factorial_h0,
-    #     rng=rng_null,
-    #     parallel=True,
-    # )
-
-    # out0 = pd.DataFrame(out0)
-
-    # print(f"Total simulation time: {datetime.now() - start}")
-
-    # results = pd.concat([out, out0], ignore_index=True)
-
     # -- Save raw first (guard against column-extraction errors) --------------
     os.makedirs(cfgs[0]["output"]["results_dir"], exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")

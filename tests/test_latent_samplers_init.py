@@ -6,11 +6,11 @@ def test_package_exports_latent_sampler():
 
     assert package.__all__ == [
         "LatentSampler",
-        "ConditionalIndependenceCopulaSampler",
+        "MixtureCopulaSampler",
         "PostNonLinearNoiseSampler",
     ]
     assert package.LatentSampler.__name__ == "LatentSampler"
     assert (
-        package.ConditionalIndependenceCopulaSampler.__name__
-        == "ConditionalIndependenceCopulaSampler"
+        package.MixtureCopulaSampler.__name__
+        == "MixtureCopulaSampler"
     )

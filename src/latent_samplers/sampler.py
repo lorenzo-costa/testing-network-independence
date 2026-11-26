@@ -2,11 +2,11 @@
 import warnings
 from numbers import Integral
 
+from .conditional_sampler import ConditionalSampler
+from .continuous_copula_sampler import ContinuousConditionalCopulaSampler
 from .copula_sampler import CopulaGenerator
-from .conditional_independence_copula_sampler import (
-    ConditionalIndependenceCopulaSampler,
-)
-from .post_nonlinear_noise_sampler import PostNonLinearNoiseSampler
+from .mixture_copula_sampler import MixtureCopulaSampler 
+
 from .rdpg_sampler import RDPGGenerator
 from .functional_sampler import FunctionalGenerator
 import numpy as np
@@ -24,6 +24,8 @@ class LatentSampler:
     conditional_copula : str or True, optional
         Select the conditional copula sampler. A string names the copula model;
         with True, ``copula_model`` is used and defaults to ``"gaussian"``.
+    continuous_conditional_copula : str or True, optional
+        Select the Gaussian copula with scalar continuous X and exact Y | X draws.
     conditional_gaussian : True, optional
         Select the categorical joint Gaussian sampler. Requires ``means``,
         ``covariances``, and ``class_probabilities`` in keyword arguments.
@@ -39,12 +41,13 @@ class LatentSampler:
         k,
         ky=1,
         conditional_copula=None,
-        post_nonlinear_noise=None,
         copula_model=None,
         rdpg_distr=None,
         functional_form=None,
         rng=None,
         conditional_gaussian=None,
+        conditional_modulo=None,
+        continuous_conditional_copula=None,
         **kwargs,
     ):
         if rng is None:
@@ -58,15 +61,18 @@ class LatentSampler:
         self.ky = int(ky)
 
         sampler_options = [
+            ("conditional_modulo", conditional_modulo),
+            ("continuous_conditional_copula", continuous_conditional_copula),
             ("conditional_gaussian", conditional_gaussian),
             ("conditional_copula", conditional_copula),
-            ("post_nonlinear_noise", post_nonlinear_noise),
             ("functional_form", functional_form),
             ("rdpg_distr", rdpg_distr),
             (
                 "copula_model",
                 copula_model
-                if conditional_gaussian is None and conditional_copula is None and post_nonlinear_noise is None
+                if (conditional_gaussian is None
+                    and conditional_copula is None
+                    and continuous_conditional_copula is None)
                 else None,
             ),
         ]
@@ -91,7 +97,15 @@ class LatentSampler:
             )
 
         factories = {
-            "conditional_copula": lambda value: ConditionalIndependenceCopulaSampler(
+            "conditional_modulo": lambda value: ConditionalSampler(
+                n=n, k=k, ky=ky, rng=rng,
+                **{key: kwargs[key] for key in (
+                    "z_distribution", "x_distribution", "z_scale",
+                    "response_scale", "independent_response", "noise_scale",
+                    "column_covariance",
+                ) if key in kwargs},
+            ) if value is True else self._invalid_conditional_modulo(),
+            "conditional_copula": lambda value: MixtureCopulaSampler(
                 n=n,
                 k=k,
                 ky=ky,
@@ -99,19 +113,13 @@ class LatentSampler:
                 rng=rng,
                 **kwargs,
             ),
-            "conditional_gaussian": lambda value: ConditionalGaussianSampler(
+            "continuous_conditional_copula": lambda value: ContinuousConditionalCopulaSampler(
                 n=n,
                 k=k,
                 ky=ky,
+                copula_model=self._conditional_copula_model(value, copula_model),
                 rng=rng,
-                **self._conditional_gaussian_kwargs(value, kwargs),
-            ),
-            "post_nonlinear_noise": lambda value: PostNonLinearNoiseSampler(
-                n=n,
-                k=k,
-                ky=ky,
-                rng=rng,
-                **self._post_nonlinear_kwargs(value, kwargs),
+                **kwargs,
             ),
             "functional_form": lambda value: FunctionalGenerator(
                 n=n, k=k, ky=ky, functional_form=value, rng=rng, **kwargs
@@ -130,13 +138,18 @@ class LatentSampler:
         self.sampler_name = latent_sampler.get_name()
 
         self.copula_model = copula_model
+        self.conditional_modulo = conditional_modulo
         self.conditional_copula = conditional_copula
+        self.continuous_conditional_copula = continuous_conditional_copula
         self.conditional_gaussian = conditional_gaussian
-        self.post_nonlinear_noise = post_nonlinear_noise
         self.rdpg_distr = rdpg_distr
 
         self.functional_form = functional_form
         self.X = None
+
+    @staticmethod
+    def _invalid_conditional_modulo():
+        raise ValueError("conditional_modulo must be True when selected.")
 
     @staticmethod
     def _conditional_copula_model(activation, copula_model):
@@ -147,26 +160,6 @@ class LatentSampler:
         raise ValueError(
             "conditional_copula must be a copula-model string or True."
         )
-
-    @staticmethod
-    def _post_nonlinear_kwargs(activation, kwargs):
-        if activation is not True:
-            raise ValueError("post_nonlinear_noise must be True when selected.")
-        allowed = {
-            "C",
-            "rho",
-            "error_covariance",
-            "stratum_covariance",
-            "column_covariance_z",
-            "column_covariance_y",
-            "column_covariance",
-            "cross_correlation_template",
-            "class_probabilities",
-            "p",
-            "center_latent",
-            "function_type",
-        }
-        return {key: value for key, value in kwargs.items() if key in allowed}
 
     @staticmethod
     def _conditional_gaussian_kwargs(activation, kwargs):
@@ -181,6 +174,8 @@ class LatentSampler:
     def _sample_latent(self):
         """Return ``(Z, Y, X)``; ``X`` is ``None`` when not generated.
         Hierarchy of generation is:
+        - if continuous_conditional_copula is specified, generate (Z, Y, X)
+          with a scalar continuous conditioning variable.
         - if conditional_gaussian is specified, generate (Z, Y, X) from the
           explicitly configured category Gaussians.
         - if conditional_copula is specified, generate (Z, Y, X) by stratum and
@@ -190,12 +185,14 @@ class LatentSampler:
         """
         Z, Y, X = None, None, None
 
-        if self.conditional_gaussian is not None:
+        if self.conditional_modulo is not None:
+            Z, Y, X = self.latent_sampler.sample_latent()
+        elif self.continuous_conditional_copula is not None:
+            Z, Y, X = self.latent_sampler.sample_latent()
+        elif self.conditional_gaussian is not None:
             Z, Y, X = self.latent_sampler.sample_latent()
         elif self.conditional_copula is not None:
             Z, Y, X = self.latent_sampler._sample_latent_conditional_copula()
-        elif self.post_nonlinear_noise is not None:
-            Z, Y, X = self.latent_sampler._sample_latent_post_nonlinear_noise()
         elif self.functional_form is not None:
             Z, Y = self.latent_sampler._sample_latent_functional()
         elif self.rdpg_distr is not None:
@@ -204,7 +201,7 @@ class LatentSampler:
             Z, Y = self.latent_sampler._sample_latent_copula()
         else:
             raise ValueError(
-                "No valid latent generation method specified. Please provide one of: conditional_gaussian, conditional_copula, post_nonlinear_noise, functional_form, rdpg_distr, or copula_model."
+                "No valid latent generation method specified. Please provide one of: continuous_conditional_copula, conditional_gaussian, conditional_copula, post_nonlinear_noise, functional_form, rdpg_distr, or copula_model."
             )
 
         Z = np.asarray(Z)
@@ -217,9 +214,10 @@ class LatentSampler:
             raise ValueError(f"Y must have shape ({self.n}, {self.ky}); got {Y.shape}.")
         if X is not None:
             X = np.asarray(X)
-            if X.ndim != 2 or X.shape != (self.n, 1):
+            px = getattr(self.latent_sampler, "px", 1)
+            if X.ndim != 2 or X.shape != (self.n, px):
                 raise ValueError(
-                    f"X must have shape ({self.n}, 1); got {X.shape}."
+                    f"X must have shape ({self.n}, {px}); got {X.shape}."
                 )
         self.X = X
         self.is_null = getattr(self.latent_sampler, "is_null", None)

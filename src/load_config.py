@@ -28,6 +28,7 @@ from src.solvers.MaMa_uuuuu import pgd_fit_wrapper
 
 # -- Test methods -------------------------------------------------------------
 from src.methods import *
+from src.methods.conditional_estimator import GaussianKDEConditionalEstimator
 
 # -- Metrics ------------------------------------------------------------------
 from src.metrics import ComputeAll
@@ -49,6 +50,7 @@ SOLVER_REGISTRY = {
 
 METHOD_REGISTRY = {
     "RVtest": RVTest,
+    "CanonicalCorrelationTest": CanonicalCorrelationTest,
     "MultivariateACTest": MultivariateACTest,
     "DistanceCorrelationTest": DistanceCorrelationTest,
     "DiffusionCorrelation": DistanceCorrelationTest,
@@ -65,9 +67,20 @@ def _resolve_method(entry: dict):
     Convert a YAML method entry into a callable (or partial).
     """
     name = entry["name"]
-    kwargs = entry.get("kwargs") or {}
+    kwargs = dict(entry.get("kwargs") or {})
     if "approximation" in kwargs:
         raise ValueError("'approximation' is no longer supported; use 'test_type'.")
+    estimator_spec = kwargs.get("conditional_estimator")
+    if estimator_spec is not None:
+        if not isinstance(estimator_spec, dict) or estimator_spec.get("name") != "GaussianKDEConditionalEstimator":
+            raise ValueError("conditional_estimator must name GaussianKDEConditionalEstimator.")
+        if kwargs.get("test_type") != "model_X" or kwargs.get("estimate_conditional") is not True:
+            raise ValueError("conditional_estimator requires test_type: model_X and estimate_conditional: true.")
+        if "conditional_generator" in kwargs:
+            raise ValueError("Do not specify conditional_generator with conditional_estimator.")
+        kwargs["conditional_estimator"] = GaussianKDEConditionalEstimator(
+            **(estimator_spec.get("kwargs") or {})
+        )
     cls = METHOD_REGISTRY[name]
 
     return partial(cls, **kwargs) if kwargs else cls
@@ -82,11 +95,21 @@ def _resolve_copula_setup(entry: dict):
     """
     dgp_cls = DGP_REGISTRY[entry["dgp"]]
     solver = SOLVER_REGISTRY[entry["solver"]]
+    if entry.get("conditional_modulo") is not None:
+        keys = {
+            "conditional_modulo", "rdpg", "z_distribution", "x_distribution",
+            "z_scale", "response_scale", "independent_response", "noise_scale",
+        }
+        unknown = set(entry) - keys - {"dgp", "solver"}
+        if unknown:
+            raise ValueError(f"Unknown conditional_modulo setup fields: {sorted(unknown)}")
+        return partial(dgp_cls, **{key: entry[key] for key in keys if key in entry}), solver
 
     reserved = {
         "dgp",
         "solver",
         "conditional_copula",
+        "continuous_conditional_copula",
         "post_nonlinear_noise",
         "copula_model",
         "rdgp",
@@ -113,6 +136,12 @@ def _resolve_copula_setup(entry: dict):
         "column_covariance_y",
         "cross_covariance",
     }
+    continuous_keys = {
+        "marginals", "px", "correlation_zx", "correlation_yx",
+        "conditional_correlation_zy", "center_latent",
+    }
+    if entry.get("continuous_conditional_copula") is not None:
+        reserved.update(continuous_keys | conditional_keys)
     post_nonlinear_keys = {
         "C",
         "rho",
@@ -137,6 +166,7 @@ def _resolve_copula_setup(entry: dict):
     copula_params = {k: v for k, v in entry.items() if k not in reserved}
 
     dgp_kwargs = {
+        "continuous_conditional_copula": entry.get("continuous_conditional_copula"),
         "conditional_copula": entry.get("conditional_copula"),
         "post_nonlinear_noise": entry.get("post_nonlinear_noise"),
         "copula_model": entry.get("copula_model"),
@@ -144,6 +174,8 @@ def _resolve_copula_setup(entry: dict):
         "rdpg_distr": entry.get("rdpg_distr", None),
         "copula_params": copula_params,
     }
+    if entry.get("continuous_conditional_copula") is not None:
+        dgp_kwargs.update({key: entry[key] for key in continuous_keys | conditional_keys if key in entry})
     if entry.get("post_nonlinear_noise") is not None:
         dgp_kwargs.pop("copula_params")
     if entry.get("conditional_copula") is not None:
@@ -311,11 +343,15 @@ def _detect_experiment_type(raw: dict) -> str:
     setups_raw = raw.get("setups", {})
 
     if isinstance(setups_raw, list):
+        if any(entry.get("conditional_modulo") is not None for entry in setups_raw):
+            return "conditional_modulo"
         has_post_nonlinear = any(
             entry.get("post_nonlinear_noise") for entry in setups_raw
         )
         has_conditional_copula = any(
-            entry.get("conditional_copula") is not None for entry in setups_raw
+            (entry.get("conditional_copula") is not None
+             or entry.get("continuous_conditional_copula") is not None)
+            for entry in setups_raw
         )
         if has_post_nonlinear and has_conditional_copula:
             return "conditioning_mixed"
@@ -464,7 +500,7 @@ def _build_single_design(exp: str, cfg: dict) -> list[dict]:
 
     def _standard_rows(setups_list, rho_list, include_marginals=None):
         if include_marginals is None:
-            include_marginals = exp != "post_nonlinear_noise"
+            include_marginals = exp not in {"post_nonlinear_noise", "conditional_modulo"}
         names = [
             "setup",
             "method",
@@ -599,7 +635,8 @@ def _build_single_design(exp: str, cfg: dict) -> list[dict]:
         conditional_setups = [
             setup
             for setup in sets
-            if setup[0].keywords.get("conditional_copula") is not None
+            if (setup[0].keywords.get("conditional_copula") is not None
+                or setup[0].keywords.get("continuous_conditional_copula") is not None)
         ]
         post_nonlinear_setups = [
             setup

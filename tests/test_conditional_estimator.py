@@ -1,0 +1,151 @@
+import numpy as np
+import pytest
+
+from src.methods import (
+    GaussianKDEConditionalEstimator, CanonicalCorrelationTest, MultivariateACTest,
+)
+from src.load_config import _resolve_method, load_config
+
+
+def test_conditional_density_and_samples_depend_on_x():
+    rng = np.random.default_rng(10)
+    x = rng.uniform(-1, 1, size=(300, 1))
+    y = x + rng.normal(scale=0.1, size=(300, 1))
+    estimator = GaussianKDEConditionalEstimator(
+        bandwidth=[0.1, 0.3], n_splits=3, rng=np.random.default_rng(11)
+    ).fit(x, y)
+    queries = np.vstack([np.full((1000, 1), -0.8), np.full((1000, 1), 0.8)])
+    draws = estimator.sample(queries)
+    assert draws.shape == (2000, 1)
+    assert draws[:1000].mean() < -0.5
+    assert draws[1000:].mean() > 0.5
+    assert estimator.pdf(np.array([[-0.8], [0.8]]), np.array([[-0.8], [0.8]])).shape == (2,)
+    assert estimator.bandwidth_ in (0.1, 0.3)
+
+
+def test_model_x_estimated_conditional_uses_held_out_rows():
+    rng = np.random.default_rng(12)
+    x = rng.uniform(size=(60, 1))
+    y = x + rng.normal(scale=0.1, size=(60, 1))
+    z = rng.normal(size=(60, 1))
+    estimator = GaussianKDEConditionalEstimator(bandwidth=0.2)
+    test = CanonicalCorrelationTest(
+        k=1, use_true_latent=True, test_type="model_X",
+        estimate_conditional=True, conditional_estimator=estimator,
+        test_size=0.4, npermutations=9, rng=np.random.default_rng(13),
+    )
+    test.fit({"Z": z, "Y": y, "X": x})
+    assert len(test.train_indices) == 36
+    assert len(test.test_indices) == 24
+    assert set(test.train_indices).isdisjoint(test.test_indices)
+    np.testing.assert_array_equal(estimator.x_train_, x[test.train_indices, 0])
+    assert test._draw_null_data().shape == (24, 1)
+
+
+def test_malformed_inputs_are_rejected():
+    estimator = GaussianKDEConditionalEstimator()
+    with pytest.raises(ValueError, match="finite matrix"):
+        estimator.fit(np.ones((10, 2, 1)), np.ones((10, 1)))
+
+
+def test_multivariate_density_and_joint_samples():
+    rng = np.random.default_rng(18)
+    x = rng.normal(size=(120, 2))
+    response = x[:, 0] + x[:, 1]
+    y = np.column_stack((response, response))
+    estimator = GaussianKDEConditionalEstimator(
+        bandwidth=[0.3, 0.7], n_splits=3, y_bandwidth=1e-6,
+        rng=np.random.default_rng(19),
+    ).fit(x, y)
+
+    draws = estimator.sample(x[:40])
+    assert draws.shape == (40, 2)
+    np.testing.assert_allclose(draws[:, 0], draws[:, 1], atol=1e-4)
+    density = estimator.pdf(x[:5], y[:5])
+    assert density.shape == (5,)
+    assert np.isfinite(density).all()
+    assert np.all(density > 0)
+    with pytest.raises(ValueError, match="column count"):
+        estimator.sample(x[:5, :1])
+
+
+def test_model_x_estimated_conditional_accepts_multivariate_x_and_y():
+    rng = np.random.default_rng(20)
+    x = rng.normal(size=(60, 2))
+    y = x + rng.normal(scale=0.2, size=(60, 2))
+    z = rng.normal(size=(60, 2))
+    estimator = GaussianKDEConditionalEstimator(bandwidth=0.5)
+    test = CanonicalCorrelationTest(
+        k=2, use_true_latent=True, test_type="model_X",
+        estimate_conditional=True, conditional_estimator=estimator,
+        test_size=0.4, npermutations=3, rng=np.random.default_rng(21),
+    )
+    test.fit({"Z": z, "Y": y, "X": x})
+    assert estimator.x_train_.shape == (36, 2)
+    assert estimator.y_train_.shape == (36, 2)
+    assert test._draw_null_data().shape == (24, 2)
+
+
+def test_yaml_method_resolves_conditional_estimator():
+    method = _resolve_method({
+        "name": "CanonicalCorrelationTest",
+        "kwargs": {
+            "test_type": "model_X",
+            "estimate_conditional": True,
+            "test_size": 0.5,
+            "conditional_estimator": {
+                "name": "GaussianKDEConditionalEstimator",
+                "kwargs": {"bandwidth": [0.1, 0.2], "n_splits": 2},
+            },
+        },
+    })
+    assert isinstance(
+        method.keywords["conditional_estimator"], GaussianKDEConditionalEstimator
+    )
+
+
+def test_conditional_config_uses_estimators_for_every_model_x_method():
+    methods = load_config("config_conditional.yaml")["methods"]["list"]
+    assert methods
+    for method in methods:
+        assert method.keywords["estimate_conditional"] is True
+        assert isinstance(
+            method.keywords["conditional_estimator"], GaussianKDEConditionalEstimator
+        )
+        assert "conditional_generator" not in method.keywords
+
+
+def test_ac_embeds_full_graph_then_calibrates_only_test_nodes(monkeypatch):
+    rng = np.random.default_rng(22)
+    n = 24
+    x = np.arange(n, dtype=float)[:, None] / n
+    y = x + rng.normal(scale=0.1, size=(n, 1))
+    z = rng.normal(size=(n, 1))
+    adjacency_shapes = []
+    statistic_inputs = []
+
+    def solver(A, k, rng):
+        adjacency_shapes.append(A.shape)
+        return z.copy(), None
+
+    def statistic(*, Y, Z, X, **kwargs):
+        statistic_inputs.append((Y.copy(), Z.copy(), X.copy()))
+        return float(np.mean(Y * X))
+
+    monkeypatch.setattr("src.methods.ac_test.ac_coefficient", statistic)
+    test = MultivariateACTest(
+        k=1, solver=solver, M=1, standardize=True, test_type="model_X",
+        estimate_conditional=True,
+        conditional_estimator=GaussianKDEConditionalEstimator(bandwidth=0.2),
+        npermutations=3, rng=np.random.default_rng(23),
+    )
+    test.fit({"A": np.zeros((n, n)), "X": x, "Y": y})
+    assert adjacency_shapes == [(n, n)]
+    assert len(statistic_inputs) == 4
+    expected_scale = np.sqrt(np.mean(np.var(z[test.test_indices], axis=0)))
+    assert test.standardization_scale_ == pytest.approx(expected_scale)
+    for tested_y, tested_z, tested_x in statistic_inputs:
+        assert tested_y.shape == tested_z.shape == tested_x.shape == (12, 1)
+        np.testing.assert_array_equal(tested_z, z[test.test_indices] / expected_scale)
+        np.testing.assert_array_equal(tested_x, x[test.test_indices])
+    np.testing.assert_array_equal(statistic_inputs[0][0], y[test.test_indices])

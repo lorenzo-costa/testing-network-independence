@@ -4,8 +4,8 @@ import pytest
 
 from src.load_config import _resolve_copula_setup
 from src.latent_samplers.copula_sampler import CopulaGenerator
-from src.latent_samplers.conditional_independence_copula_sampler import (
-    ConditionalIndependenceCopulaSampler,
+from src.latent_samplers.mixture_copula_sampler import (
+    MixtureCopulaSampler,
 )
 from src.latent_samplers.functional_sampler import FunctionalGenerator
 from src.latent_samplers.post_nonlinear_noise_sampler import (
@@ -36,7 +36,7 @@ def test_module_imports_latent_sampler():
                 "rho": [0, 0.5],
                 "marginals": {"z": "gaussian", "y": "gaussian"},
             },
-            ConditionalIndependenceCopulaSampler,
+            MixtureCopulaSampler,
         ),
         ({"copula_model": "gaussian"}, {"marginals": "gaussian"}, CopulaGenerator),
         ({"rdpg_distr": "dirichlet"}, {}, RDPGGenerator),
