@@ -255,6 +255,12 @@ the observed `Y` shape. The test sets `conditional_generator.rng` to its RNG,
 holds the fitted latent positions and `X` fixed, and uses serial draws
 (`n_jobs=1`). The Monte Carlo results are available as `null_distribution`.
 
+`GaussianKDEConditionalEstimator` also accepts multivariate `X` and `Y` for
+estimated Model-X draws. It uses one shared bandwidth across X coordinates and
+one across Y coordinates, selecting a whole training Y row for each draw before
+adding Gaussian noise. This estimates the joint conditional law from training
+data; `conditional_generator: from_dgp` uses exact draws when the DGP provides them.
+
 Set `standardize=True` on `MultivariateACTest` to divide the tested Z or
 estimated-Z block by `sqrt(mean(var(Z, axis=0, ddof=0)))`. This uses one scale
 for the entire block, preserves embedding rotations, and leaves X, Y, and

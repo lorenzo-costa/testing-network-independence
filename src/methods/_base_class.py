@@ -526,8 +526,6 @@ class ModelXSamplingTest(BasePermutationTest):
         if self.estimate_conditional:
             if hasattr(self, "test_indices"):
                 return
-            if self.X.shape[1] != 1 or self.Y.shape[1] != 1:
-                raise ValueError("Conditional KDE estimation requires scalar X and Y.")
             n = self.Y.shape[0]
             n_test = int(round(n * self.test_size))
             if n_test < 1 or n - n_test < 2:

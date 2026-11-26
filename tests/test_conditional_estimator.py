@@ -42,10 +42,48 @@ def test_model_x_estimated_conditional_uses_held_out_rows():
     assert test._draw_null_data().shape == (24, 1)
 
 
-def test_scalar_inputs_are_required():
+def test_malformed_inputs_are_rejected():
     estimator = GaussianKDEConditionalEstimator()
-    with pytest.raises(ValueError, match="scalar column"):
-        estimator.fit(np.ones((10, 2)), np.ones((10, 1)))
+    with pytest.raises(ValueError, match="finite matrix"):
+        estimator.fit(np.ones((10, 2, 1)), np.ones((10, 1)))
+
+
+def test_multivariate_density_and_joint_samples():
+    rng = np.random.default_rng(18)
+    x = rng.normal(size=(120, 2))
+    response = x[:, 0] + x[:, 1]
+    y = np.column_stack((response, response))
+    estimator = GaussianKDEConditionalEstimator(
+        bandwidth=[0.3, 0.7], n_splits=3, y_bandwidth=1e-6,
+        rng=np.random.default_rng(19),
+    ).fit(x, y)
+
+    draws = estimator.sample(x[:40])
+    assert draws.shape == (40, 2)
+    np.testing.assert_allclose(draws[:, 0], draws[:, 1], atol=1e-4)
+    density = estimator.pdf(x[:5], y[:5])
+    assert density.shape == (5,)
+    assert np.isfinite(density).all()
+    assert np.all(density > 0)
+    with pytest.raises(ValueError, match="column count"):
+        estimator.sample(x[:5, :1])
+
+
+def test_model_x_estimated_conditional_accepts_multivariate_x_and_y():
+    rng = np.random.default_rng(20)
+    x = rng.normal(size=(60, 2))
+    y = x + rng.normal(scale=0.2, size=(60, 2))
+    z = rng.normal(size=(60, 2))
+    estimator = GaussianKDEConditionalEstimator(bandwidth=0.5)
+    test = CanonicalCorrelationTest(
+        k=2, use_true_latent=True, test_type="model_X",
+        estimate_conditional=True, conditional_estimator=estimator,
+        test_size=0.4, npermutations=3, rng=np.random.default_rng(21),
+    )
+    test.fit({"Z": z, "Y": y, "X": x})
+    assert estimator.x_train_.shape == (36, 2)
+    assert estimator.y_train_.shape == (36, 2)
+    assert test._draw_null_data().shape == (24, 2)
 
 
 def test_yaml_method_resolves_conditional_estimator():

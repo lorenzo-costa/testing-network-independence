@@ -3,6 +3,7 @@ from pathlib import Path
 import numpy as np
 
 from src.load_config import build_factorial_design, load_config
+from src.methods.conditional_estimator import GaussianKDEConditionalEstimator
 
 
 CONFIG = Path(__file__).resolve().parents[1] / "config_rdpg_continuous_conditional.yaml"
@@ -13,7 +14,17 @@ def test_rdpg_continuous_config_resolves_four_three_dimensional_cases():
     design = build_factorial_design(config)
 
     assert len(config["setups"]) == 4
-    assert len(design) == 4 * 4 * 3
+    assert len(design) == 4 * 4 * 5
+    for method in config["methods"]["list"]:
+        kwargs = method.keywords
+        assert kwargs["test_type"] == "model_X"
+        assert kwargs["estimate_conditional"] is True
+        assert kwargs["test_size"] == 0.5
+        assert "conditional_generator" not in kwargs
+        estimator = kwargs["conditional_estimator"]
+        assert isinstance(estimator, GaussianKDEConditionalEstimator)
+        assert estimator.candidates.tolist() == [0.05, 0.1, 0.2]
+        assert estimator.n_splits == 5
     marginal_dependence = []
     conditional_dependence = []
     for dgp, _ in config["setups"]:
