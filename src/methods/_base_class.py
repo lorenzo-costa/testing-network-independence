@@ -1,25 +1,7 @@
 import os
 from multiprocessing import Pool, current_process
 
-import os
-from multiprocessing import Pool, current_process
-
 import numpy as np
-from tqdm.auto import tqdm
-
-
-_PERMUTATION_WORKER_METHOD = None
-
-
-def _initialize_permutation_worker(method):
-    """Install one read-only method copy in each permutation worker."""
-    global _PERMUTATION_WORKER_METHOD
-    _PERMUTATION_WORKER_METHOD = method
-
-
-def _run_permutation_worker(task):
-    """Evaluate one indexed permutation in a process-pool worker."""
-    return _PERMUTATION_WORKER_METHOD._evaluate_permutation(task)
 from tqdm.auto import tqdm
 
 
@@ -219,9 +201,6 @@ class BasePermutationTest(BaseEstimationMethod):
         self.permutation_type = permutation_type
         self.stratify_permutations = bool(stratify_permutations)
         self.one_sided = bool(one_sided)
-        self.n_jobs = int(n_jobs)
-        self.batch_size = int(batch_size)
-        self.verbose = bool(verbose)
         self.n_jobs = int(n_jobs)
         self.batch_size = int(batch_size)
         self.verbose = bool(verbose)
@@ -427,21 +406,9 @@ class BasePermutationTest(BaseEstimationMethod):
             )
 
         self.test_stat_estimate = test_statistic
-        self.permutation_distribution = null.tolist()
-        self.pvalue = float((1 + exceedances) / (null.size + 1))
-        exceedances = np.count_nonzero(
-                np.abs(null) >= np.abs(test_statistic)
-            )
-
-        self.test_stat_estimate = test_statistic
         self.null_distribution = null.tolist()
         self.pvalue = float((1 + exceedances) / (null.size + 1))
         self.reject_null = bool(self.pvalue < self.alpha)
-
-    def _fit_permutation(self):
-        observed, permuted = self._compute_permutation_statistics()
-        self._compute_pvalue_and_rejection(observed, permuted)
-
 
     def _fit_null(self):
         observed, null = self._compute_null_statistics()
